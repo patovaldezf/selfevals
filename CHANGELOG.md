@@ -7,6 +7,36 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-05-16
+
+### Added — PR 2: Storage layer (SQLite + filesystem + workspace scoping)
+
+- `StorageInterface` / `ObjectStoreInterface` / `WorkspaceScope` ABCs:
+  every read or write is bound to one `workspace_id`; cross-tenant
+  access is impossible by construction.
+- `SQLiteStorage` with single generic `entities` table (entity_type, id,
+  workspace_id, version, timestamps, payload JSON) + `objects` table.
+  Indexes on (workspace_id, entity_type[, created/updated]) and a
+  partial deleted_at index. Optimistic concurrency on `version`.
+  WAL journal mode + foreign keys on.
+- Homemade migration runner (no alembic dep): forward-only,
+  `mNNNN_<slug>.py` modules with `up(conn)`, tracked in
+  `_bootstrap_migrations`. Initial migration creates the tables.
+- `FilesystemObjectStore`: content-addressed blobs at
+  `{root}/{workspace_id}/{prefix2}/{sha256}.bin`; pointer URI
+  `oss://{workspace_id}/sha256:...` encodes its workspace.
+  SHA256 integrity check on read; collision detected if same hash
+  resolves to different bytes.
+- `seed_workspace(storage, slug, name, user_id, ...)` helper:
+  idempotent by (slug, owner), creates the Workspace + one Member
+  per `Role` (viewer, evaluator, experimenter, maintainer, admin,
+  auditor) when `assign_all_roles=True`.
+- Errors: `EntityNotFoundError`, `WorkspaceMismatchError`,
+  `OptimisticConcurrencyError`, `ObjectNotFoundError`,
+  `PointerHashMismatchError`, `IntegrityViolationError`.
+
+33 new tests (231 total).
+
 ## [0.0.2] - 2026-05-16
 
 ### Added — PR 1: Schemas-first scaffolding (Pydantic v2)

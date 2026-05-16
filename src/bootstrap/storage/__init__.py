@@ -18,23 +18,36 @@ from bootstrap.storage.errors import (
     StorageError,
     WorkspaceMismatchError,
 )
+from bootstrap.storage.filesystem import (
+    FilesystemObjectStore,
+    make_pointer,
+    parse_pointer,
+)
 from bootstrap.storage.interface import (
     ListFilter,
     ObjectStoreInterface,
     StorageInterface,
     WorkspaceScope,
 )
+from bootstrap.storage.seed import SeededWorkspace, seed_workspace
+from bootstrap.storage.sqlite import SQLiteStorage
 
 __all__ = [
     "EntityNotFoundError",
+    "FilesystemObjectStore",
     "IntegrityViolationError",
     "ListFilter",
     "ObjectNotFoundError",
     "ObjectStoreInterface",
     "OptimisticConcurrencyError",
     "PointerHashMismatchError",
+    "SQLiteStorage",
+    "SeededWorkspace",
     "StorageError",
     "StorageInterface",
     "WorkspaceMismatchError",
     "WorkspaceScope",
+    "make_pointer",
+    "parse_pointer",
+    "seed_workspace",
 ]
