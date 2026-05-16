@@ -7,6 +7,38 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-05-16
+
+### Added — PR 3: Trace ingestion (recorder + payload router + OTel importer)
+
+- `PayloadRouter` — small payloads (≤4 KB by default) stay inline in
+  the Trace JSON; larger ones are written to the `ObjectStoreInterface`
+  and replaced with `oss://` pointers + sha256 hashes. Canonical
+  JSON encoding for dicts/lists guarantees stable hashing across key
+  order.
+- `TraceRecorder` — context manager that captures spans during agent
+  execution. Span context managers: `agent_turn`, `llm_call`,
+  `tool_call`. Convenience emitters: `add_retrieval`,
+  `add_memory_read/write`, `add_decision`, `add_handoff`,
+  `add_human_intervention`, `add_guardrail_check`, `add_error`.
+  Accumulates trace-level metrics (LLM call count, tool call count,
+  token totals, retries). Tool call exceptions automatically mark
+  the span ERROR with type+message. Exiting the context with an
+  uncaught exception marks the trace ERRORED.
+- `import_otel_spans` — adapter from a flat list of OTel-style span
+  dicts (gen_ai.*, openinference.*) to a bootstrap Trace. Classifies
+  spans by `openinference.span.kind` / `gen_ai.*` presence,
+  normalizes finish reasons, preserves parent/child links, retains
+  unknown attributes in `provider_metadata` or CustomSpan.payload.
+  When TOOL spans carry call_ids without explicit linkage, the
+  importer synthesizes ToolUseRequest entries on the nearest LLM
+  span so the schema invariant holds; if no LLM span exists the
+  call_id is dropped silently.
+- Public surface: `bootstrap.trace` re-exports `PayloadRouter`,
+  `TraceRecorder`, `import_otel_spans`.
+
+26 new tests; 256 total. mypy strict + ruff clean. Zero new deps.
+
 ## [0.0.3] - 2026-05-16
 
 ### Added — PR 2: Storage layer (SQLite + filesystem + workspace scoping)
