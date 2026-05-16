@@ -7,6 +7,34 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-05-16
+
+### Added — PR 5: Graders (deterministic + LLM judge + calibration)
+
+- `Grader` ABC with `GraderContext` (case + trace + optional response)
+  and `GradeResult` (label / score / reason / confidence / failure_modes
+  / details). `GradeLabel` enum: pass, fail, partial, error, skipped.
+- `DeterministicGrader`: reads rules off `EvalCase.expected`:
+  must_include, must_not_include, required_tools (looks at
+  ToolCallSpans in the trace), forbidden_tools, optional regex,
+  structured_output equality. Configurable case-sensitive mode. Each
+  rule emits a stable failure_mode tag for weighted scoring upstream.
+- `LLMJudgeGrader`: invokes any `AgentAdapter` as a judge against a
+  rubric prompt (`RubricTemplate` with safe substitution). Parses the
+  judge's JSON output into a `JudgeDecision`; unknown labels and bad
+  JSON return `GradeLabel.ERROR` rather than crashing. Honors
+  `GraderCard.blocking` thresholds: when below calibration the grader
+  returns SKIPPED ("degraded to advisory") unless `force=True`.
+  Single-judge in MVP; panel infrastructure-ready for post-MVP.
+- Calibration helpers (`compute_classification_metrics`): pair
+  predictions with human labels by case_id; compute precision, recall,
+  F1 for the positive class plus macro-F1, accuracy, per-label
+  precision/recall, and confusion matrix. Counts high-risk false
+  negatives separately (the failure mode that wakes someone up).
+  Class-imbalance guard: undefined precision/recall return None.
+
+25 new tests (305 total). mypy strict + ruff clean. Zero new deps.
+
 ## [0.0.5] - 2026-05-16
 
 ### Added — PR 4: Runner (agent adapters + sandbox + executor)
