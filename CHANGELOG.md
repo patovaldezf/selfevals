@@ -7,6 +7,59 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-05-16
+
+### Added — PR 6 + PR 7: OptimizationLoop + Decision matrix
+
+Proposers:
+- `Proposer` ABC with `ProposerContext` (iteration index + history).
+- `ManualProposer`: walk a caller-supplied list of `Proposal` or
+  parameter dicts; raises `SearchSpaceExhaustedError` when done.
+- `GridProposer`: cartesian product over list-valued entries in
+  `experiment.search_space.model_params`; scalar entries are held
+  constant; empty list → raises ValueError.
+- `RandomProposer`: independent uniform sampling from each parameter
+  spec (list, `{lo, hi}`, `{choices: [...]}`, or scalar constant).
+  Bounded by `max_proposals`; seeded for reproducibility.
+- All proposals are re-validated against the experiment's editable
+  contract before being returned.
+
+Aggregator:
+- `aggregate_iteration(case_outcomes, primary_metric, reliability_metrics)`
+  computes pass@1 / pass@k / pass^k / consistency_rate /
+  stability_score / recovery_rate from per-case `CaseOutcome`s.
+- Worst-of policy when multiple graders run on the same repetition:
+  ERROR > FAIL > PARTIAL > SKIPPED > PASS.
+- Failure-mode counts aggregated by tag.
+- Guardrail metrics (`cost_usd_per_case`, `latency_ms_per_case_avg`)
+  surfaced when traces report cost/duration.
+
+OptimizationLoop:
+- Transitions experiment state DRAFT → QUEUED → RUNNING → COMPLETED.
+- For each iteration: ask proposer for a Proposal, run cases through
+  the Executor, score per-rep results with the configured graders,
+  aggregate, hand to a DecisionEvaluator, persist IterationRecord +
+  DecisionRecord (when a WorkspaceScope is provided).
+- Terminates on `search_space_exhausted`, `converged`, or
+  `max_iterations`. Convergence = no improvement above
+  `min_delta` for `patience` consecutive iterations.
+
+Decision matrix (PR 7):
+- `evaluate_iteration` (pure) + `DecisionMatrixEvaluator` (object).
+  Applies the §10 canónico subset that powers MVP optimization:
+  guardrail check → first-iteration target check → improvement vs
+  baseline → regression handling per `Experiment.decision` policy
+  (reject / investigate / spawn_subexperiment) or guardrail policy
+  (reject / require_tradeoff_review).
+- Missing guardrail metric values are treated as passing — the runner
+  doesn't synthesize every metric in MVP and we don't fail-shut on
+  absent data.
+- End-to-end integration test wires the evaluator into the loop and
+  verifies that improvement / no-improvement / regression each
+  produce the right DecisionRecord.outcome.
+
+47 new tests (352 total). mypy strict + ruff clean. Zero new deps.
+
 ## [0.0.6] - 2026-05-16
 
 ### Added — PR 5: Graders (deterministic + LLM judge + calibration)
