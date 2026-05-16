@@ -7,6 +7,31 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-05-16
+
+### Added — PR 4: Runner (agent adapters + sandbox + executor)
+
+- `AgentAdapter` ABC + `AdapterRequest`/`AdapterResponse` dataclasses;
+  the narrow contract between bootstrap and the agent under test.
+- `EmbeddedAdapter`: wraps a Python callable. Used for tests and
+  in-repo agents.
+- `CliCommandAdapter`: subprocess + JSON-over-stdio. Configurable
+  command, env, timeout.
+- `HttpEndpointAdapter`: POST JSON via stdlib `urllib` (no
+  third-party HTTP dep). Configurable headers + timeout.
+- All three normalize errors into `AdapterError` with the original
+  cause preserved.
+- `SandboxPolicy`: declarative mock/dry_run rules; `live_sandboxed`
+  and `live_canary` are accepted as enum values but `ensure_runnable()`
+  blocks them in MVP via `SandboxViolationError`.
+- `Executor`: runs an `EvalCase` for N repetitions through a given
+  adapter + sandbox; assembles a `Trace` per repetition via
+  `TraceRecorder`. Records adapter LLM output as an `LLMCallSpan`,
+  each tool use as a `ToolCallSpan` (sandboxed flag per policy),
+  and adapter exceptions as `ErrorSpan` + `final_state=errored`.
+
+24 new tests (280 total). mypy strict + ruff clean. Zero new deps.
+
 ## [0.0.4] - 2026-05-16
 
 ### Added — PR 3: Trace ingestion (recorder + payload router + OTel importer)
