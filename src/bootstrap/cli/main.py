@@ -28,7 +28,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", required=True, metavar="<command>")
 
-    p_init = sub.add_parser("init", help="Seed a new workspace.")
+    p_init = sub.add_parser("init", help="Initialize a new workspace.")
     p_init.add_argument("slug", help="Workspace slug (kebab-case).")
     p_init.add_argument("--name", help="Display name (default: slug).")
     p_init.add_argument("--user", default="local", help="Owner user id.")

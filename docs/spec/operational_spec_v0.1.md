@@ -789,9 +789,52 @@ Tu propuesta: el usuario expone su agente vía ngrok (o cualquier endpoint), el 
 
 Tres opciones soportadas:
 
-1. **SDK-embedded**: el usuario corre el agente dentro de nuestro runner. Máxima visibilidad de traces.
+1. **SDK-embedded** (modo plug-and-play, default recomendado): el usuario corre el agente dentro de nuestro runner. Máxima visibilidad de traces.
 2. **HTTP endpoint** (tu ngrok): el framework hace requests al endpoint. Trace = I/O + grader output. Menos profundidad, pero zero-touch.
 3. **CLI command**: framework ejecuta `python run_agent.py --input '...'`. Bueno para batch.
+
+#### F.2.1 SDK-embedded: principio de diseño "plug-and-play"
+
+**Regla dura de adopción**: para que SDK-embedded sea genuinamente adoptable, integrarlo NO puede requerir más que **un decorador o un wrapper de una línea** sobre la declaración del LLM o del agente. Si exigimos al usuario refactorizar su agente, refactorizar tools, instrumentar manualmente cada span o reescribir su loop, perdimos. Service-as-a-software solo funciona cuando el costo de plug-in es trivial.
+
+Patrones canónicos soportados:
+
+```python
+# Patrón A: decorador sobre el cliente LLM
+from evals_sdk import instrument
+
+client = instrument(Anthropic())        # auto-captura system, messages, tools, reasoning, tokens
+# o
+client = instrument(OpenAI())
+```
+
+```python
+# Patrón B: decorador a nivel de función-agente
+from evals_sdk import trace_agent
+
+@trace_agent(name="support_agent")
+def run(message: str) -> str:
+    ...
+```
+
+```python
+# Patrón C: context manager para frameworks (LangGraph, CrewAI, Agents SDK)
+from evals_sdk import evals_session
+
+with evals_session(experiment="prompt_search_2026_05_15", iteration=7):
+    graph.invoke(state)               # spans capturados automáticamente vía adapter
+```
+
+Lo que el SDK debe hacer por debajo, sin pedirle nada al usuario:
+- Auto-detectar provider (Anthropic, OpenAI, Bedrock, Vertex, Cohere, Mistral, DeepSeek, OSS vía OpenAI-compatible).
+- Auto-capturar `system`, `messages`, `tools_offered`, `params`, `reasoning` (Claude/o1/R1), `tokens` con breakdown de cache, `stop_reason`, `provider_metadata`, latency.
+- Auto-instrumentar tool calls cuando se declaran con el helper `@tool` del SDK o cuando el framework upstream las anuncia (LangChain Tool, OpenAI function, MCP tool).
+- Auto-poblar `run_id`, `experiment_id`, `iteration` desde la sesión activa (variable de contexto). El usuario no escribe IDs.
+- Cero configuración obligatoria para arrancar. Configuración avanzada (sampling, redaction, custom kinds) es opt-in.
+
+Tensión honesta: el patrón A funciona perfecto para Anthropic/OpenAI SDKs nativos. Para frameworks (LangGraph, CrewAI, Agents SDK) el patrón C es la integración real — un context manager + un adapter por framework. Patrón B es el fallback universal cuando el usuario escribió su agente a mano.
+
+**Anti-pattern explícito**: NO obligar al usuario a editar prompts, declarar features manualmente al SDK, o emitir spans a mano. Si tiene que hacer eso, el bootstrap skill (§I) falló o el adapter del framework no está implementado.
 
 ```yaml
 agent_adapter:
@@ -859,56 +902,66 @@ decision:
   superseded_by: null
 ```
 
-### G.2 Reportes — tres outputs canónicos
+### G.2 Reportes — dos outputs canónicos
 
-1. **Markdown report**: para PR comments, GitHub. Genera diff humano-legible.
-2. **HTML report**: para análisis profundo, gráficas, side-by-side.
-3. **JSON report**: para integración programática (CI, hooks, otros sistemas).
+El reporte vive en dos planos paralelos, no en tres formatos de archivo:
 
-Los tres salen del mismo `ReportArtifact`. No se mantienen tres formatters distintos.
+1. **UI web del framework** (humano-first): el reporte completo se visualiza en la UI con gráficas interactivas, side-by-side de variantes, drill-down a traces, diffs de prompts/params, y trend de métricas. Es el lugar donde el humano realmente entiende qué cambió.
+2. **Agent-native report** (agente-first): estructura JSON/YAML densa, designed para que un agente externo (Claude Code, Codex, Cursor, OpenClaw) la consuma, razone sobre los resultados, y la **rebote a su usuario** con interpretación contextual o proponga la siguiente iteración. Incluye: `summary`, `verdict`, `metrics_delta`, `failure_clusters_top_k`, `proposed_next_actions`, `decision_log_pointer`, `trace_pointers_to_inspect`, todo machine-parseable.
+
+Ambos salen del mismo objeto interno (sin formatter triplicado). El nombre del campo en el schema es `Report` (sin el sufijo "Artifact" — innecesario y oscuro).
+
+Generación de Markdown/HTML/JSON como archivos sueltos se conserva como **export opcional** (para PR comments y CI), no como output primario. La verdad vive en la UI y en el agent-native report.
 
 ### G.3 Integraciones de notificación
 
-| Canal | Cuándo | Qué incluye |
-|---|---|---|
-| GitHub PR comment | Experimento sobre branch | Markdown report + verdict |
-| Slack | Decisión humana requerida | Resumen + link al decision log |
-| Email | Resúmenes diarios / semanales | Trend report |
-| Webhook | Custom integrations | JSON report |
+Ninguna integración de notificación es parte del MVP. Quedan archivadas como **idea potencial** para revisitar cuando haya demanda real:
 
-Ninguno es obligatorio. Todos opt-in.
+> Ideas archivadas (no MVP): GitHub PR comments con markdown report, Slack para decisiones humanas requeridas, email para resúmenes periódicos, webhooks JSON para integraciones custom. Todas opt-in cuando lleguen.
+
+El loop primario es UI + agent-native report. Si el agente externo necesita postear algo en GitHub/Slack, lo hace él con sus propias herramientas — no es responsabilidad del framework empujar a cada canal.
 
 ### G.4 Tensión honesta
 
-PR comments se vuelven ruido rápido si cada iteración los manda. **Recomendación**: solo postear cuando el experimento **completa** o cuando dispara una decisión humana, no por iteración.
+El agent-native report es el output con más apalancamiento: permite que el agente cierre el loop con su usuario sin que el humano abra la UI. La UI sigue importando para auditoría y para los momentos en que el humano necesita ver gráficas, pero el reporte para el agente es lo que habilita self-improving loops (ver §J).
 
 ---
 
-## §H. Cross-Experiment Comparison — Moving Baseline
+## §H. Cross-Experiment Comparison — Discusión Abierta
 
 ### H.1 El problema real
 
 En 3 meses, has corrido 30 experimentos. El dataset cambió 5 veces. El judge se recalibró 2 veces. El agente bajó por v12, v13, v14. **¿Cómo comparas experimento de mayo vs agosto?**
 
-### H.2 Recomendación: "Calibrated comparison" con tres niveles
+Estado actual de la decisión: **no resuelta**. El diseño previo de "tres niveles (Strict / Calibrated / Trended)" se siente sobre-arquitecturado para algo que en la práctica casi nadie usa de manera disciplinada. Lo dejamos como punto abierto a discutir y proponemos una dirección distinta.
 
-| Nivel | Comparación válida cuando | Cómo |
-|---|---|---|
-| **Strict** | Mismo dataset version, mismo grader version, mismo fleet/agent versions | Comparación directa de métricas |
-| **Calibrated** | Diferentes versiones pero hay overlap de casos | Re-run del candidato sobre la intersección común |
-| **Trended** | Versiones completamente distintas | Comparar métricas normalizadas (z-score contra su propio baseline) y mostrar trend, no valor absoluto |
+### H.2 Dirección propuesta — anchor set como única fuente de comparación longitudinal
 
-El framework no debe permitir `Strict` cuando las versiones difieren. Debe ofrecer `Calibrated` o `Trended` con label explícito en el reporte.
+En lugar de tres modos de comparación, una sola mecánica simple:
 
-### H.3 Anchor cases
+1. **Anchor set inmutable**: un conjunto chico (~30-50 casos) versionado con `frozen: true`, rúbrica fija, grader pinned, dataset_id pinned. Es lo único que se compara cross-experiment.
+2. **Todo experimento corre el anchor set automáticamente** como parte de su gate suite (no es opt-in). Costo marginal pequeño, valor longitudinal alto.
+3. **Comparación cross-experiment = comparación sobre el anchor set, punto**. No hay matemática de overlap, no hay re-runs sobre intersecciones, no hay z-scores. Si quieres comparar mayo vs agosto, ves anchor metrics de mayo vs anchor metrics de agosto, y el resto es contexto.
+4. **El resto de métricas (capability, regression, reliability) son comparables dentro del mismo dataset version**. Cross-version intra-suite se reporta como `n/a` honesto, no se inventa una calibración.
 
-Mantener un conjunto pequeño (~20-50) de "anchor cases" que **nunca cambian**: misma redacción, misma rúbrica, mismo grader pinned. Estos casos corren en cada experimento y permiten comparación strict longitudinal.
+Lo que se elimina:
+- Modo "Calibrated" con re-runs sobre intersección — caro, lazy, y la gente nunca lo usa porque el costo asusta.
+- Modo "Trended" con z-scores normalizados — engañoso, normaliza por baseline propio y oculta drift real.
+- Distinción entre `Strict` / `Calibrated` / `Trended` como concepto de UI. Solo existe "comparación sobre el anchor set" o "no comparable".
 
-Costo: pequeño. Valor: muy alto. **Recomiendo implementarlo en MVP**.
+Lo que se conserva:
+- Honestidad: si dos experimentos no comparten anchor version, el framework dice "no comparables longitudinalmente" y para. No fuerza una metáfora numérica.
+- El anchor set se versiona con semver. Major bump = nuevo anchor set, la serie longitudinal anterior queda cerrada (no se reescribe, se archiva).
+
+### H.3 Punto abierto
+
+¿Es el anchor set suficiente o realmente necesitamos comparación calibrada sobre intersecciones cuando dos experimentos comparten 60% de casos? Mi sospecha: lo necesitamos menos seguido de lo que el spec sugería, y cuando lo necesitamos, lanzarlo manualmente como un sub-experimento ad-hoc (`evals compare A B --intersection`) es más honesto que ofrecerlo como modo built-in.
+
+Acción: dejar §H como dirección propuesta. Validar contra el primer dogfood real antes de cerrar.
 
 ### H.4 Tensión honesta
 
-Re-runs sobre intersecciones para calibrated comparison son **caros**. No hacerlos rompe comparación. Solución pragmática: **lazy re-run**: solo cuando el usuario explícitamente pide la comparación. Cachear resultados.
+Anchor set tiene una falla conocida: si todos los experimentos optimizan implícitamente contra él (porque es lo único que se compara longitudinalmente), se convierte en otro target de gaming. Mitigación: anchor set **no puede usarse como optimization dataset**, solo como gate de gate. Y rotar parcialmente (`anchor_set_v2` cada N meses añadiendo casos nuevos, retirando los que se memorizaron) cuando el `pass_rate` se acerque a 1.0.
 
 ---
 
@@ -918,17 +971,28 @@ Re-runs sobre intersecciones para calibrated comparison son **caros**. No hacerl
 
 ```text
 1. evals init                                       # crea estructura mínima
-2. evals connect --agent <adapter>                  # conecta agente
-3. evals discover                                   # análisis del repo
+2. evals connect --agent <adapter>                  # conecta agente (decorador SDK por default)
+3. evals discover                                   # análisis del repo con subagentes
 4. evals propose --interactive                      # propone con humano
-5. evals seed --from production-logs <path>        # ingesta histórica
-6. evals run smoke                                   # primer eval
-7. evals propose-experiment                          # primer experimento
+5. evals build-dataset                              # construye dataset según fuentes disponibles
+6. evals run smoke                                  # primer eval
+7. evals propose-experiment                         # primer experimento
 ```
+
+> Nota de naming: el comando anteriormente llamado `evals seed --from production-logs` se renombra a `evals build-dataset`. La intención no es "sembrar" sino **construir el dataset con lo que esté disponible**: si hay logs de producción, los ingesta; si no, dispara el pipeline de data sintética; si hay tickets/incidents, los convierte en casos. La elección de fuente la propone el framework según lo encontrado en `discover` y la confirma el usuario.
 
 ### I.2 `evals discover` — qué hace
 
-El bootstrap skill que lee el repo. Decisiones:
+El bootstrap skill que lee el repo. **Lanza subagentes en paralelo** para explorar el codebase a profundidad y entender qué hace cada pieza, no solo qué archivos existen. La razón: la inferencia útil sobre "qué vale la pena evaluar y por qué" no sale de un find/grep — sale de leer prompts, tools, graph definitions, tests, y de razonar sobre el propósito de cada subsistema. Eso es trabajo de subagente.
+
+Subagentes típicos que lanza:
+- **Agent surface explorer**: mapea entrypoints, identifica el LLM declaration y los wrappers, infiere fleet topology.
+- **Prompt & tool analyzer**: lee prompts, tool definitions, schemas; infiere features candidatas y dependencias entre tools.
+- **Test miner**: extrae tests existentes, los clasifica como evals primitivos (deterministic vs intent-based), propone migración.
+- **Logs/traces ingestor**: si hay `logs/`, `traces/`, export de LangSmith/Langfuse, los samplea, detecta failures históricos y casos representativos.
+- **Risk surface mapper**: cruza tools con side effects, accesos externos, y datos sensibles; propone `RiskRegistry`.
+
+Cada subagente reporta con un nivel de confianza estructurado al orquestador, que consolida y emite los outputs del paso siguiente.
 
 **Inputs que lee** (en orden de prioridad):
 1. README, ARCHITECTURE, docs/ — para entender propósito.
@@ -961,6 +1025,8 @@ Esto evita el peor anti-pattern: agente que pregunta 20 cosas antes de mostrar n
 Decisión: **synthetic first, marked as such**. Etiqueta `source.type: synthetic` con `confidence: low` hasta validación humana. Capability dataset arranca con 30-100 casos sintéticos cubriendo features detectadas. Smoke arranca con 10-20 casos.
 
 **NO** poner casos sintéticos en regression jamás. Regression solo crece con failures reales validados.
+
+> **TODO crítico** — pendiente meterle cariño y diseño detallado a (a) la generación de data sintética dentro de `evals build-dataset` (estrategias por feature, control de diversidad, evitación de copy-paste de SWE-bench/genéricos, gates de calidad antes de aceptar un caso), y (b) la creación de skills que los agentes externos (Claude Code, Codex, Cursor, OpenClaw) usen para producir/validar casos. Esta parte del flujo es el diferenciador real y hoy está subespecificada.
 
 ### I.5 Tensión honesta
 
@@ -1010,6 +1076,35 @@ Por cada cluster activo:
 ### J.5 Tensión honesta
 
 Root cause attribution **se equivoca seguido**. Es heurístico, no determinístico. **Recomendación**: presentarlo siempre como hipótesis ranked, nunca como "el root cause es X". Y registrar feedback humano (correct/incorrect) para mejorar las heurísticas con el tiempo.
+
+### J.6 Integración con tracker de tickets (Linear, GitHub Issues, Jira) y self-improving loop
+
+El módulo de failure analysis cierra su valor cuando el output se convierte en **trabajo accionable agrupado**. Diseño:
+
+1. **Cluster → ticket**. Cada `failure_cluster` activo puede sincronizarse a un tracker externo (Linear preferido, GitHub Issues como fallback, Jira opcional). El framework sugiere conectar el tracker durante `evals init` o cuando se detecta el primer cluster con >N failures.
+2. **Agrupamiento inteligente al crear/actualizar tickets**: el sync detecta si el cluster ya tiene ticket abierto (`cluster_id` mapeado), si es un cluster nuevo (crea ticket), o si es una mutación de uno existente (comenta sobre el ticket original). Distingue "errores que ya existían" vs "nuevos" vs "regresiones de algo cerrado".
+3. **Ticket payload**: incluye `cluster_id`, `failure_signature`, `representative_cases` (3-5), `root_cause_hypothesis ranked`, `proposed_editable` (qué dimensiones tocar: prompt, tool_code, retriever_config), `suggested_experiment_spec` (link a YAML pre-llenado), y `agent_skill_pointers` (qué skills usar para diagnosticar — ver punto 5).
+4. **Cierre del loop**: cuando el ticket se asigna a un agente (Claude Code, Codex, Cursor, OpenClaw), ese agente puede leer el payload, abrir un sub-experimento, iterar, y al merge cerrar el ticket con link al `Experiment.completion`. Esto completa el ciclo de self-improving agents.
+5. **Skills de diagnóstico (referencia)**: el framework expone skills documentadas para que el agente asignado sepa exactamente cómo usar la herramienta para diagnosticar el cluster — qué traces inspeccionar, qué métricas comparar, qué counterfactuals correr, qué editable proponer primero. Estas skills son el contrato entre el framework y los agentes externos.
+
+> **TODO** — esta parte del flujo (análisis de errores detallado + skills para que el agente diagnostique, proponga fix, valide, y cierre el loop ella sola) requiere diseño explícito y dedicado. Es el corazón del self-improving loop. Hoy queda como esqueleto.
+
+Configuración:
+
+```yaml
+tracker_integration:
+  enabled: true
+  provider: linear            # linear | github | jira
+  workspace: pato-evals
+  project: agent_quality
+  auto_create_threshold:
+    cluster_size_min: 5
+    severity_min: medium
+  group_strategy: by_cluster  # by_cluster | by_root_cause | by_feature
+  on_assign_to_agent:
+    inject_skill_pointers: true
+    inject_experiment_spec_template: true
+```
 
 ---
 
@@ -1229,7 +1324,17 @@ jobs:
 
 ### O.4 Tensión honesta
 
-Si las smoke evals tardan >5 min, los developers las van a evadir. **Hard target: smoke <2 min**. Si tu smoke set tarda más, no es smoke, es regression. Reducir.
+Si las smoke evals tardan >5 min, los developers las van a evadir. **Hard target: smoke <3 min en GitHub CI**. Si tu smoke set tarda más, no es smoke, es regression. Reducir.
+
+Cómo llegar a <3 min cuando el agente es lento o los casos son caros:
+- Subset agresivo del smoke set (10-20 casos máximo, los más diagnósticos).
+- Paralelismo por caso (`parallelism: N` dentro de la iteración).
+- Cache de prompts (Anthropic prompt caching) y reuso de cache entre casos cuando comparten system prompt.
+- Mocks de tools costosos / externos en modo smoke.
+- Reasoning en `medium` (no `high`) salvo cuando el caso lo requiera.
+- Judge único (no panel) en smoke; panel solo en pre-merge / pre-release.
+
+Obviamente el techo real depende del agente y de los casos. El objetivo del framework es darle al usuario los presets y palancas para alcanzar el target; si no se puede, se reporta honestamente y se reclasifican casos a regression.
 
 ---
 
