@@ -1,0 +1,53 @@
+# Example experiment spec (canon §22).
+#
+# Run it with:
+#   bootstrap run evals/experiments/example_pingpong.yaml \
+#       --workspace ws_01HZZZZZZZZZZZZZZZZZZZZZZZ --no-persist
+#
+# The agent entrypoint below ships in this repo for the test suite; in
+# your project, it would point at your actual agent function.
+
+workspace: ws_01HZZZZZZZZZZZZZZZZZZZZZZZ
+
+experiment:
+  name: pingpong baseline
+  goal: warm up the end-to-end loop with a trivial echo agent
+  mode: handoff
+  taxonomy:
+    target_features:
+      - commerce.product_resolution
+    dataset_types:
+      - capability
+  datasets:
+    optimization: { id: ds_pingpong, version: 1 }
+  target:
+    primary: { name: pass@1, operator: ">=", value: 0.5 }
+  editable:
+    prompt: true
+    model_params: true
+  frozen:
+    fleet: { id: flt_demo }
+    agents:
+      - { id: ag_demo }
+    datasets:
+      - { id: ds_pingpong }
+  proposer:
+    strategy: grid
+  search_space:
+    model_params:
+      level: [0.0, 1.0]
+  run:
+    sandbox: mock
+    max_iterations: 4
+    convergence:
+      min_delta: 1.0e-6
+      patience: 10
+  reliability:
+    metrics:
+      - pass@1
+
+dataset:
+  cases_path: ../datasets/pingpong.jsonl
+
+agent:
+  entrypoint: bootstrap.examples.pingpong:run

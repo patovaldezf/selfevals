@@ -7,6 +7,66 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.0.9] - 2026-05-16
+
+### Added — MVP Bloque A reducido: YAML loader + `bootstrap run` end-to-end
+
+Repo loader (`src/bootstrap/repo/`):
+- `load_experiment_spec(path)` parses `evals/experiments/<name>.yaml` →
+  `(workspace_id, Experiment, [EvalCase], AgentEntrypoint)`. YAML keys
+  are 1:1 with the Pydantic field names — no DSL translation; the
+  validators do all the shape checking.
+- Cases can be inline (`dataset.cases_inline:`) or external JSONL
+  (`dataset.cases_path:`). Mutually exclusive; both empty rejected.
+- Agent entrypoint declared as `module.path:callable_name`.
+  `resolve_agent_callable` defers import until the runner needs it
+  (lets `bootstrap inspect` validate a spec without booting user code).
+- 14 tests covering inline/external loading, workspace override,
+  missing fields, malformed YAML, invalid payloads, entrypoint
+  resolution.
+
+CLI `bootstrap run <yaml>`:
+- Loads spec → resolves agent callable → wraps as `EmbeddedAdapter`
+  (str returns auto-coerced to `AdapterResponse`) → builds the
+  proposer per `experiment.proposer.strategy` (grid / random /
+  manual) → drives `OptimizationLoop` with `DecisionMatrixEvaluator`
+  + `DeterministicGrader` → emits markdown/JSON report.
+- Flags: `--workspace`, `--max-iterations`, `--reps`, `--format`,
+  `--no-persist`.
+- Persists `Experiment` + `IterationRecord` + `DecisionRecord` to
+  SQLite when storage is enabled; auto-seeds the workspace row.
+- 6 tests covering markdown/JSON output, persistence to SQLite,
+  missing-spec error, validation, str→AdapterResponse coercion.
+
+Example experiment:
+- `evals/experiments/example_pingpong.yaml` + `evals/datasets/pingpong.jsonl` +
+  `bootstrap.examples.pingpong` reference agent. Serves as smoke test
+  and onboarding artifact. `uv run bootstrap run evals/experiments/example_pingpong.yaml --no-persist`
+  produces a clean report out of the box.
+
+Refactor:
+- `DecisionMatrixEvaluator` now inherits from `DecisionEvaluatorProtocol`
+  so the type checker recognizes it as a valid argument to
+  `OptimizationLoop(decision_evaluator=...)`.
+
+20 new tests (390 total). mypy strict + ruff clean. One new runtime
+dep: `pyyaml>=6,<7`.
+
+### Added — Design docs for next implementation surfaces
+
+- `docs/spec/sdk_otlp_design.md`: locked blueprint for the user-side
+  SDK façade (`bootstrap.init()`) + embedded OTLP HTTP receiver +
+  OpenInference auto-instrumentation. Sections 1-11 cover the
+  decisions already made (no re-litigation), package layout, exact
+  signatures, span translation table, dependency tree (optional
+  extras), test plan, and acceptance criteria. ~1500-2000 LOC budget,
+  dedicated session.
+- `docs/prompts/web_session_prompt.md`: self-contained prompt for the
+  Claude Code session that builds the web UI + SDK + OTLP receiver.
+  Includes product vibe (Stripe/Airbnb/ChatGPT/Claude/LangSmith/Mercury),
+  page inventory (8 surfaces), design tokens, stack recommendation,
+  backend contract, and "done" criteria.
+
 ## [0.0.8] - 2026-05-16
 
 ### Added — PR 8 + PR 9: Reporter + CLI

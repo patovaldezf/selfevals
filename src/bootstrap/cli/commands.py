@@ -12,9 +12,37 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from bootstrap.decision.matrix import DecisionMatrixEvaluator
+from bootstrap.graders.deterministic import DeterministicGrader
 from bootstrap.optimization.aggregator import IterationAggregate
-from bootstrap.optimization.loop import IterationOutcome, OptimizationResult
+from bootstrap.optimization.loop import (
+    IterationOutcome,
+    OptimizationLoop,
+    OptimizationResult,
+)
+from bootstrap.optimization.proposers import (
+    GridProposer,
+    ManualProposer,
+    Proposer,
+    RandomProposer,
+)
+from bootstrap.repo.loader import (
+    AgentEntrypoint,
+    ExperimentSpec,
+    LoaderError,
+    load_experiment_spec,
+    resolve_agent_callable,
+)
 from bootstrap.reporter import render_json, render_markdown
+from bootstrap.runner.adapters import (
+    AdapterRequest,
+    AdapterResponse,
+    AgentAdapter,
+    EmbeddedAdapter,
+)
+from bootstrap.runner.executor import Executor
+from bootstrap.runner.sandbox import SandboxPolicy
+from bootstrap.schemas.enums import ProposerStrategy
 from bootstrap.schemas.experiment import Experiment
 from bootstrap.schemas.iteration import DecisionRecord, IterationRecord
 from bootstrap.schemas.workspace import Workspace
@@ -306,3 +334,130 @@ def _reconstruct_result(
         iterations=outcomes,
         terminated_reason="loaded_from_storage",
     )
+
+
+# --- run ---
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    spec_path = Path(args.spec)
+    try:
+        spec = load_experiment_spec(spec_path, workspace_id=args.workspace)
+    except LoaderError as exc:
+        raise CommandError(str(exc)) from exc
+
+    if args.max_iterations is not None:
+        if args.max_iterations < 1:
+            raise CommandError("--max-iterations must be >= 1")
+        spec.experiment.run.max_iterations = args.max_iterations
+
+    try:
+        callable_obj = resolve_agent_callable(spec.agent)
+    except LoaderError as exc:
+        raise CommandError(str(exc)) from exc
+    adapter = _wrap_user_callable(callable_obj, spec.agent)
+    proposer = _build_proposer(spec.experiment)
+
+    storage = _storage(args) if not args.no_persist else None
+    scope = None
+    try:
+        if storage is not None:
+            _ensure_workspace(storage, spec)
+            scope = storage.open(spec.workspace_id)
+            scope.put_entity(spec.experiment)
+
+        executor = Executor(
+            adapter=adapter,
+            sandbox=SandboxPolicy(spec.experiment.run.sandbox),
+            workspace_id=spec.workspace_id,
+        )
+        loop = OptimizationLoop(
+            experiment=spec.experiment,
+            executor=executor,
+            proposer=proposer,
+            graders=[DeterministicGrader()],
+            cases=spec.cases,
+            scope=scope,
+            decision_evaluator=DecisionMatrixEvaluator(),
+            repetitions_per_case=args.reps,
+        )
+        result = loop.run()
+    finally:
+        if scope is not None:
+            scope.close()
+        if storage is not None:
+            storage.close()
+
+    if args.format == "json":
+        print(render_json(result))
+    else:
+        print(render_markdown(result))
+    return 0
+
+
+# --- run helpers ---
+
+
+def _wrap_user_callable(callable_obj: object, entrypoint: AgentEntrypoint) -> AgentAdapter:
+    """Adapt the user's function into an AgentAdapter.
+
+    Accepted return types from the user's callable:
+    - AdapterResponse: passed through.
+    - str: wrapped as `AdapterResponse(content=...)`.
+    Anything else raises at invoke-time with a clear message — we don't
+    silently coerce dicts or numbers because the grader semantics depend
+    on a textual response.
+    """
+    if not callable(callable_obj):
+        raise CommandError(
+            f"agent entrypoint {entrypoint.raw!r} resolved to a non-callable "
+            f"({type(callable_obj).__name__})"
+        )
+
+    def _adapt(req: AdapterRequest) -> AdapterResponse:
+        result = callable_obj(req)
+        if isinstance(result, AdapterResponse):
+            return result
+        if isinstance(result, str):
+            return AdapterResponse(content=result)
+        raise TypeError(
+            f"agent entrypoint {entrypoint.raw!r} returned "
+            f"{type(result).__name__}; expected str or AdapterResponse"
+        )
+
+    return EmbeddedAdapter(_adapt)
+
+
+def _build_proposer(experiment: Experiment) -> Proposer:
+    strategy = experiment.proposer.strategy
+    if strategy == ProposerStrategy.GRID:
+        return GridProposer()
+    if strategy == ProposerStrategy.RANDOM:
+        params = dict(experiment.proposer.parameters)
+        return RandomProposer(
+            max_proposals=int(params.get("max_proposals", 50)),
+            seed=params.get("seed"),
+        )
+    if strategy == ProposerStrategy.MANUAL:
+        manual = experiment.proposer.parameters.get("proposals")
+        if not isinstance(manual, list) or not manual:
+            raise CommandError(
+                "manual proposer requires proposer.parameters.proposals as a non-empty list"
+            )
+        return ManualProposer(manual)
+    raise CommandError(f"unsupported proposer strategy in MVP: {strategy}")
+
+
+def _ensure_workspace(storage: SQLiteStorage, spec: ExperimentSpec) -> None:
+    """Make sure the workspace row exists. Idempotent."""
+    with storage.open(spec.workspace_id) as s:
+        if s.exists(Workspace, spec.workspace_id):
+            return
+    ws = Workspace(
+        id=spec.workspace_id,
+        workspace_id=spec.workspace_id,
+        slug=spec.workspace_id.lower(),
+        name=spec.workspace_id,
+    )
+    with storage.open(spec.workspace_id) as s:
+        s.put_entity(ws)

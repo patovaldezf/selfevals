@@ -67,6 +67,39 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_report.set_defaults(func=commands.cmd_report)
 
+    p_run = sub.add_parser(
+        "run", help="Run an experiment spec end-to-end (YAML)."
+    )
+    p_run.add_argument("spec", help="Path to evals/experiments/<name>.yaml")
+    p_run.add_argument(
+        "--workspace",
+        help="Workspace id override (otherwise read from the spec's `workspace:` key).",
+    )
+    p_run.add_argument(
+        "--max-iterations",
+        type=int,
+        default=None,
+        help="Override experiment.run.max_iterations for this run.",
+    )
+    p_run.add_argument(
+        "--reps",
+        type=int,
+        default=1,
+        help="Repetitions per case (default 1).",
+    )
+    p_run.add_argument(
+        "--format",
+        choices=["markdown", "json"],
+        default="markdown",
+        help="Report format printed at the end of the run.",
+    )
+    p_run.add_argument(
+        "--no-persist",
+        action="store_true",
+        help="Do not write iterations/decisions to the SQLite db.",
+    )
+    p_run.set_defaults(func=commands.cmd_run)
+
     p_compare = sub.add_parser(
         "compare", help="Diff two iterations side-by-side (by primary metric)."
     )

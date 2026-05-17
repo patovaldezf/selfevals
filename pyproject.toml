@@ -1,6 +1,6 @@
 [project]
 name = "bootstrap"
-version = "0.0.8"
+version = "0.0.9"
 description = "Self-improving evals framework for AI agents."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -17,6 +17,7 @@ classifiers = [
 ]
 dependencies = [
     "pydantic>=2.7,<3",
+    "pyyaml>=6,<7",
 ]
 
 [project.scripts]
@@ -38,6 +39,7 @@ dev = [
     "pytest-cov>=5,<6",
     "ruff>=0.5,<1",
     "mypy>=1.10,<2",
+    "types-pyyaml>=6,<7",
 ]
 
 [tool.ruff]

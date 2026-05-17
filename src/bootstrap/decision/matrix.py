@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from bootstrap.optimization.loop import DecisionEvaluatorProtocol
 from bootstrap.schemas.enums import DecisionOutcome
 from bootstrap.schemas.experiment import MetricTarget
 
@@ -175,7 +176,7 @@ def evaluate_iteration(
     )
 
 
-class DecisionMatrixEvaluator:
+class DecisionMatrixEvaluator(DecisionEvaluatorProtocol):
     """Object form usable as `DecisionEvaluatorProtocol`."""
 
     def evaluate(
