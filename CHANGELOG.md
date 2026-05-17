@@ -7,6 +7,53 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-05-16
+
+### Added — PR 8 + PR 9: Reporter + CLI
+
+Reporter (`bootstrap.reporter`):
+- `render_markdown(result)` produces a PR-comment-style summary:
+  experiment header (name, goal, state, mode, proposer, iterations
+  run, termination reason), target + guardrail spec line, best-
+  iteration callout with parameters, per-iteration table
+  (`#`, primary, Δ vs running best, decision outcome, rationale —
+  with pipe-escaping and 80-char rationale truncation), and a
+  top-N failure-modes section drawn from
+  `IterationAggregate.failure_mode_counts`.
+- `render_json(result)` emits a stable, machine-readable payload
+  (`schema_version=1`) keyed on iteration index, with explicit
+  best-iteration reference. JSON path is what the CLI's `--format
+  json` flag outputs.
+- Pure: no I/O, no global state — callers decide where the strings
+  end up (stdout, a file, a GitHub PR comment).
+
+CLI (`bootstrap` console script, argparse-only, zero new deps):
+- `bootstrap init <slug>` — idempotent workspace seed via
+  `seed_workspace`; prints workspace id + member count.
+- `bootstrap workspace show <ws_id>` — workspace metadata +
+  experiment count.
+- `bootstrap experiment list <ws_id>` / `show <ws_id> <exp_id>` —
+  inspect experiments in storage with target + iteration progress.
+- `bootstrap iteration list <ws_id> <exp_id>` — per-iteration
+  primary metric + decision outcome.
+- `bootstrap report <ws_id> <exp_id> [--format markdown|json]` —
+  reconstructs an OptimizationResult from stored IterationRecords +
+  DecisionRecords (lossy on per-case GradeResults, lossless on
+  aggregates) and pipes it through the reporter.
+- `bootstrap compare <ws_id> <iter_a_id> <iter_b_id>` — side-by-
+  side primary metric diff between two iterations of the same
+  experiment.
+- `bootstrap estimate --cases N --space-size M --reps K
+  --cost-per-call X` — dry-run upper-bound on agent calls and
+  total USD cost before paying for a run.
+- All user-facing errors (missing entity, primary-metric mismatch,
+  invalid numeric args) go through `CommandError` → `error: <msg>`
+  on stderr → exit code 2. Unexpected exceptions surface as
+  tracebacks (bugs, not user errors).
+
+18 new tests (370 total: 9 reporter + 9 CLI). mypy strict + ruff
+clean. Zero new runtime deps — argparse + stdlib.
+
 ## [0.0.7] - 2026-05-16
 
 ### Added — PR 6 + PR 7: OptimizationLoop + Decision matrix
