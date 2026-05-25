@@ -1,6 +1,6 @@
 [project]
 name = "bootstrap"
-version = "0.0.9"
+version = "0.1.0"
 description = "Self-improving evals framework for AI agents."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -10,7 +10,7 @@ authors = [
 ]
 keywords = ["evals", "agents", "llm", "optimization"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
@@ -20,8 +20,34 @@ dependencies = [
     "pyyaml>=6,<7",
 ]
 
+[project.optional-dependencies]
+# Web API surface (`python -m bootstrap.api`). Optional — the core loop
+# never imports these; api/* defers the FastAPI import to call time.
+web = [
+    "fastapi>=0.110,<1",
+    "uvicorn>=0.29,<1",
+]
+# OTel capture pipe + OTLP bridge. Imported lazily in sdk/* and runner/*
+# under try/except ImportError, so the base install stays ~2MB.
+telemetry = [
+    "opentelemetry-sdk>=1.25,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.25,<2",
+    "opentelemetry-proto>=1.25,<2",
+]
+anthropic = ["bootstrap[telemetry]", "openinference-instrumentation-anthropic>=0.1"]
+openai = ["bootstrap[telemetry]", "openinference-instrumentation-openai>=0.1"]
+bedrock = ["bootstrap[telemetry]", "openinference-instrumentation-bedrock>=0.1"]
+vertex = ["bootstrap[telemetry]", "openinference-instrumentation-vertexai>=0.1"]
+# LangGraph traces flow through the LangChain instrumentor (it builds on
+# LangChain); there is no standalone openinference-instrumentation-langgraph.
+langchain = ["bootstrap[telemetry]", "openinference-instrumentation-langchain>=0.1"]
+crewai = ["bootstrap[telemetry]", "openinference-instrumentation-crewai>=0.1"]
+all = [
+    "bootstrap[web,anthropic,openai,bedrock,vertex,langchain,crewai]",
+]
+
 [project.scripts]
-bootstrap = "bootstrap.cli.main:app"
+bootstrap = "bootstrap.cli.main:main"
 
 [project.urls]
 Homepage = "https://github.com/patovaldezf-berkeley/boostrap"
@@ -40,6 +66,8 @@ dev = [
     "ruff>=0.5,<1",
     "mypy>=1.10,<2",
     "types-pyyaml>=6,<7",
+    "httpx>=0.27,<1",  # fastapi.testclient.TestClient backend, used by tests/api
+    "pytest-asyncio>=0.23,<1",  # runs @pytest.mark.asyncio tests (tests/api/test_broker)
 ]
 
 [tool.ruff]
@@ -65,6 +93,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["N802", "N803"]  # test fn names can be permissive
+"src/bootstrap/api/**" = ["B008"]  # FastAPI Depends(...) in defaults is idiomatic
 
 [tool.mypy]
 python_version = "3.12"
@@ -77,9 +106,11 @@ no_implicit_reexport = true
 files = ["src/bootstrap"]
 
 [[tool.mypy.overrides]]
-module = ["tests.*"]
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
+# uvicorn is only present with the [web] extra; api/__main__ imports it under
+# try/except. Ignore the missing stub so the type check is deterministic
+# whether or not the extra is installed.
+module = ["uvicorn"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "8.0"
@@ -89,4 +120,8 @@ addopts = [
     "--strict-markers",
     "--strict-config",
 ]
+# strict: only tests explicitly marked @pytest.mark.asyncio run on the loop
+# (matches how tests/api/test_broker is written). The marker itself is
+# registered by the pytest-asyncio plugin, so it isn't declared here.
+asyncio_mode = "strict"
 filterwarnings = ["error"]
