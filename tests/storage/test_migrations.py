@@ -26,9 +26,7 @@ def test_apply_migrations_creates_tables_and_tracks_version() -> None:
     # Tables are present.
     tables = {
         row[0]
-        for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     }
     assert "_bootstrap_migrations" in tables
     assert "entities" in tables

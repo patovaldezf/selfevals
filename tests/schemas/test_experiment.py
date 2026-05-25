@@ -105,9 +105,7 @@ def test_canary_with_outcome_metrics_ok() -> None:
     exp = _experiment(
         run=RunSpec(sandbox=SandboxMode.LIVE_CANARY),
         judge_defenses=JudgeDefenses(
-            outcome_metrics=OutcomeMetricsSpec(
-                metrics=["human_approval_rate", "escalation_rate"]
-            )
+            outcome_metrics=OutcomeMetricsSpec(metrics=["human_approval_rate", "escalation_rate"])
         ),
     )
     assert exp.run.sandbox == SandboxMode.LIVE_CANARY
@@ -121,7 +119,15 @@ def test_post_mvp_proposer_rejected() -> None:
 
 @pytest.mark.parametrize(
     "metric",
-    ["pass@1", "pass@5", "pass^3", "pass^10", "consistency_rate", "stability_score", "recovery_rate"],
+    [
+        "pass@1",
+        "pass@5",
+        "pass^3",
+        "pass^10",
+        "consistency_rate",
+        "stability_score",
+        "recovery_rate",
+    ],
 )
 def test_reliability_metric_names_valid(metric: str) -> None:
     spec = ReliabilitySpec(metrics=[metric])

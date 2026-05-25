@@ -144,9 +144,7 @@ def aggregate_iteration(
         return IterationAggregate(primary_metric=primary_metric, primary_value=0.0)
 
     primary_value = _compute_metric(primary_metric, case_outcomes)
-    reliability = {
-        m: _compute_metric(m, case_outcomes) for m in reliability_metrics
-    }
+    reliability = {m: _compute_metric(m, case_outcomes) for m in reliability_metrics}
     failure_counter: Counter[str] = Counter()
     for outcome in case_outcomes:
         for mode in outcome.failure_modes:
@@ -207,7 +205,9 @@ def _compute_metric(metric: str, outcomes: list[CaseOutcome]) -> float:
     if metric == "recovery_rate":
         # Of cases that failed on rep 0, fraction that pass on rep 1+.
         denom = sum(
-            1 for o in outcomes if o.per_repetition_label and o.per_repetition_label[0] != GradeLabel.PASS
+            1
+            for o in outcomes
+            if o.per_repetition_label and o.per_repetition_label[0] != GradeLabel.PASS
         )
         if denom == 0:
             return 0.0

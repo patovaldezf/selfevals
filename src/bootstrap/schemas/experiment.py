@@ -272,9 +272,7 @@ class Experiment(BaseEntity):
     def _editable_requires_agent_loop(self) -> Experiment:
         triggers = self.editable.fields_requiring_agent_loop()
         if triggers and self.mode != Mode.AGENT_LOOP:
-            raise ValueError(
-                f"editable {triggers} requires mode=agent_loop; got mode={self.mode}"
-            )
+            raise ValueError(f"editable {triggers} requires mode=agent_loop; got mode={self.mode}")
         return self
 
     @model_validator(mode="after")
@@ -283,9 +281,7 @@ class Experiment(BaseEntity):
             self.run.sandbox == SandboxMode.LIVE_CANARY
             and self.judge_defenses.outcome_metrics is None
         ):
-            raise ValueError(
-                "run.sandbox=live_canary requires judge_defenses.outcome_metrics"
-            )
+            raise ValueError("run.sandbox=live_canary requires judge_defenses.outcome_metrics")
         return self
 
     @model_validator(mode="after")

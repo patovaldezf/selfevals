@@ -92,7 +92,9 @@ def test_risk_registry_dimension_lookup() -> None:
         workspace_id=WS,
         dimensions=[
             RiskDimension(name="overall", levels=["low", "medium", "high", "critical"]),
-            RiskDimension(name="reversibility", levels=["reversible", "needs_approval", "irreversible"]),
+            RiskDimension(
+                name="reversibility", levels=["reversible", "needs_approval", "irreversible"]
+            ),
         ],
     )
     assert rr.has_dimension("overall")

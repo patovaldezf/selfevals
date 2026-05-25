@@ -176,9 +176,7 @@ def _extract_response_text(context: GraderContext) -> str:
     return ""
 
 
-def _build_judge_request(
-    context: GraderContext, prompt: str, grader_name: str
-) -> AdapterRequest:
+def _build_judge_request(context: GraderContext, prompt: str, grader_name: str) -> AdapterRequest:
     from bootstrap.runner.adapters import AdapterRequest  # local import to avoid cycle
 
     return AdapterRequest(

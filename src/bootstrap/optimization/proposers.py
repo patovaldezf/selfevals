@@ -44,9 +44,7 @@ class Proposer(ABC):
     name: str
 
     @abstractmethod
-    def propose(
-        self, experiment: Experiment, context: ProposerContext
-    ) -> Proposal: ...
+    def propose(self, experiment: Experiment, context: ProposerContext) -> Proposal: ...
 
 
 def _validate_or_raise(proposal: Proposal, experiment: Experiment) -> None:
@@ -145,9 +143,7 @@ class GridProposer(Proposer):
     def propose(self, experiment: Experiment, context: ProposerContext) -> Proposal:
         combos = self._ensure_combos(experiment)
         if context.iteration_index >= len(combos):
-            raise SearchSpaceExhaustedError(
-                f"grid exhausted after {len(combos)} combinations"
-            )
+            raise SearchSpaceExhaustedError(f"grid exhausted after {len(combos)} combinations")
         params = combos[context.iteration_index]
         proposal = Proposal(
             parameters={"model_params": params},
@@ -194,12 +190,9 @@ class RandomProposer(Proposer):
 
     def propose(self, experiment: Experiment, context: ProposerContext) -> Proposal:
         if context.iteration_index >= self._max:
-            raise SearchSpaceExhaustedError(
-                f"random proposer exhausted after {self._max} samples"
-            )
+            raise SearchSpaceExhaustedError(f"random proposer exhausted after {self._max} samples")
         params = {
-            k: _sample_value(self._rng, v)
-            for k, v in experiment.search_space.model_params.items()
+            k: _sample_value(self._rng, v) for k, v in experiment.search_space.model_params.items()
         }
         proposal = Proposal(
             parameters={"model_params": params},

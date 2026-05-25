@@ -36,9 +36,7 @@ from bootstrap.storage.errors import (
 from bootstrap.storage.interface import ObjectStoreInterface
 
 _POINTER_SCHEME = "oss://"
-_POINTER_RE = re.compile(
-    r"^oss://(?P<workspace>[A-Za-z0-9._-]+)/(?P<hash>sha256:[0-9a-f]{64})$"
-)
+_POINTER_RE = re.compile(r"^oss://(?P<workspace>[A-Za-z0-9._-]+)/(?P<hash>sha256:[0-9a-f]{64})$")
 
 
 def make_pointer(workspace_id: str, content_hash: str) -> str:
@@ -80,9 +78,7 @@ class FilesystemObjectStore(ObjectStoreInterface):
             existing = path.read_bytes()
             if existing != data:
                 # SHA256 collision — astronomically unlikely; fail loud.
-                raise IntegrityViolationError(
-                    f"content_hash collision on {content_hash}"
-                )
+                raise IntegrityViolationError(f"content_hash collision on {content_hash}")
             return make_pointer(workspace_id, content_hash)
         path.write_bytes(data)
         return make_pointer(workspace_id, content_hash)

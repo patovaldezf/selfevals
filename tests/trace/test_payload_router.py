@@ -78,6 +78,4 @@ def test_workspace_id_required(tmp_path: Path) -> None:
 
 def test_negative_threshold_rejected(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
-        PayloadRouter(
-            FilesystemObjectStore(tmp_path), workspace_id=WS, inline_threshold_bytes=-1
-        )
+        PayloadRouter(FilesystemObjectStore(tmp_path), workspace_id=WS, inline_threshold_bytes=-1)

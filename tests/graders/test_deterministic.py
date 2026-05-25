@@ -76,8 +76,7 @@ def _trace(*, tool_uses: list[tuple[str, str]] | None = None) -> Trace:
                 output=LLMOutput(
                     stop_reason=StopReason.TOOL_USE,
                     tool_use_requested=[
-                        ToolUseRequest(tool=name, tool_use_id=tid)
-                        for (name, tid) in tool_uses
+                        ToolUseRequest(tool=name, tool_use_id=tid) for (name, tid) in tool_uses
                     ],
                 ),
             )

@@ -93,15 +93,11 @@ class DeterministicGrader(Grader):
         for needle in expected.must_not_include:
             probe = needle if self._case_sensitive else needle.lower()
             if probe in haystack:
-                violations.append(
-                    _Violation(failure_mode="forbidden_substring", detail=needle)
-                )
+                violations.append(_Violation(failure_mode="forbidden_substring", detail=needle))
 
         for required in expected.required_tools:
             if required not in invoked_set:
-                violations.append(
-                    _Violation(failure_mode="missing_required_tool", detail=required)
-                )
+                violations.append(_Violation(failure_mode="missing_required_tool", detail=required))
 
         for forbidden in expected.forbidden_tools:
             if forbidden in invoked_set:
@@ -110,16 +106,10 @@ class DeterministicGrader(Grader):
                 )
 
         if self._regex is not None and not self._regex.search(text):
-            violations.append(
-                _Violation(
-                    failure_mode="regex_mismatch", detail=self._regex.pattern
-                )
-            )
+            violations.append(_Violation(failure_mode="regex_mismatch", detail=self._regex.pattern))
 
         if expected.structured_output is not None:
-            response_struct = (
-                context.response.structured_output if context.response else None
-            )
+            response_struct = context.response.structured_output if context.response else None
             if response_struct != expected.structured_output:
                 violations.append(
                     _Violation(

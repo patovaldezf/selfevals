@@ -44,7 +44,12 @@ def new_prefixed_id(prefix: str) -> str:
 
     Prefix must be 2-6 lowercase ASCII letters; separator is underscore.
     """
-    if not 2 <= len(prefix) <= 6 or not prefix.isascii() or not prefix.isalpha() or not prefix.islower():
+    if (
+        not 2 <= len(prefix) <= 6
+        or not prefix.isascii()
+        or not prefix.isalpha()
+        or not prefix.islower()
+    ):
         raise ValueError(f"invalid id prefix: {prefix!r}")
     return f"{prefix}_{new_ulid()}"
 

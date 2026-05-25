@@ -6,14 +6,17 @@ from bootstrap.graders.base import GradeLabel
 from bootstrap.optimization.aggregator import CaseOutcome, aggregate_iteration
 
 
-def _outcome(labels: list[GradeLabel], *, cost: float = 0.0, duration: int = 0,
-             failure_modes: list[str] | None = None) -> CaseOutcome:
+def _outcome(
+    labels: list[GradeLabel],
+    *,
+    cost: float = 0.0,
+    duration: int = 0,
+    failure_modes: list[str] | None = None,
+) -> CaseOutcome:
     return CaseOutcome(
         case_id=f"ec_{hash(tuple(labels))}",
         per_repetition_label=labels,
-        per_repetition_score=[
-            1.0 if label == GradeLabel.PASS else 0.0 for label in labels
-        ],
+        per_repetition_score=[1.0 if label == GradeLabel.PASS else 0.0 for label in labels],
         cost_usd=cost,
         duration_ms=duration,
         failure_modes=failure_modes or [],

@@ -42,6 +42,5 @@ class SandboxPolicy:
         """Raise if the current mode is not supported in MVP."""
         if not self.is_mvp_supported():
             raise SandboxViolationError(
-                f"sandbox mode {self.mode!r} is reserved for post-MVP; "
-                "use mock or dry_run"
+                f"sandbox mode {self.mode!r} is reserved for post-MVP; use mock or dry_run"
             )

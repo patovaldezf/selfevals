@@ -14,9 +14,7 @@ class EntityNotFoundError(StorageError):
         self.entity_type = entity_type
         self.entity_id = entity_id
         self.workspace_id = workspace_id
-        super().__init__(
-            f"{entity_type} {entity_id!r} not found in workspace {workspace_id!r}"
-        )
+        super().__init__(f"{entity_type} {entity_id!r} not found in workspace {workspace_id!r}")
 
 
 class ObjectNotFoundError(StorageError):
@@ -60,8 +58,7 @@ class PointerHashMismatchError(StorageError):
         self.expected_hash = expected_hash
         self.actual_hash = actual_hash
         super().__init__(
-            f"pointer {pointer!r} integrity violation: "
-            f"expected {expected_hash}, got {actual_hash}"
+            f"pointer {pointer!r} integrity violation: expected {expected_hash}, got {actual_hash}"
         )
 
 

@@ -56,9 +56,7 @@ def test_seed_admin_only(tmp_path: Path) -> None:
 
 def test_seed_writes_through_workspace_scope(tmp_path: Path) -> None:
     storage = SQLiteStorage(tmp_path / "test.db")
-    result = seed_workspace(
-        storage, slug="pato", name="x", user_id="p@example.com"
-    )
+    result = seed_workspace(storage, slug="pato", name="x", user_id="p@example.com")
     # Re-open scope and verify we can list members.
     with storage.open(result.workspace.id) as scope:
         from bootstrap.schemas.workspace import Member, Workspace

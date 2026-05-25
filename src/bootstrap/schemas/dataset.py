@@ -83,9 +83,7 @@ class Dataset(BaseEntity):
     @model_validator(mode="after")
     def _frozen_or_active_requires_manifest_hash(self) -> Dataset:
         if self.status in (DatasetStatus.FROZEN, DatasetStatus.ACTIVE) and not self.manifest_hash:
-            raise ValueError(
-                f"Dataset status={self.status} requires a non-empty manifest_hash"
-            )
+            raise ValueError(f"Dataset status={self.status} requires a non-empty manifest_hash")
         return self
 
     def __setattr__(self, name: str, value: object) -> None:

@@ -90,6 +90,7 @@ def _ctx(content: str = "the answer") -> GraderContext:
 def _judge_returning(payload: dict[str, object]) -> EmbeddedAdapter:
     def fn(_: AdapterRequest) -> AdapterResponse:
         return AdapterResponse(content=json.dumps(payload))
+
     return EmbeddedAdapter(fn)
 
 
@@ -97,7 +98,9 @@ _RUBRIC = RubricTemplate(rubric="Did the agent answer correctly?")
 
 
 def test_happy_path_parses_judge_response() -> None:
-    judge = _judge_returning({"label": "pass", "reason": "matches", "score": 0.9, "confidence": 0.8})
+    judge = _judge_returning(
+        {"label": "pass", "reason": "matches", "score": 0.9, "confidence": 0.8}
+    )
     grader = LLMJudgeGrader("rubric_v1", judge_adapter=judge, rubric=_RUBRIC)
     res = grader.grade(_ctx())
     assert res.label == GradeLabel.PASS
@@ -178,9 +181,7 @@ def test_blocking_card_meeting_thresholds_runs_normally() -> None:
             min_recall=0.95,
             max_high_risk_false_negatives=0,
         ),
-        metrics=CalibrationMetrics(
-            precision=0.95, recall=0.97, high_risk_false_negatives=0
-        ),
+        metrics=CalibrationMetrics(precision=0.95, recall=0.97, high_risk_false_negatives=0),
     )
     judge = _judge_returning({"label": "pass", "reason": "ok"})
     grader = LLMJudgeGrader("g", judge_adapter=judge, rubric=_RUBRIC, card=card)
