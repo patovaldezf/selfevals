@@ -8,12 +8,23 @@ code. Errors that should produce a clean `error: <msg>` line raise
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+import sys
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from bootstrap._errors import BootstrapUserError
+from bootstrap.cli import _friendly
 from bootstrap.decision.matrix import DecisionMatrixEvaluator
+from bootstrap.graders.base import Grader
 from bootstrap.graders.deterministic import DeterministicGrader
+from bootstrap.graders.llm_judge import LLMJudgeGrader, RubricTemplate
+from bootstrap.graders.registry import (
+    available_graders,
+    register_grader,
+    resolve_graders,
+    unregister_grader,
+)
 from bootstrap.optimization.aggregator import IterationAggregate
 from bootstrap.optimization.loop import (
     IterationOutcome,
@@ -30,10 +41,10 @@ from bootstrap.repo.loader import (
     AgentEntrypoint,
     ExperimentSpec,
     LoaderError,
-    load_experiment_spec,
     resolve_agent_callable,
 )
 from bootstrap.reporter import render_json, render_markdown
+from bootstrap.reporter.compare import render_compare
 from bootstrap.runner.adapters import (
     AdapterRequest,
     AdapterResponse,
@@ -54,14 +65,31 @@ if TYPE_CHECKING:
     from bootstrap.schemas._base import BaseEntity
 
 
-class CommandError(Exception):
-    """Raised for user-correctable errors. CLI prints and exits 2."""
+class CommandError(BootstrapUserError):
+    """Raised for user-correctable errors. CLI prints and exits 2.
+
+    Thin alias of :class:`bootstrap._errors.BootstrapUserError` so the
+    rest of this module keeps the historical name. Anything new outside
+    the CLI should raise :class:`BootstrapUserError` directly.
+    """
 
 
 def _storage(args: argparse.Namespace) -> SQLiteStorage:
+    """Open the SQLite db, translating sqlite errors into friendly messages.
+
+    The two errors users actually hit (locked from a concurrent
+    process, corrupted db pointed at by `--db`) both surface from the
+    `sqlite3.connect` / first-PRAGMA path; the friendly layer turns
+    them into a one-line CLI error.
+    """
+    import sqlite3
+
     db_path = Path(args.db)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    return SQLiteStorage(db_path)
+    try:
+        return SQLiteStorage(db_path)
+    except sqlite3.Error as exc:
+        raise _friendly.wrap_sqlite_error(exc, db_path=db_path) from exc
 
 
 # --- init ---
@@ -136,8 +164,10 @@ def cmd_experiment_show(args: argparse.Namespace) -> int:
         print(f"  state:       {exp.state}")
         print(f"  mode:        {exp.mode}")
         print(f"  proposer:    {exp.proposer.strategy}")
-        print(f"  target:      {exp.target.primary.name} "
-              f"{exp.target.primary.operator} {exp.target.primary.value:g}")
+        print(
+            f"  target:      {exp.target.primary.name} "
+            f"{exp.target.primary.operator} {exp.target.primary.value:g}"
+        )
         print(f"  iterations:  {len(iterations)} of {exp.run.max_iterations}")
     finally:
         storage.close()
@@ -202,27 +232,12 @@ def cmd_compare(args: argparse.Namespace) -> int:
     assert isinstance(b, IterationRecord)
     if a.experiment_id != b.experiment_id:
         raise CommandError(
-            f"iterations belong to different experiments "
-            f"({a.experiment_id} vs {b.experiment_id})"
+            f"iterations belong to different experiments ({a.experiment_id} vs {b.experiment_id})"
         )
-
-    a_primary = a.metrics.primary if a.metrics else None
-    b_primary = b.metrics.primary if b.metrics else None
-    if a_primary is None or b_primary is None:
+    if a.metrics is None or b.metrics is None:
         raise CommandError("one of the iterations has no metrics")
-    if a_primary.name != b_primary.name:
-        raise CommandError(
-            f"iterations report different primary metrics "
-            f"({a_primary.name} vs {b_primary.name})"
-        )
 
-    delta = b_primary.value - a_primary.value
-    print(f"primary metric: {a_primary.name}")
-    print(f"  A (#{a.iteration:>3})  {a_primary.value:.4g}")
-    print(f"  B (#{b.iteration:>3})  {b_primary.value:.4g}")
-    print(f"  Δ           {delta:+.4g}")
-    if a.decision and b.decision:
-        print(f"decision: {a.decision.outcome}  →  {b.decision.outcome}")
+    print(render_compare(a, b))
     return 0
 
 
@@ -245,20 +260,14 @@ def cmd_estimate(args: argparse.Namespace) -> int:
 # --- internals ---
 
 
-def _require_entity(
-    scope: object, entity_type: type[BaseEntity], entity_id: str
-) -> BaseEntity:
+def _require_entity(scope: object, entity_type: type[BaseEntity], entity_id: str) -> BaseEntity:
     try:
         return scope.get_entity(entity_type, entity_id)  # type: ignore[attr-defined,no-any-return]
     except Exception as exc:
-        raise CommandError(
-            f"{entity_type.__name__} {entity_id} not found in workspace"
-        ) from exc
+        raise CommandError(f"{entity_type.__name__} {entity_id} not found in workspace") from exc
 
 
-def _experiment_iterations(
-    scope: object, experiment_id: str
-) -> list[IterationRecord]:
+def _experiment_iterations(scope: object, experiment_id: str) -> list[IterationRecord]:
     listed = scope.list_entities(IterationRecord, ListFilter())  # type: ignore[attr-defined]
     iterations = [
         it for it in listed if isinstance(it, IterationRecord) and it.experiment_id == experiment_id
@@ -267,9 +276,7 @@ def _experiment_iterations(
     return iterations
 
 
-def _experiment_decisions(
-    scope: object, experiment_id: str
-) -> dict[int, DecisionRecord]:
+def _experiment_decisions(scope: object, experiment_id: str) -> dict[int, DecisionRecord]:
     listed = scope.list_entities(DecisionRecord, ListFilter())  # type: ignore[attr-defined]
     by_iter: dict[int, DecisionRecord] = {}
     for d in listed:
@@ -340,11 +347,8 @@ def _reconstruct_result(
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    spec_path = Path(args.spec)
-    try:
-        spec = load_experiment_spec(spec_path, workspace_id=args.workspace)
-    except LoaderError as exc:
-        raise CommandError(str(exc)) from exc
+    _ensure_cwd_on_path()
+    spec = _friendly.load_spec(args.spec, workspace_id=args.workspace)
 
     if args.max_iterations is not None:
         if args.max_iterations < 1:
@@ -357,6 +361,13 @@ def cmd_run(args: argparse.Namespace) -> int:
         raise CommandError(str(exc)) from exc
     adapter = _wrap_user_callable(callable_obj, spec.agent)
     proposer = _build_proposer(spec.experiment)
+    registered_specs = _register_grader_specs(spec)
+    try:
+        graders = _resolve_case_graders(spec.cases)
+    except Exception:
+        for name in registered_specs:
+            unregister_grader(name)
+        raise
 
     storage = _storage(args) if not args.no_persist else None
     scope = None
@@ -375,7 +386,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             experiment=spec.experiment,
             executor=executor,
             proposer=proposer,
-            graders=[DeterministicGrader()],
+            graders=graders,
             cases=spec.cases,
             scope=scope,
             decision_evaluator=DecisionMatrixEvaluator(),
@@ -387,12 +398,105 @@ def cmd_run(args: argparse.Namespace) -> int:
             scope.close()
         if storage is not None:
             storage.close()
+        for name in registered_specs:
+            unregister_grader(name)
 
     if args.format == "json":
         print(render_json(result))
     else:
         print(render_markdown(result))
     return 0
+
+
+def _ensure_cwd_on_path() -> None:
+    """Make the user's project root importable when the CLI runs.
+
+    `uv run bootstrap ...` invokes a console script whose `sys.path` does
+    not include the cwd, so agent entrypoints like
+    `examples.hello_llm.agent:run` would fail to import. We insert the
+    cwd at the front of `sys.path` (once) so the resolver sees user
+    packages.
+    """
+    cwd = str(Path.cwd())
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+
+
+def _register_grader_specs(spec: ExperimentSpec) -> list[str]:
+    """Register YAML-declared graders into the global registry.
+
+    Returns the list of names that were registered so the caller can
+    unregister them when the run ends — keeping the registry hermetic
+    across consecutive invocations of `bootstrap run`.
+
+    Deterministic specs override the default factory with one that uses
+    the declared name. LLM-judge specs require a `judge_entrypoint` (or
+    fall back to the agent entrypoint) so the rubric grader can invoke
+    a real callable.
+    """
+    registered: list[str] = []
+    for g_spec in spec.graders:
+        if g_spec.type == "deterministic":
+            register_grader(
+                g_spec.name,
+                _deterministic_factory(g_spec.name),
+            )
+            registered.append(g_spec.name)
+            continue
+        if g_spec.type == "llm_judge":
+            entry = g_spec.judge_entrypoint or spec.agent
+            try:
+                judge_callable = resolve_agent_callable(entry)
+            except LoaderError as exc:
+                raise CommandError(str(exc)) from exc
+            judge_adapter = _wrap_user_callable(judge_callable, entry)
+            rubric = g_spec.rubric or ""
+            register_grader(
+                g_spec.name,
+                _llm_judge_factory(g_spec.name, judge_adapter, rubric),
+            )
+            registered.append(g_spec.name)
+            continue
+        raise CommandError(f"unsupported grader type: {g_spec.type!r}")  # defensive
+    return registered
+
+
+def _deterministic_factory(name: str) -> Callable[[], Grader]:
+    def _build() -> Grader:
+        return DeterministicGrader(name=name)
+
+    return _build
+
+
+def _llm_judge_factory(name: str, judge_adapter: AgentAdapter, rubric: str) -> Callable[[], Grader]:
+    template = RubricTemplate(rubric=rubric)
+
+    def _build() -> Grader:
+        return LLMJudgeGrader(name=name, judge_adapter=judge_adapter, rubric=template)
+
+    return _build
+
+
+def _resolve_case_graders(cases: Sequence[object]) -> list[Grader]:
+    """Build the grader list the loop will run for every case.
+
+    The default behaviour (no case declares a `graders:` list) is
+    unchanged from the original `[DeterministicGrader()]`. As soon as a
+    case names graders by string we route through the registry, which
+    is the codepath that raises the "not registered" friendly error.
+    """
+    referenced: list[str] = []
+    for case in cases:
+        names = getattr(case, "graders", None) or []
+        for n in names:
+            if n not in referenced:
+                referenced.append(n)
+    if not referenced:
+        return [DeterministicGrader()]
+    # `resolve_graders` raises BootstrapUserError if any name is unknown,
+    # listing the registry contents — the user-facing error path for (c).
+    _ = available_graders()  # cheap, also guarantees registry import side effects.
+    return list(resolve_graders(referenced))
 
 
 # --- run helpers ---

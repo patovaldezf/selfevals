@@ -59,9 +59,7 @@ def _capture(capsys: pytest.CaptureFixture[str], argv: list[str]) -> tuple[int, 
 
 def test_init_creates_workspace(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     db = tmp_path / "db.sqlite"
-    rc, stdout, _ = _capture(
-        capsys, ["--db", str(db), "init", "my-team", "--name", "My Team"]
-    )
+    rc, stdout, _ = _capture(capsys, ["--db", str(db), "init", "my-team", "--name", "My Team"])
     assert rc == 0
     assert "slug=my-team" in stdout
     assert "name=My Team" in stdout
@@ -85,10 +83,14 @@ def test_estimate_outputs_total_calls_and_cost(capsys: pytest.CaptureFixture[str
         capsys,
         [
             "estimate",
-            "--cases", "5",
-            "--space-size", "4",
-            "--reps", "2",
-            "--cost-per-call", "0.01",
+            "--cases",
+            "5",
+            "--space-size",
+            "4",
+            "--reps",
+            "2",
+            "--cost-per-call",
+            "0.01",
         ],
     )
     assert rc == 0
@@ -101,9 +103,12 @@ def test_estimate_rejects_invalid_args(capsys: pytest.CaptureFixture[str]) -> No
         capsys,
         [
             "estimate",
-            "--cases", "0",
-            "--space-size", "1",
-            "--cost-per-call", "0.01",
+            "--cases",
+            "0",
+            "--space-size",
+            "1",
+            "--cost-per-call",
+            "0.01",
         ],
     )
     assert rc == 2
@@ -150,9 +155,7 @@ def test_report_renders_markdown_after_real_run(
     assert "\n| 1 |" in stdout
 
 
-def test_report_json_round_trips(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_report_json_round_trips(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     db = tmp_path / "db.sqlite"
     rc, init_out, _ = _capture(capsys, ["--db", str(db), "init", "team"])
     assert rc == 0
@@ -160,9 +163,7 @@ def test_report_json_round_trips(
     assert ws_id is not None
     exp = _seed_experiment_into_db(db, ws_id)
 
-    rc, stdout, _ = _capture(
-        capsys, ["--db", str(db), "report", ws_id, exp.id, "--format", "json"]
-    )
+    rc, stdout, _ = _capture(capsys, ["--db", str(db), "report", ws_id, exp.id, "--format", "json"])
     assert rc == 0
     payload = json.loads(stdout)
     assert payload["schema_version"] == "1"
@@ -171,9 +172,7 @@ def test_report_json_round_trips(
     assert payload["termination"]["reason"] == "loaded_from_storage"
 
 
-def test_compare_two_iterations(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_compare_two_iterations(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     db = tmp_path / "db.sqlite"
     rc, init_out, _ = _capture(capsys, ["--db", str(db), "init", "team"])
     assert rc == 0
@@ -186,6 +185,7 @@ def test_compare_two_iterations(
     try:
         with storage.open(ws_id) as scope:
             from bootstrap.schemas.iteration import IterationRecord
+
             iterations = sorted(
                 (it for it in scope.list_entities(IterationRecord)),
                 key=lambda it: it.iteration,
@@ -199,7 +199,11 @@ def test_compare_two_iterations(
         ["--db", str(db), "compare", ws_id, iterations[0].id, iterations[1].id],
     )
     assert rc == 0
-    assert "primary metric: pass@1" in stdout
+    # New compare layout: header, proposal+metrics diff tables, recommendation.
+    assert "Comparing iter A (#0) vs iter B (#1)" in stdout
+    assert "## Proposal diff" in stdout
+    assert "## Metrics diff" in stdout
+    assert "`pass@1`" in stdout
     assert "Δ" in stdout
 
 

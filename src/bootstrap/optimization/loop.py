@@ -235,17 +235,16 @@ class OptimizationLoop:
                 parameter_overrides=proposal.parameters,
             )
             case_runs.append(case_run)
+            active_graders = _graders_for_case(self._graders, case)
             grades_per_rep: list[list[GradeResult]] = []
             for rep in case_run.repetitions:
                 grades = [
                     g.grade(GraderContext(case=case, trace=rep.trace, response=rep.response))
-                    for g in self._graders
+                    for g in active_graders
                 ]
                 grades_per_rep.append(grades)
             per_case_grades[case.id] = grades_per_rep
-            case_outcomes.append(
-                Aggregator.case_outcome(case, case_run, grades_per_rep)
-            )
+            case_outcomes.append(Aggregator.case_outcome(case, case_run, grades_per_rep))
         primary_metric = self._experiment.target.primary.name
         reliability_metrics = self._experiment.reliability.metrics
         aggregate = aggregate_iteration(
@@ -285,9 +284,7 @@ class OptimizationLoop:
             ),
         )
         variant_id = new_prefixed_id("var")
-        trace_run_ids = [
-            rep.trace.run.run_id for run in case_runs for rep in run.repetitions
-        ]
+        trace_run_ids = [rep.trace.run.run_id for run in case_runs for rep in run.repetitions]
         return IterationRecord(
             id=IterationRecord.make_id(),
             workspace_id=self._experiment.workspace_id,
@@ -312,6 +309,25 @@ class OptimizationLoop:
                 rationale=rationale,
             ),
         )
+
+
+def _graders_for_case(graders: list[Grader], case: EvalCase) -> list[Grader]:
+    """Filter `graders` by `case.graders` if the case opts in.
+
+    When the case lists no graders (default), every grader applies — the
+    pre-existing contract. When the case lists names, only matching
+    graders run. This lets one experiment combine a deterministic grader
+    with an LLM judge whose rubric is meaningful for only a subset of
+    cases, without the judge contaminating unrelated cases.
+    """
+    if not case.graders:
+        return graders
+    wanted = set(case.graders)
+    filtered = [g for g in graders if getattr(g, "name", None) in wanted]
+    # If the case lists names but none match a registered grader, fall back
+    # to the full list — this matches the prior behaviour (everything runs)
+    # rather than silently producing zero grades.
+    return filtered or graders
 
 
 def _has_converged(values: Iterable[float], min_delta: float, patience: int) -> bool:

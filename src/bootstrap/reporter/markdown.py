@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
+from bootstrap.reporter._metrics import CostTimeSummary, compute_cost_time_summary
 from bootstrap.schemas.enums import DecisionOutcome
 
 if TYPE_CHECKING:
@@ -51,13 +52,10 @@ def render_markdown(
     lines.append("")
 
     target = exp.target.primary
-    lines.append(
-        f"**Target:** `{target.name}` {target.operator} {target.value:g}"
-    )
+    lines.append(f"**Target:** `{target.name}` {target.operator} {target.value:g}")
     if exp.target.guardrails:
         guardrail_summary = ", ".join(
-            f"`{g.name}` {g.operator} {g.value:g}"
-            for g in exp.target.guardrails
+            f"`{g.name}` {g.operator} {g.value:g}" for g in exp.target.guardrails
         )
         lines.append(f"**Guardrails:** {guardrail_summary}")
     lines.append("")
@@ -90,6 +88,14 @@ def render_markdown(
     lines.extend(_iteration_table(result.iterations))
     lines.append("")
 
+    summary = compute_cost_time_summary(result)
+    cost_time_lines = _cost_time_lines(summary)
+    if cost_time_lines:
+        lines.append("## Cost & Time")
+        lines.append("")
+        lines.extend(cost_time_lines)
+        lines.append("")
+
     failure_lines = _failure_mode_lines(
         (it.aggregate for it in result.iterations),
         top_n=top_failure_modes,
@@ -98,6 +104,13 @@ def render_markdown(
         lines.append("## Top failure modes")
         lines.append("")
         lines.extend(failure_lines)
+        lines.append("")
+
+    next_steps = _next_steps_lines(result)
+    if next_steps:
+        lines.append("## Next steps")
+        lines.append("")
+        lines.extend(next_steps)
         lines.append("")
 
     return "\n".join(lines)
@@ -117,17 +130,14 @@ def _iteration_table(iterations: list[IterationOutcome]) -> list[str]:
         rationale_short = rationale if len(rationale) <= 80 else rationale[:77] + "…"
         rationale_escaped = rationale_short.replace("|", "\\|")
         rows.append(
-            f"| {it.iteration} | {primary:.4g} | {delta} | "
-            f"{outcome} | {rationale_escaped} |"
+            f"| {it.iteration} | {primary:.4g} | {delta} | {outcome} | {rationale_escaped} |"
         )
         if baseline is None or primary > baseline:
             baseline = primary
     return rows
 
 
-def _failure_mode_lines(
-    aggregates: Iterable[IterationAggregate], *, top_n: int
-) -> list[str]:
+def _failure_mode_lines(aggregates: Iterable[IterationAggregate], *, top_n: int) -> list[str]:
     totals: dict[str, int] = {}
     for agg in aggregates:
         for mode, count in agg.failure_mode_counts.items():
@@ -144,3 +154,79 @@ def _fmt_value(val: object) -> str:
     if isinstance(val, str):
         return val
     return repr(val)
+
+
+def _cost_time_lines(summary: CostTimeSummary) -> list[str]:
+    """Render the Cost & Time bullet list.
+
+    Returns `[]` when neither cost nor time data exists — the caller
+    omits the whole section so we never show "$0.00" placeholders.
+    """
+    if not summary.has_any:
+        return []
+    out: list[str] = []
+    if summary.has_cost:
+        out.append(f"- **Total cost:** ${_fmt_cost(summary.cost_total_usd)}")
+        if summary.cost_per_iteration_usd is not None:
+            out.append(
+                f"  - per iteration: ${_fmt_cost(summary.cost_per_iteration_usd)} "
+                f"({summary.iterations} iter)"
+            )
+        if summary.cost_per_case_usd is not None:
+            out.append(
+                f"  - per case: ${_fmt_cost(summary.cost_per_case_usd)} "
+                f"({summary.cases_run} case run{'s' if summary.cases_run != 1 else ''})"
+            )
+    if summary.has_time:
+        out.append(f"- **Total time:** {_fmt_time(summary.time_total_seconds)}")
+        if summary.time_per_iteration_seconds is not None:
+            out.append(f"  - per iteration: {_fmt_time(summary.time_per_iteration_seconds)}")
+        if summary.time_per_case_seconds is not None:
+            out.append(f"  - per case: {_fmt_time(summary.time_per_case_seconds)}")
+    return out
+
+
+def _fmt_cost(usd: float | None) -> str:
+    if usd is None:
+        return "—"
+    if usd < 0.01:
+        return f"{usd:.4f}"
+    return f"{usd:.2f}"
+
+
+def _fmt_time(seconds: float | None) -> str:
+    if seconds is None:
+        return "—"
+    if seconds < 1.0:
+        return f"{seconds * 1000:.0f}ms"
+    if seconds < 60.0:
+        return f"{seconds:.2f}s"
+    minutes, rest = divmod(seconds, 60.0)
+    return f"{int(minutes)}m{rest:04.1f}s"
+
+
+def _next_steps_lines(result: OptimizationResult) -> list[str]:
+    """Suggest follow-up commands the reader can copy-paste.
+
+    Always emit the commands. They no-op gracefully when the run
+    wasn't persisted (CLI prints `(no iterations)` etc.), so we don't
+    need to guess persistence from the result alone — and guessing
+    would lie when wrong.
+    """
+    exp = result.experiment
+    ws_id = exp.workspace_id
+    exp_id = exp.id
+
+    out: list[str] = []
+    out.append("Inspect this experiment (requires the run to be persisted to SQLite):")
+    out.append("")
+    out.append("```bash")
+    out.append(f"bootstrap iteration list {ws_id} {exp_id}")
+    out.append(f"bootstrap experiment show {ws_id} {exp_id}")
+    if len(result.iterations) >= 2:
+        a = result.iterations[0].iteration_record.id
+        b = result.iterations[-1].iteration_record.id
+        out.append(f"bootstrap compare {ws_id} {a} {b}")
+    out.append(f"bootstrap report {ws_id} {exp_id} --format json")
+    out.append("```")
+    return out

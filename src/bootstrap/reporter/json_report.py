@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from bootstrap.reporter._metrics import compute_cost_time_summary
+
 if TYPE_CHECKING:
     from bootstrap.optimization.loop import IterationOutcome, OptimizationResult
 
@@ -24,6 +26,7 @@ def render_json(result: OptimizationResult, *, indent: int | None = 2) -> str:
 def to_dict(result: OptimizationResult) -> dict[str, Any]:
     exp = result.experiment
     best = result.best_iteration
+    summary = compute_cost_time_summary(result)
     return {
         "schema_version": _SCHEMA_VERSION,
         "experiment": {
@@ -47,6 +50,16 @@ def to_dict(result: OptimizationResult) -> dict[str, Any]:
         "termination": {
             "reason": result.terminated_reason or None,
             "iterations_run": len(result.iterations),
+        },
+        "cost_time": {
+            "cost_total_usd": summary.cost_total_usd,
+            "cost_per_iteration_usd": summary.cost_per_iteration_usd,
+            "cost_per_case_usd": summary.cost_per_case_usd,
+            "time_total_seconds": summary.time_total_seconds,
+            "time_per_iteration_seconds": summary.time_per_iteration_seconds,
+            "time_per_case_seconds": summary.time_per_case_seconds,
+            "iterations": summary.iterations,
+            "cases_run": summary.cases_run,
         },
         "best_iteration": _iteration_to_dict(best) if best is not None else None,
         "iterations": [_iteration_to_dict(it) for it in result.iterations],
