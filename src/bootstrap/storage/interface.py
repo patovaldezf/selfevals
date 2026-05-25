@@ -112,9 +112,7 @@ class WorkspaceScope(ABC):
         on `version` is enforced."""
 
     @abstractmethod
-    def get_entity(
-        self, entity_type: type[BaseEntity], entity_id: str
-    ) -> BaseEntity:
+    def get_entity(self, entity_type: type[BaseEntity], entity_id: str) -> BaseEntity:
         """Load one entity by id. Raises `EntityNotFoundError`."""
 
     @abstractmethod
@@ -126,9 +124,7 @@ class WorkspaceScope(ABC):
         """List entities of a type within this workspace, with optional filter."""
 
     @abstractmethod
-    def delete_entity(
-        self, entity_type: type[BaseEntity], entity_id: str
-    ) -> None:
+    def delete_entity(self, entity_type: type[BaseEntity], entity_id: str) -> None:
         """Hard delete (soft delete is done by setting `deleted_at` and calling
         put_entity)."""
 

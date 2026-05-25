@@ -31,16 +31,17 @@ def test_run_example_no_persist_markdown(
     assert "pass@1 = 1" in stdout
 
 
-def test_run_example_no_persist_json(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_run_example_no_persist_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     rc, stdout, _ = _capture(
         capsys,
         [
-            "run", str(REPO_EXAMPLE),
+            "run",
+            str(REPO_EXAMPLE),
             "--no-persist",
-            "--max-iterations", "2",
-            "--format", "json",
+            "--max-iterations",
+            "2",
+            "--format",
+            "json",
         ],
     )
     assert rc == 0
@@ -62,6 +63,7 @@ def test_run_persists_iterations_to_storage(
     # IterationRecords + DecisionRecords should be in the db.
     from bootstrap.schemas.iteration import DecisionRecord, IterationRecord
     from bootstrap.storage.sqlite import SQLiteStorage
+
     storage = SQLiteStorage(db)
     try:
         with storage.open("ws_01HZZZZZZZZZZZZZZZZZZZZZZZ") as scope:
@@ -73,9 +75,7 @@ def test_run_persists_iterations_to_storage(
     assert len(decisions) == 2
 
 
-def test_run_missing_spec_reports_error(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_run_missing_spec_reports_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     rc, _, stderr = _capture(
         capsys,
         ["run", str(tmp_path / "nope.yaml"), "--no-persist"],
@@ -84,9 +84,7 @@ def test_run_missing_spec_reports_error(
     assert "not found" in stderr
 
 
-def test_run_invalid_max_iterations(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_run_invalid_max_iterations(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     rc, _, stderr = _capture(
         capsys,
         ["run", str(REPO_EXAMPLE), "--no-persist", "--max-iterations", "0"],

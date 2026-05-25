@@ -44,7 +44,9 @@ from bootstrap.schemas.iteration import (
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
 
-def _experiment(*, mode: Mode = Mode.HANDOFF, editable: EditableContract | None = None) -> Experiment:
+def _experiment(
+    *, mode: Mode = Mode.HANDOFF, editable: EditableContract | None = None
+) -> Experiment:
     return Experiment(
         id=Experiment.make_id(),
         workspace_id=WS,

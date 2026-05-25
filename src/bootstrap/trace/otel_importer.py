@@ -187,13 +187,13 @@ def _build_tool_span(span: dict[str, Any], attrs: dict[str, Any]) -> ToolCallSpa
         or attrs.get("tool.name")
         or span.get("name", "tool_call")
     )
-    raw_status = (
-        attrs.get("tool.status")
-        or attrs.get("openinference.tool.status")
-        or "ok"
-    )
+    raw_status = attrs.get("tool.status") or attrs.get("openinference.tool.status") or "ok"
     status_norm = str(raw_status).strip().lower()
-    status = ToolCallStatus(status_norm) if status_norm in {s.value for s in ToolCallStatus} else ToolCallStatus.OK
+    status = (
+        ToolCallStatus(status_norm)
+        if status_norm in {s.value for s in ToolCallStatus}
+        else ToolCallStatus.OK
+    )
     return ToolCallSpan(
         id=span.get("span_id") or new_prefixed_id("sp"),
         parent_id=span.get("parent_span_id"),
@@ -283,9 +283,13 @@ def _link_tool_use_ids(spans: list[Span]) -> list[Span]:
             out[idx] = s.model_copy(update={"tool_use_id": None})
             continue
         # Append a synthetic tool_use_requested entry on the LLM span.
-        new_requests = [*candidate.output.tool_use_requested, ToolUseRequest(
-            tool=s.tool_name, tool_use_id=s.tool_use_id,
-        )]
+        new_requests = [
+            *candidate.output.tool_use_requested,
+            ToolUseRequest(
+                tool=s.tool_name,
+                tool_use_id=s.tool_use_id,
+            ),
+        ]
         new_output = candidate.output.model_copy(update={"tool_use_requested": new_requests})
         new_candidate = candidate.model_copy(update={"output": new_output})
         out[out.index(candidate)] = new_candidate

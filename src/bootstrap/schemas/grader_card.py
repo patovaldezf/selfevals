@@ -107,7 +107,6 @@ class GraderCard(BaseEntity):
             bad.append("max_high_risk_false_negatives == 0")
         if bad:
             raise ValueError(
-                "blocking GraderCard must declare strict calibration thresholds: "
-                + ", ".join(bad)
+                "blocking GraderCard must declare strict calibration thresholds: " + ", ".join(bad)
             )
         return self

@@ -106,14 +106,16 @@ class TokenBreakdown(BootstrapModel):
     @model_validator(mode="after")
     def _total_covers_components(self) -> TokenBreakdown:
         component_sum = (
-            self.input + self.input_cache_read + self.input_cache_creation
-            + self.output + self.reasoning
+            self.input
+            + self.input_cache_read
+            + self.input_cache_creation
+            + self.output
+            + self.reasoning
         )
         # Providers may double-count or omit; we only assert the lower bound.
         if self.total < component_sum:
             raise ValueError(
-                f"tokens.total ({self.total}) must be >= sum of components "
-                f"({component_sum})"
+                f"tokens.total ({self.total}) must be >= sum of components ({component_sum})"
             )
         return self
 

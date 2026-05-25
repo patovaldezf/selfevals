@@ -243,15 +243,27 @@ def test_end_to_end_chain_constructable() -> None:
 
     # Everything binds together by workspace_id; ids stay distinct.
     ids = [
-        ws.id, feature.id, agent.id, fleet.id, case.id, dataset.id,
-        exp.id, trace.id, itr.id, decision_record.id,
+        ws.id,
+        feature.id,
+        agent.id,
+        fleet.id,
+        case.id,
+        dataset.id,
+        exp.id,
+        trace.id,
+        itr.id,
+        decision_record.id,
     ]
     assert len(set(ids)) == len(ids)
     for entity_id, ws_field in [
-        (feature.workspace_id, ws.id), (agent.workspace_id, ws.id),
-        (fleet.workspace_id, ws.id), (case.workspace_id, ws.id),
-        (dataset.workspace_id, ws.id), (exp.workspace_id, ws.id),
-        (trace.workspace_id, ws.id), (itr.workspace_id, ws.id),
+        (feature.workspace_id, ws.id),
+        (agent.workspace_id, ws.id),
+        (fleet.workspace_id, ws.id),
+        (case.workspace_id, ws.id),
+        (dataset.workspace_id, ws.id),
+        (exp.workspace_id, ws.id),
+        (trace.workspace_id, ws.id),
+        (itr.workspace_id, ws.id),
         (decision_record.workspace_id, ws.id),
     ]:
         assert entity_id == ws_field

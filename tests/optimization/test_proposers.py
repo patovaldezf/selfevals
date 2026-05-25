@@ -87,9 +87,7 @@ def test_manual_exhausts_after_list_consumed() -> None:
 
 def test_manual_validates_editable_contract() -> None:
     exp = _experiment()  # editable: prompt + model_params; tool_code is False
-    proposer = ManualProposer(
-        [{"tool_code": "rewritten", "hypothesis": "hack"}]
-    )
+    proposer = ManualProposer([{"tool_code": "rewritten", "hypothesis": "hack"}])
     with pytest.raises(ProposalRejectedError):
         proposer.propose(exp, ProposerContext(iteration_index=0))
 
@@ -162,7 +160,9 @@ def test_random_samples_from_list_choices() -> None:
     rp = RandomProposer(max_proposals=20, seed=1)
     seen: set[str] = set()
     for i in range(20):
-        seen.add(rp.propose(exp, ProposerContext(iteration_index=i)).parameters["model_params"]["model"])
+        seen.add(
+            rp.propose(exp, ProposerContext(iteration_index=i)).parameters["model_params"]["model"]
+        )
     assert seen <= {"claude", "gpt"}
 
 

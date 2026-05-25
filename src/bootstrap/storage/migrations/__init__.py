@@ -55,8 +55,7 @@ def apply_migrations(conn: sqlite3.Connection) -> list[int]:
         ")"
     )
     applied = {
-        row[0]
-        for row in conn.execute("SELECT version FROM _bootstrap_migrations").fetchall()
+        row[0] for row in conn.execute("SELECT version FROM _bootstrap_migrations").fetchall()
     }
     newly_applied: list[int] = []
     for migration in discover_migrations():
@@ -74,9 +73,7 @@ def apply_migrations(conn: sqlite3.Connection) -> list[int]:
 
 def current_version(conn: sqlite3.Connection) -> int:
     """Return the highest applied migration version, or 0 if none."""
-    row = conn.execute(
-        "SELECT MAX(version) FROM _bootstrap_migrations"
-    ).fetchone()
+    row = conn.execute("SELECT MAX(version) FROM _bootstrap_migrations").fetchone()
     if row is None or row[0] is None:
         return 0
     value: int = row[0]

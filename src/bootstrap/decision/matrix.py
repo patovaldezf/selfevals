@@ -80,9 +80,7 @@ def _guardrails_violated(
         if value is None:
             continue
         if not _check_operator(value, g.operator, g.value):
-            violations.append(
-                f"{g.name}={value:.6g} fails {g.operator}{g.value:.6g}"
-            )
+            violations.append(f"{g.name}={value:.6g} fails {g.operator}{g.value:.6g}")
     return violations
 
 
@@ -110,8 +108,7 @@ def evaluate_iteration(
         return DecisionEvaluation(
             outcome=guardrail_outcome,
             rationale=(
-                "guardrail(s) violated: " + "; ".join(violations)
-                + f"; policy={guardrail_policy}"
+                "guardrail(s) violated: " + "; ".join(violations) + f"; policy={guardrail_policy}"
             ),
             violated_guardrails=violations,
             primary_delta=primary_delta,
@@ -152,9 +149,7 @@ def evaluate_iteration(
             )
         # Regressed below target → consult policy.
         regression_policy = experiment.decision.if_regression_fails
-        regression_outcome = _OUTCOME_FOR_REGRESSION.get(
-            regression_policy, DecisionOutcome.REJECT
-        )
+        regression_outcome = _OUTCOME_FOR_REGRESSION.get(regression_policy, DecisionOutcome.REJECT)
         return DecisionEvaluation(
             outcome=regression_outcome,
             rationale=(

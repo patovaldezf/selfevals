@@ -134,9 +134,7 @@ class _SQLiteScope(WorkspaceScope):
             ),
         )
 
-    def get_entity(
-        self, entity_type: type[BaseEntity], entity_id: str
-    ) -> BaseEntity:
+    def get_entity(self, entity_type: type[BaseEntity], entity_id: str) -> BaseEntity:
         self._guard_open()
         type_tag = _entity_type_name(entity_type)
         row = self._conn.execute(
@@ -167,7 +165,15 @@ class _SQLiteScope(WorkspaceScope):
         clauses = ["workspace_id = ?", "entity_type = ?"]
         params: list[Any] = [self.workspace_id, type_tag]
         for k, v in filter_.where.items():
-            if k in {"workspace_id", "entity_type", "id", "version", "created_at", "updated_at", "deleted_at"}:
+            if k in {
+                "workspace_id",
+                "entity_type",
+                "id",
+                "version",
+                "created_at",
+                "updated_at",
+                "deleted_at",
+            }:
                 clauses.append(f"{k} = ?")
                 params.append(v)
             else:
@@ -184,9 +190,7 @@ class _SQLiteScope(WorkspaceScope):
         rows = self._conn.execute(sql, params).fetchall()
         return [entity_type.model_validate(json.loads(r[0])) for r in rows]
 
-    def delete_entity(
-        self, entity_type: type[BaseEntity], entity_id: str
-    ) -> None:
+    def delete_entity(self, entity_type: type[BaseEntity], entity_id: str) -> None:
         self._guard_open()
         type_tag = _entity_type_name(entity_type)
         # First verify ownership; otherwise we'd silently no-op cross-workspace.
@@ -207,8 +211,7 @@ class _SQLiteScope(WorkspaceScope):
         self._guard_open()
         type_tag = _entity_type_name(entity_type)
         row = self._conn.execute(
-            "SELECT 1 FROM entities "
-            "WHERE entity_type = ? AND id = ? AND workspace_id = ?",
+            "SELECT 1 FROM entities WHERE entity_type = ? AND id = ? AND workspace_id = ?",
             (type_tag, entity_id, self.workspace_id),
         ).fetchone()
         return row is not None

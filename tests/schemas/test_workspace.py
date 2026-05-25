@@ -27,7 +27,9 @@ def test_workspace_id_mismatch_rejected() -> None:
         )
 
 
-@pytest.mark.parametrize("bad_slug", ["", "-leading-dash", "_leading", "UPPER", "white space", "a" * 64])
+@pytest.mark.parametrize(
+    "bad_slug", ["", "-leading-dash", "_leading", "UPPER", "white space", "a" * 64]
+)
 def test_invalid_slugs_rejected(bad_slug: str) -> None:
     ws_id = Workspace.make_id()
     with pytest.raises(ValidationError):

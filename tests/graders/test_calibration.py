@@ -78,14 +78,12 @@ def test_unpaired_cases_dropped() -> None:
 def test_macro_f1_across_observed_labels() -> None:
     # 3 classes, all perfectly classified.
     preds = [
-        PredictedLabel(f"ec_{i}", label) for i, label in enumerate(
-            [GradeLabel.PASS, GradeLabel.FAIL, GradeLabel.PARTIAL]
-        )
+        PredictedLabel(f"ec_{i}", label)
+        for i, label in enumerate([GradeLabel.PASS, GradeLabel.FAIL, GradeLabel.PARTIAL])
     ]
     humans = [
-        HumanLabel(f"ec_{i}", label) for i, label in enumerate(
-            [GradeLabel.PASS, GradeLabel.FAIL, GradeLabel.PARTIAL]
-        )
+        HumanLabel(f"ec_{i}", label)
+        for i, label in enumerate([GradeLabel.PASS, GradeLabel.FAIL, GradeLabel.PARTIAL])
     ]
     rep = compute_classification_metrics(preds, humans)
     assert rep.macro_f1 == 1.0

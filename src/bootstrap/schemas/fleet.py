@@ -107,7 +107,5 @@ class AgentFleet(BaseEntity):
             raise ValueError("fleet contains duplicate feature paths")
         for path in self.feature_params:
             if path not in self.features:
-                raise ValueError(
-                    f"feature_params references {path!r} not bound in fleet.features"
-                )
+                raise ValueError(f"feature_params references {path!r} not bound in fleet.features")
         return self
