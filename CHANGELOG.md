@@ -7,6 +7,98 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-05-25
+
+First version where the README no longer lies. `bootstrap run` works
+end-to-end against a real LLM agent, error paths are actionable, and
+the markdown/JSON reports answer the obvious follow-up questions.
+Schema-wise compatible with `0.0.9`.
+
+### Added — usable v1 surface
+
+Examples and quickstart:
+- `examples/hello_llm/` — a real Anthropic agent (with deterministic
+  fakes when `ANTHROPIC_API_KEY` is unset) over 3 EvalCases:
+  sentiment classification, structured extraction, open-ended support
+  reply. Two graders combined: `DeterministicGrader` for the rule
+  cases + `LLMJudgeGrader` for the open-ended one. `GridProposer`
+  sweeps `temperature ∈ {0.0, 0.5, 1.0}`.
+- README quickstart points at `evals/experiments/example_pingpong.yaml`
+  with the exact commands. Status banner updated from "no runtime
+  yet" to "runtime functional".
+
+CLI UX (Day 2):
+- Every subcommand (`init`, `workspace`, `experiment`, `iteration`,
+  `report`, `run`, `compare`, `estimate`) now has a user-facing
+  one-line description and a copy-paste `Example:` epilog. Helper
+  `src/bootstrap/cli/_help.py` centralizes the pattern.
+- `tests/cli/test_help_texts.py` enforces the contract.
+- `docs/adapters.md` documents the three adapters with YAML config,
+  per-adapter agent code, contracts, limitations, and a comparison
+  table.
+
+Errors and hardening (Day 3):
+- `BootstrapError` / `BootstrapUserError` hierarchy. User-correctable
+  failures exit with code 2 and a clean one-line message; internal
+  errors keep their traceback.
+- `src/bootstrap/cli/_friendly.py` is the single translation
+  chokepoint for YAML parse errors, dataset paths (with fuzzy-match
+  suggestions via stdlib `difflib`), missing graders, HTTP adapter
+  transport errors (URL + actionable suffix), and SQLite locked /
+  corrupted cases.
+- `src/bootstrap/graders/registry.py` — name→factory registry.
+  `deterministic` is pre-registered; `llm_judge` is registered
+  on-demand by the CLI. YAML can declare top-level `graders:` and
+  per-case `EvalCase.graders` filters which graders run.
+- `tests/integration/test_full_loop_with_mocked_judge.py` — 7 tests
+  covering the happy path plus each of the five friendly-error
+  shapes.
+- `docs/troubleshooting.md` documents the five common errors and
+  fixes.
+
+Reporter (Day 4):
+- `src/bootstrap/reporter/_metrics.py` — pure helpers
+  (`compute_total_cost`, `compute_total_time_seconds`, etc.) that
+  return `None` when data is absent instead of misleading zeros.
+- Markdown report gains a "Cost & Time" section (omitted gracefully
+  when there are no LLM calls) and a "Next steps" block with
+  copy-paste inspection commands.
+- JSON report exposes a stable `cost_time` block (`None` when
+  missing).
+- `src/bootstrap/reporter/compare.py` powers `bootstrap compare`:
+  proposal diff table, metrics diff table, failure-mode diff, and a
+  "B is better: primary +X; no new failure modes" recommendation.
+
+### Fixed
+
+- Console script `bootstrap` was pointing at `cli.main:app`, which
+  returns an int but never raised `SystemExit`, so user errors
+  silently exited 0. Now points at `cli.main:main`, which wraps `app`
+  in `SystemExit(...)`.
+- `pyproject.toml` ruff `per-file-ignores` had no entry for
+  `src/bootstrap/api/**`, so legitimate FastAPI `Depends(...)`
+  defaults were flagged as B008. Added the ignore.
+- `pyproject.toml` `pytest.ini_options` was missing the `asyncio`
+  marker registration; `--strict-markers` was rejecting async tests.
+- `EvalCase.graders` was unused metadata until now — the
+  `OptimizationLoop` now filters graders per case when the field is
+  populated, preserving the prior "run everything" behavior when it
+  is empty.
+
+### Known gaps (not blocking v0.1.0)
+
+- 9 tests under `tests/sdk/` and `tests/runner/test_otlp_receiver.py`
+  require the `telemetry` extra (`uv sync --extra telemetry`) and
+  fail without it. They are excluded from the default surface.
+- 3 tests under `tests/api/` require the `web` extra
+  (`uv sync --extra web`) to install FastAPI.
+- Failure modes do not yet survive persistence to SQLite — the
+  compare and report tooling already handles their presence gracefully
+  for when the schema is extended.
+- `CliCommandAdapter` and `HttpEndpointAdapter` are not yet
+  auto-wired from YAML; users instantiate them via a Python
+  entrypoint. `docs/adapters.md` documents the workaround.
+
 ## [0.0.9] - 2026-05-16
 
 ### Added — MVP Bloque A reducido: YAML loader + `bootstrap run` end-to-end
