@@ -203,13 +203,26 @@ class HttpEndpointAdapter(AgentAdapter):
             with urlopen(req, timeout=self._timeout) as resp:
                 raw = resp.read()
         except HTTPError as exc:
-            raise AdapterError(f"http {exc.code}: {exc.reason}") from exc
+            raise AdapterError(
+                f"HTTP adapter got {exc.code} {exc.reason} from {self._url}"
+            ) from exc
         except URLError as exc:
-            raise AdapterError(f"transport error: {exc}") from exc
+            # `URLError.reason` is usually a `socket.timeout` or an OSError; both
+            # render fine via str(). Include the URL so the message is actionable.
+            raise AdapterError(
+                f"HTTP adapter could not reach {self._url} ({exc.reason}); "
+                f"check the endpoint is running and reachable from this host"
+            ) from exc
+        except TimeoutError as exc:  # pragma: no cover - URLError covers most cases
+            raise AdapterError(
+                f"HTTP adapter timed out after {self._timeout}s on {self._url}"
+            ) from exc
         try:
             data = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise AdapterError(f"could not decode http response as JSON: {exc}") from exc
+            raise AdapterError(
+                f"HTTP adapter could not decode response from {self._url} as JSON: {exc}"
+            ) from exc
         return _json_to_response(data)
 
 

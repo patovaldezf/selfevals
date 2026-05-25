@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import importlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
@@ -46,11 +46,35 @@ class AgentEntrypoint:
 
 
 @dataclass(frozen=True)
+class GraderSpec:
+    """Declarative grader configuration.
+
+    YAML shape:
+        - type: deterministic
+          name: rules                       # optional; defaults per type
+        - type: llm_judge
+          name: rubric_judge
+          rubric: "Was the agent empathetic and accurate?"
+          judge_entrypoint: pkg.mod:fn      # optional; defaults to agent.entrypoint
+
+    The instantiator lives in `bootstrap.cli.commands` because building an
+    `LLMJudgeGrader` requires the same callable-resolution path as the
+    main adapter — and the loader stays import-side-effect-free.
+    """
+
+    type: str
+    name: str
+    rubric: str | None = None
+    judge_entrypoint: AgentEntrypoint | None = None
+
+
+@dataclass(frozen=True)
 class ExperimentSpec:
     workspace_id: str
     experiment: Experiment
     cases: list[EvalCase]
     agent: AgentEntrypoint
+    graders: list[GraderSpec] = field(default_factory=list)
 
 
 def load_experiment_spec(
@@ -80,12 +104,14 @@ def load_experiment_spec(
     experiment = _build_experiment(spec_path, raw, ws_id)
     cases = _build_cases(spec_path, raw, ws_id)
     agent = _build_agent_entrypoint(spec_path, raw)
+    graders = _build_grader_specs(spec_path, raw)
 
     return ExperimentSpec(
         workspace_id=ws_id,
         experiment=experiment,
         cases=cases,
         agent=agent,
+        graders=graders,
     )
 
 
@@ -113,9 +139,7 @@ def resolve_agent_callable(entrypoint: AgentEntrypoint) -> Any:
 # --- internals ---
 
 
-def _build_experiment(
-    spec_path: Path, raw: dict[str, Any], workspace_id: str
-) -> Experiment:
+def _build_experiment(spec_path: Path, raw: dict[str, Any], workspace_id: str) -> Experiment:
     payload = raw.get("experiment")
     if not isinstance(payload, dict):
         raise LoaderError(f"{spec_path}: missing or non-mapping `experiment:` section")
@@ -128,9 +152,7 @@ def _build_experiment(
         raise LoaderError(f"{spec_path}: invalid experiment payload: {exc}") from exc
 
 
-def _build_cases(
-    spec_path: Path, raw: dict[str, Any], workspace_id: str
-) -> list[EvalCase]:
+def _build_cases(spec_path: Path, raw: dict[str, Any], workspace_id: str) -> list[EvalCase]:
     dataset = raw.get("dataset", {})
     if not isinstance(dataset, dict):
         raise LoaderError(f"{spec_path}: `dataset:` must be a mapping")
@@ -159,9 +181,7 @@ def _build_cases(
     cases: list[EvalCase] = []
     for i, row in enumerate(rows):
         if not isinstance(row, dict):
-            raise LoaderError(
-                f"{spec_path}: case #{i} must be a mapping, got {type(row).__name__}"
-            )
+            raise LoaderError(f"{spec_path}: case #{i} must be a mapping, got {type(row).__name__}")
         case_payload = dict(row)
         case_payload.setdefault("id", EvalCase.make_id())
         case_payload.setdefault("workspace_id", workspace_id)
@@ -185,11 +205,60 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
         except json.JSONDecodeError as exc:
             raise LoaderError(f"{path}:{line_no}: invalid JSON: {exc}") from exc
         if not isinstance(row, dict):
-            raise LoaderError(
-                f"{path}:{line_no}: expected an object, got {type(row).__name__}"
-            )
+            raise LoaderError(f"{path}:{line_no}: expected an object, got {type(row).__name__}")
         rows.append(row)
     return rows
+
+
+_SUPPORTED_GRADER_TYPES = {"deterministic", "llm_judge"}
+
+
+def _build_grader_specs(spec_path: Path, raw: dict[str, Any]) -> list[GraderSpec]:
+    section = raw.get("graders")
+    if section is None:
+        return []
+    if not isinstance(section, list):
+        raise LoaderError(f"{spec_path}: `graders:` must be a list of mappings")
+    specs: list[GraderSpec] = []
+    seen_names: set[str] = set()
+    for i, entry in enumerate(section):
+        if not isinstance(entry, dict):
+            raise LoaderError(
+                f"{spec_path}: graders[{i}] must be a mapping, got {type(entry).__name__}"
+            )
+        type_ = entry.get("type")
+        if not isinstance(type_, str) or type_ not in _SUPPORTED_GRADER_TYPES:
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].type must be one of "
+                f"{sorted(_SUPPORTED_GRADER_TYPES)}; got {type_!r}"
+            )
+        name = entry.get("name") or type_
+        if not isinstance(name, str) or not name:
+            raise LoaderError(f"{spec_path}: graders[{i}].name must be a non-empty string")
+        if name in seen_names:
+            raise LoaderError(f"{spec_path}: graders[{i}].name {name!r} is duplicated")
+        seen_names.add(name)
+
+        rubric: str | None = None
+        judge_entry: AgentEntrypoint | None = None
+        if type_ == "llm_judge":
+            rubric_raw = entry.get("rubric")
+            if not isinstance(rubric_raw, str) or not rubric_raw.strip():
+                raise LoaderError(
+                    f"{spec_path}: graders[{i}] (llm_judge) requires a non-empty `rubric`"
+                )
+            rubric = rubric_raw
+            judge_raw = entry.get("judge_entrypoint")
+            if judge_raw is not None:
+                if not isinstance(judge_raw, str) or ":" not in judge_raw:
+                    raise LoaderError(
+                        f"{spec_path}: graders[{i}].judge_entrypoint must be "
+                        f"'module:callable', got {judge_raw!r}"
+                    )
+                module, _, attribute = judge_raw.partition(":")
+                judge_entry = AgentEntrypoint(raw=judge_raw, module=module, attribute=attribute)
+        specs.append(GraderSpec(type=type_, name=name, rubric=rubric, judge_entrypoint=judge_entry))
+    return specs
 
 
 def _build_agent_entrypoint(spec_path: Path, raw: dict[str, Any]) -> AgentEntrypoint:

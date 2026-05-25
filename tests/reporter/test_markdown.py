@@ -256,6 +256,76 @@ def test_render_json_includes_decision_outcome_string() -> None:
     assert payload["iterations"][0]["decision"]["outcome"] == "reject"
 
 
+# ----- cost & time + next steps -----
+
+
+def test_markdown_omits_cost_time_section_when_no_data() -> None:
+    """Echo agents report 0 cost / 0 time. We must not render the
+    section in that case — a "$0.00" placeholder would mislead readers
+    into thinking cost was actually measured."""
+    exp = _experiment()
+    result = OptimizationResult(experiment=exp)
+    result.iterations.append(_synthetic_iteration(primary=0.5, cost=0.0, duration_ms=0))
+    md = render_markdown(result)
+    assert "## Cost & Time" not in md
+    assert "$0.00" not in md
+    assert "0.00s" not in md
+
+
+def test_markdown_includes_cost_time_section_when_data_present() -> None:
+    exp = _experiment()
+    result = OptimizationResult(experiment=exp)
+    result.iterations.append(_synthetic_iteration(primary=0.5, cost=0.12, duration_ms=2500))
+    result.iterations.append(_synthetic_iteration(primary=0.8, cost=0.18, duration_ms=2500))
+    md = render_markdown(result)
+    assert "## Cost & Time" in md
+    assert "Total cost" in md
+    assert "Total time" in md
+    # Sanity-check that the formatted totals appear.
+    assert "0.30" in md
+    assert "5.00s" in md
+
+
+def test_markdown_includes_next_steps_section() -> None:
+    """Reader should always see suggested follow-up commands."""
+    result = _run_real()
+    md = render_markdown(result)
+    assert "## Next steps" in md
+    assert "bootstrap iteration list" in md
+    assert "bootstrap report" in md
+    # With 2+ iterations, a compare command is suggested too.
+    assert "bootstrap compare" in md
+
+
+def test_markdown_idempotent_under_repeat_renders() -> None:
+    exp = _experiment()
+    result = OptimizationResult(experiment=exp)
+    result.iterations.append(_synthetic_iteration(primary=0.5, cost=0.12, duration_ms=2500))
+    assert render_markdown(result) == render_markdown(result)
+
+
+def test_json_includes_cost_time_block_always() -> None:
+    """JSON shape is stable: the cost_time block is always present,
+    with None for unknown fields (machine readers prefer keys)."""
+    exp = _experiment()
+    result = OptimizationResult(experiment=exp)
+    result.iterations.append(_synthetic_iteration(primary=0.5, cost=0.0, duration_ms=0))
+    payload = to_dict(result)
+    assert "cost_time" in payload
+    assert payload["cost_time"]["cost_total_usd"] is None
+    assert payload["cost_time"]["time_total_seconds"] is None
+    assert payload["cost_time"]["iterations"] == 1
+
+
+def test_json_cost_time_block_populated_with_data() -> None:
+    exp = _experiment()
+    result = OptimizationResult(experiment=exp)
+    result.iterations.append(_synthetic_iteration(primary=0.5, cost=0.12, duration_ms=2000))
+    payload = to_dict(result)
+    assert payload["cost_time"]["cost_total_usd"] is not None
+    assert payload["cost_time"]["time_total_seconds"] == 2.0
+
+
 # ----- helpers -----
 
 
@@ -265,6 +335,8 @@ def _synthetic_iteration(
     rationale: str = "rationale",
     outcome: DecisionOutcome = DecisionOutcome.KEEP_CANDIDATE,
     failure_modes: dict[str, int] | None = None,
+    cost: float = 0.0,
+    duration_ms: int = 0,
 ) -> IterationOutcome:
     aggregate = IterationAggregate(
         primary_metric="pass@1",
@@ -272,8 +344,8 @@ def _synthetic_iteration(
         guardrails={},
         reliability={},
         failure_mode_counts=failure_modes or {},
-        total_cost_usd=0.0,
-        total_duration_ms=0,
+        total_cost_usd=cost,
+        total_duration_ms=duration_ms,
         case_count=1,
         case_outcomes=[
             CaseOutcome(
