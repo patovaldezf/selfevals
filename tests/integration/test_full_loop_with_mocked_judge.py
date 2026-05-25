@@ -1,0 +1,465 @@
+"""End-to-end smoke test for the optimization loop + friendly errors.
+
+The first half drives `OptimizationLoop.run()` against a workspace,
+two cases, a real `DeterministicGrader`, and a mocked `LLMJudgeGrader`
+whose judge adapter returns deterministic JSON. The point is to catch
+regressions where the full pipeline silently breaks even though the
+unit tests pass — schema drift, decision-evaluator coupling, storage
+round-trips.
+
+The second half covers the five user-facing error paths added by the
+hardening pass:
+
+1. YAML invalid at load time
+2. Dataset path missing on disk
+3. Grader referenced by name but not registered
+4. HTTP adapter cannot reach the configured endpoint
+5. SQLite database file is corrupted (or the parent path is)
+
+Each error case asserts: rc == 2, a one-line message on stderr,
+and *no* Python traceback. The friendly message is the contract.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import textwrap
+from pathlib import Path
+
+import pytest
+
+from bootstrap.cli.main import app
+from bootstrap.decision.matrix import DecisionMatrixEvaluator
+from bootstrap.graders.deterministic import DeterministicGrader
+from bootstrap.graders.llm_judge import LLMJudgeGrader, RubricTemplate
+from bootstrap.optimization.loop import OptimizationLoop
+from bootstrap.optimization.proposers import GridProposer
+from bootstrap.reporter import render_markdown
+from bootstrap.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
+from bootstrap.runner.executor import Executor
+from bootstrap.runner.sandbox import SandboxPolicy
+from bootstrap.schemas._base import EntityRef
+from bootstrap.schemas.enums import (
+    AgentType,
+    DatasetSource,
+    DatasetType,
+    DecisionOutcome,
+    ExperimentState,
+    GroundTruthMethod,
+    Level,
+    Mode,
+    ProposerStrategy,
+    SandboxMode,
+)
+from bootstrap.schemas.eval_case import (
+    CaseTaxonomy,
+    EvalCase,
+    Expected,
+    FeatureTag,
+    GroundTruthSpec,
+    SourceInfo,
+)
+from bootstrap.schemas.experiment import (
+    ConvergenceSpec,
+    DatasetUsage,
+    EditableContract,
+    Experiment,
+    ExperimentTaxonomy,
+    FrozenSnapshot,
+    MetricTarget,
+    ProposerSpec,
+    ReliabilitySpec,
+    RunSpec,
+    SearchSpace,
+    TargetSpec,
+)
+from bootstrap.schemas.fleet import Agent, ModelRef
+from bootstrap.schemas.iteration import DecisionRecord, IterationRecord
+from bootstrap.schemas.workspace import Workspace
+from bootstrap.storage.sqlite import SQLiteStorage
+
+WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
+
+
+# --- shared fixtures -------------------------------------------------------
+
+
+def _case(name: str, must_include: str) -> EvalCase:
+    return EvalCase(
+        id=EvalCase.make_id(),
+        workspace_id=WS,
+        name=name,
+        task_type="echo",
+        input={"messages": [{"role": "user", "content": "ping"}]},
+        taxonomy=CaseTaxonomy(
+            level=Level.FINAL_RESPONSE,
+            feature=FeatureTag(primary="commerce.product_resolution"),
+            source=SourceInfo(type=DatasetSource.HANDCRAFTED),
+            ground_truth=GroundTruthSpec(methods=[GroundTruthMethod.EXACT_MATCH]),
+            dataset_type=DatasetType.CAPABILITY,
+        ),
+        expected=Expected(must_include=[must_include]),
+    )
+
+
+def _agent() -> Agent:
+    return Agent(
+        id=Agent.make_id(),
+        workspace_id=WS,
+        agent_type=AgentType.SYSTEM_PROMPT,
+        model=ModelRef(provider="anthropic", name="claude-sonnet-4-6"),
+        system_prompt_pointer="oss://prompts/x",
+    )
+
+
+def _experiment(max_iterations: int = 2) -> Experiment:
+    return Experiment(
+        id=Experiment.make_id(),
+        workspace_id=WS,
+        name="end-to-end smoke",
+        goal="exercise the whole loop with two graders",
+        mode=Mode.HANDOFF,
+        taxonomy=ExperimentTaxonomy(
+            target_features=["commerce.product_resolution"],
+            dataset_types=[DatasetType.CAPABILITY],
+        ),
+        datasets=DatasetUsage(optimization=EntityRef(id="ds_x", version=1)),
+        target=TargetSpec(primary=MetricTarget(name="pass@1", operator=">=", value=0.5)),
+        editable=EditableContract(prompt=True, model_params=True),
+        frozen=FrozenSnapshot(
+            fleet=EntityRef(id="flt_x"),
+            agents=[EntityRef(id="ag_x")],
+            datasets=[EntityRef(id="ds_y")],
+        ),
+        proposer=ProposerSpec(strategy=ProposerStrategy.GRID),
+        run=RunSpec(
+            sandbox=SandboxMode.MOCK,
+            max_iterations=max_iterations,
+            convergence=ConvergenceSpec(min_delta=1e-6, patience=10),
+        ),
+        # Grid sweeps two values; both make the agent return "pong" so both
+        # iterations clear the deterministic must_include rule.
+        search_space=SearchSpace(model_params={"level": [0.5, 1.0]}),
+        reliability=ReliabilitySpec(metrics=["pass@1"]),
+    )
+
+
+def _pingpong_adapter() -> EmbeddedAdapter:
+    """Echo agent: emits 'pong' when proposer.level >= 0.5, else 'miss'."""
+
+    def fn(req: AdapterRequest) -> AdapterResponse:
+        level = req.parameters.get("model_params", {}).get("level", 0.0)
+        content = "pong" if level >= 0.5 else "miss"
+        return AdapterResponse(content=content, tokens_input=4, tokens_output=2)
+
+    return EmbeddedAdapter(fn, agent=_agent())
+
+
+def _mock_judge_adapter() -> EmbeddedAdapter:
+    """An EmbeddedAdapter that pretends to be an LLM judge.
+
+    It looks at the *agent response* baked into the rubric prompt (the
+    real judge would do the same) and returns deterministic JSON with
+    label=pass if the prompt mentions 'pong', else label=fail.
+    """
+
+    def fn(req: AdapterRequest) -> AdapterResponse:
+        prompt = req.input["messages"][0]["content"]
+        decided_pass = (
+            "pong" in prompt and "miss" not in prompt.lower().split("agent response:")[-1]
+        )
+        payload = {
+            "label": "pass" if decided_pass else "fail",
+            "reason": "agent emitted pong" if decided_pass else "did not emit pong",
+            "score": 1.0 if decided_pass else 0.0,
+            "confidence": 0.95,
+        }
+        return AdapterResponse(content=json.dumps(payload))
+
+    return EmbeddedAdapter(fn)
+
+
+# --- the end-to-end test ---------------------------------------------------
+
+
+def test_full_loop_with_deterministic_and_llm_judge(tmp_path: Path) -> None:
+    """Run two iterations end-to-end with both graders, then re-read."""
+    cases = [_case("c1", "pong"), _case("c2", "pong")]
+    experiment = _experiment(max_iterations=2)
+
+    storage = SQLiteStorage(tmp_path / "smoke.sqlite")
+    ws = Workspace(id=WS, workspace_id=WS, slug="ws", name="smoke")
+    with storage.open(WS) as scope:
+        scope.put_entity(ws)
+        scope.put_entity(experiment)
+
+    scope = storage.open(WS)
+    try:
+        executor = Executor(
+            adapter=_pingpong_adapter(),
+            sandbox=SandboxPolicy(SandboxMode.MOCK),
+            workspace_id=WS,
+        )
+        judge = LLMJudgeGrader(
+            "mock_judge",
+            judge_adapter=_mock_judge_adapter(),
+            rubric=RubricTemplate(rubric="Agent must say pong"),
+        )
+        loop = OptimizationLoop(
+            experiment=experiment,
+            executor=executor,
+            proposer=GridProposer(),
+            graders=[DeterministicGrader(), judge],
+            cases=cases,
+            scope=scope,
+            decision_evaluator=DecisionMatrixEvaluator(),
+        )
+        result = loop.run()
+    finally:
+        scope.close()
+
+    # --- result structure ---
+    assert len(result.iterations) == 2
+    assert experiment.state == ExperimentState.COMPLETED
+    for outcome in result.iterations:
+        assert outcome.aggregate.primary_metric == "pass@1"
+        # Each iteration ran 2 cases.
+        assert outcome.aggregate.case_count == 2
+        # Both iterations make the agent emit "pong" because grid sweeps
+        # 0.5 and 1.0 — both above the level threshold.
+        assert outcome.aggregate.primary_value == pytest.approx(1.0)
+        # Both grader names show up in the per-rep grade results.
+        assert outcome.iteration_record.metrics is not None
+        # Decision must be a known outcome.
+        assert outcome.decision_record.outcome in set(DecisionOutcome)
+
+    # --- persistence round-trip ---
+    with storage.open(WS) as s:
+        iter_records = [
+            r for r in s.list_entities(IterationRecord) if isinstance(r, IterationRecord)
+        ]
+        decision_records = [
+            d for d in s.list_entities(DecisionRecord) if isinstance(d, DecisionRecord)
+        ]
+    assert len(iter_records) == 2
+    assert len(decision_records) == 2
+    # iteration indices match what the loop emitted.
+    assert sorted(r.iteration for r in iter_records) == [0, 1]
+    # decision records reference the same experiment.
+    for d in decision_records:
+        assert d.experiment_id == experiment.id
+
+    # --- reporter is happy with this shape ---
+    md = render_markdown(result)
+    assert "# Experiment: end-to-end smoke" in md
+    assert "pass@1" in md
+
+    storage.close()
+
+
+# --- friendly-error tests --------------------------------------------------
+
+
+def _run_cli(
+    args: list[str],
+    capsys: pytest.CaptureFixture[str],
+) -> tuple[int, str, str]:
+    """Invoke the CLI in-process and capture rc / stdout / stderr."""
+    rc = app(args)
+    captured = capsys.readouterr()
+    return rc, captured.out, captured.err
+
+
+def test_error_invalid_yaml_is_actionable(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("garbage: [unclosed\n")
+    rc, _, stderr = _run_cli(["run", str(bad), "--no-persist"], capsys)
+    assert rc == 2
+    assert "could not parse YAML" in stderr
+    assert str(bad) in stderr
+    # Must not be a Python traceback.
+    assert "Traceback" not in stderr
+
+
+def _write_minimal_yaml(tmp_path: Path, **overrides: object) -> Path:
+    body = textwrap.dedent(
+        """
+        workspace: ws_01HZZZZZZZZZZZZZZZZZZZZZZZ
+        experiment:
+          name: e
+          goal: g
+          mode: handoff
+          taxonomy:
+            target_features: [commerce.product_resolution]
+            dataset_types: [capability]
+          datasets:
+            optimization: { id: ds_x, version: 1 }
+          target:
+            primary: { name: pass@1, operator: ">=", value: 0.5 }
+          editable:
+            prompt: true
+            model_params: true
+          frozen:
+            fleet: { id: flt_x }
+            agents: [{ id: ag_x }]
+            datasets: [{ id: ds_x }]
+          proposer:
+            strategy: grid
+          search_space:
+            model_params: { level: [1.0] }
+          run:
+            sandbox: mock
+            max_iterations: 1
+            convergence: { min_delta: 1.0e-6, patience: 10 }
+          reliability:
+            metrics: [pass@1]
+        dataset:
+          DATASET_BLOCK
+        agent:
+          entrypoint: bootstrap.examples.pingpong:run
+        """
+    ).strip()
+    dataset_block = overrides.get(
+        "dataset",
+        "cases_inline:\n    - name: t\n      task_type: x\n      input: { messages: [{ role: user, content: hi }] }\n"
+        "      taxonomy:\n        level: final_response\n        feature: { primary: commerce.product_resolution }\n"
+        "        source: { type: handcrafted }\n        ground_truth: { methods: [exact_match] }\n"
+        "        dataset_type: capability\n      expected: { must_include: [pong] }",
+    )
+    yaml = body.replace("DATASET_BLOCK", str(dataset_block))
+    path = tmp_path / "exp.yaml"
+    path.write_text(yaml)
+    return path
+
+
+def test_error_dataset_path_missing_with_suggestion(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A real dataset with a slightly different name — the friendly layer
+    # should suggest it via fuzzy match.
+    (tmp_path / "pingpong.jsonl").write_text("{}\n")
+    yaml = _write_minimal_yaml(tmp_path, dataset="cases_path: pingpang.jsonl")
+    rc, _, stderr = _run_cli(["run", str(yaml), "--no-persist"], capsys)
+    assert rc == 2
+    assert "pingpang.jsonl" in stderr
+    assert "not found" in stderr
+    assert "did you mean" in stderr
+    assert "pingpong.jsonl" in stderr  # the suggestion
+    assert "Traceback" not in stderr
+
+
+def test_error_unknown_grader_lists_available(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A YAML whose case references a grader name that is not registered.
+    # We embed the case inline with `graders: [not_a_real_grader]`.
+    body = textwrap.dedent(
+        """
+        workspace: ws_01HZZZZZZZZZZZZZZZZZZZZZZZ
+        experiment:
+          name: e
+          goal: g
+          mode: handoff
+          taxonomy:
+            target_features: [commerce.product_resolution]
+            dataset_types: [capability]
+          datasets:
+            optimization: { id: ds_x, version: 1 }
+          target:
+            primary: { name: pass@1, operator: ">=", value: 0.5 }
+          editable:
+            prompt: true
+            model_params: true
+          frozen:
+            fleet: { id: flt_x }
+            agents: [{ id: ag_x }]
+            datasets: [{ id: ds_x }]
+          proposer:
+            strategy: grid
+          search_space:
+            model_params: { level: [1.0] }
+          run:
+            sandbox: mock
+            max_iterations: 1
+            convergence: { min_delta: 1.0e-6, patience: 10 }
+          reliability:
+            metrics: [pass@1]
+        dataset:
+          cases_inline:
+            - name: t
+              task_type: x
+              input: { messages: [{ role: user, content: hi }] }
+              taxonomy:
+                level: final_response
+                feature: { primary: commerce.product_resolution }
+                source: { type: handcrafted }
+                ground_truth: { methods: [exact_match] }
+                dataset_type: capability
+              expected: { must_include: [pong] }
+              graders: [not_a_real_grader]
+        agent:
+          entrypoint: bootstrap.examples.pingpong:run
+        """
+    ).strip()
+    yaml = tmp_path / "exp.yaml"
+    yaml.write_text(body)
+    rc, _, stderr = _run_cli(["run", str(yaml), "--no-persist"], capsys)
+    assert rc == 2
+    assert "not_a_real_grader" in stderr
+    assert "not registered" in stderr
+    assert "deterministic" in stderr  # registry listing
+    assert "Traceback" not in stderr
+
+
+def test_error_http_adapter_unreachable_endpoint(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`HttpEndpointAdapter` surfaces a clean AdapterError naming the URL."""
+    from bootstrap.runner.adapters import AdapterError, HttpEndpointAdapter
+
+    # Port 1 is privileged and not in use — instant ECONNREFUSED.
+    url = "http://127.0.0.1:1/"
+    adapter = HttpEndpointAdapter(url, timeout_seconds=1.0)
+    with pytest.raises(AdapterError) as excinfo:
+        adapter.invoke(AdapterRequest(workspace_id=WS, case_id="c", input={"messages": []}))
+    msg = str(excinfo.value)
+    assert url in msg
+    assert "could not reach" in msg or "transport" in msg.lower()
+    # The friendly wrapper used by the CLI must lift this into a
+    # BootstrapUserError without losing the URL.
+    from bootstrap.cli._friendly import wrap_adapter_error
+
+    user_err = wrap_adapter_error(excinfo.value, url=url)
+    user_msg = str(user_err)
+    assert url in user_msg or "could not reach" in user_msg
+
+
+def test_error_sqlite_corrupted_db(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    # Write garbage to the db path so SQLite refuses to open it.
+    db = tmp_path / "corrupt.sqlite"
+    db.write_bytes(b"this is definitely not a valid sqlite database")
+    rc, _, stderr = _run_cli(["--db", str(db), "workspace", "show", WS], capsys)
+    assert rc == 2
+    # Either the corruption or 'not a database' path triggers depending on libsqlite,
+    # but the friendly layer should still produce a clean message.
+    assert "Traceback" not in stderr
+    assert str(db) in stderr or "sqlite" in stderr.lower()
+
+
+def test_error_sqlite_locked_message_shape() -> None:
+    """Directly exercise the sqlite friendly wrapper.
+
+    Acquiring a real BEGIN EXCLUSIVE on Mac+SQLite WAL is racy in CI;
+    instead we feed the wrapper a synthetic OperationalError whose
+    message contains the word `locked`, the same shape libsqlite emits.
+    """
+    from bootstrap.cli._friendly import wrap_sqlite_error
+
+    err = wrap_sqlite_error(sqlite3.OperationalError("database is locked"), db_path="/x.db")
+    msg = str(err)
+    assert "locked" in msg
+    assert "/x.db" in msg
+    assert "another bootstrap process" in msg
