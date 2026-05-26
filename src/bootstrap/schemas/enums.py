@@ -146,6 +146,20 @@ class ExperimentState(StrEnum):
     SUPERSEDED = "superseded"
 
 
+class FailureModeStatus(StrEnum):
+    """Lifecycle of a failure mode in the workspace taxonomy.
+
+    See docs/spec/error_analysis_design.md §3. A mode is proposed by an agent
+    (or seeded) as CANDIDATE, confirmed by a human to OFFICIAL (the only status
+    that counts toward proposer input), and RETIRED when it no longer applies
+    (kept for history, never deleted).
+    """
+
+    CANDIDATE = "candidate"
+    OFFICIAL = "official"
+    RETIRED = "retired"
+
+
 class SpanKind(StrEnum):
     """Kinds of spans in a Trace. Operational §B.3."""
 

@@ -18,6 +18,10 @@ from bootstrap.schemas.eval_case import (
     GroundTruthSpec,
     SourceInfo,
 )
+from bootstrap.schemas.failure_mode import (
+    FailureMode,
+    FailureModeExample,
+)
 from bootstrap.schemas.experiment import (
     ConvergenceSpec,
     CounterfactualSpec,
@@ -139,6 +143,8 @@ __all__ = [
     "Expected",
     "Experiment",
     "ExperimentTaxonomy",
+    "FailureMode",
+    "FailureModeExample",
     "FeatureRegistry",
     "FeatureTag",
     "FinalState",
