@@ -324,6 +324,10 @@ class GraderResult(BootstrapModel):
     score: float | None = None
     reason_pointer: str | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    failure_modes: list[NonEmptyStr] = Field(default_factory=list)
+    """Stable failure-mode identities attributed to this result: deterministic
+    grader tags at grade time, plus `FailureMode` ids stamped by error analysis
+    (see error_analysis_design.md §4). The trace↔mode link lives here."""
 
 
 class TraceOutputs(BootstrapModel):
