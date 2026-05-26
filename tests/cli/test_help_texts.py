@@ -24,6 +24,8 @@ TOP_LEVEL_SUBCOMMANDS = (
     "run",
     "compare",
     "estimate",
+    "analyze",
+    "failuremode",
 )
 
 
