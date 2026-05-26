@@ -7,6 +7,31 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Thread grouping** — traces can now be assembled into the conversation
+  (hilo) they belong to. `RunInfo` gains `thread_id` + `thread_position`; the
+  OTel importer auto-detects the thread from `session.id` (OpenInference) or
+  `gen_ai.conversation.id` (OTel GenAI), without overwriting an explicit
+  caller-set `thread_id`. New read query `load_thread` + `GET
+  /workspaces/{ws}/threads/{thread_id}` return every trace sharing a thread,
+  ordered by `thread_position` (falling back to `started_at`), each turn
+  projected with its grader results so the per-turn calificación is visible.
+  `TraceResponse` now surfaces `thread_id` / `thread_position`. This closes the
+  last trace-grouping gap versus LangSmith sessions; the run→experiment→
+  iteration→decision→grade chain already existed. Eight new tests.
+- OTel importer now extracts prompt/completion **message content** into
+  traces. `_build_llm_span` reconstructs ordered message lists from both
+  attribute families — OpenInference native (`llm.input_messages.{i}.message.*`,
+  `llm.output_messages.{i}.message.*`) and the OTel GenAI alias
+  (`gen_ai.prompt.{i}.*`, `gen_ai.completion.{i}.*`). When both are present the
+  native family wins. Each side gets a stable `content_hash` (on
+  `messages_hash` / `output.content_hash`) for dedup and drift detection, and
+  the structured messages are kept inline under `provider_metadata`
+  (`bootstrap.messages_in` / `bootstrap.messages_out`). Closes the last gap
+  versus LangSmith trace capture: the actual prompt and response text are now
+  in the trace, not just tokens/model/stop_reason. Five new importer tests.
+
 ## [0.1.0] - 2026-05-25
 
 First version where the README no longer lies. `bootstrap run` works

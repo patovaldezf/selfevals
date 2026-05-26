@@ -14,10 +14,22 @@ Mapping reference:
 - gen_ai.usage.cache_read_input_tokens → tokens.input_cache_read
 - gen_ai.usage.cache_creation_input_tokens → tokens.input_cache_creation
 - gen_ai.response.finish_reasons[0] → stop_reason (loose lowercase match)
+- gen_ai.prompt.{i}.role/content      ┐  → input messages (messages_hash +
+- llm.input_messages.{i}.message.*    ┘     bootstrap.messages_in metadata)
+- gen_ai.completion.{i}.role/content  ┐  → output messages (output.content_hash
+- llm.output_messages.{i}.message.*   ┘     + bootstrap.messages_out metadata)
 - openinference.span.kind: LLM / TOOL / RETRIEVER / AGENT / CHAIN → SpanKind
 - tool.name / openinference.tool.name → tool_name
 - tool.parameters / openinference.tool.parameters → args_pointer (or inline)
 - retrieval.documents.count → retrieval span hint
+
+Message content note: the importer has no object store, so it cannot offload
+large payloads to a pointer. Instead it computes a stable `content_hash` over
+the structured messages (always set, for dedup/drift detection) and keeps the
+reconstructed messages inline under reserved `provider_metadata` keys
+(`bootstrap.messages_in` / `bootstrap.messages_out`). When these spans are
+replayed through a recorder with a PayloadRouter, the large content can be
+offloaded to a pointer and the hash carried over unchanged.
 
 This is intentionally a minimum-viable mapper. Adding fields later is a
 matter of looking up another attribute name — schema doesn't change.
@@ -28,6 +40,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from bootstrap._internal.hashing import content_hash
 from bootstrap._internal.ids import new_prefixed_id
 from bootstrap.schemas.enums import (
     SandboxMode,
@@ -136,6 +149,46 @@ def _classify_span(span: dict[str, Any], attrs: dict[str, Any]) -> SpanKind:
     return SpanKind.CUSTOM
 
 
+def _extract_messages(attrs: dict[str, Any], *, kind: str) -> list[dict[str, Any]]:
+    """Reconstruct an ordered message list from flattened OTel/OpenInference attrs.
+
+    Two attribute families carry the same data depending on instrumentor version:
+      - OpenInference native: ``llm.{input,output}_messages.{i}.message.{role,content}``
+      - OTel GenAI alias:     ``gen_ai.{prompt,completion}.{i}.{role,content}``
+
+    ``kind`` is "input" or "output". Both families are scanned; if both are
+    present (some instrumentors emit both), the OpenInference native family wins
+    because it is the richer, canonical source. Indices are gathered, sorted
+    numerically, and each message is reconstructed as ``{"role", "content"}``
+    plus any sibling sub-keys (e.g. tool_calls) preserved verbatim.
+    """
+    oi_prefix = f"llm.{'input' if kind == 'input' else 'output'}_messages."
+    ga_prefix = f"gen_ai.{'prompt' if kind == 'input' else 'completion'}."
+
+    def _collect(prefix: str, *, nested: bool) -> list[dict[str, Any]]:
+        # nested=True  → llm.input_messages.0.message.role  (strip ".message")
+        # nested=False → gen_ai.prompt.0.role
+        buckets: dict[int, dict[str, Any]] = {}
+        for key, value in attrs.items():
+            if not key.startswith(prefix):
+                continue
+            rest = key[len(prefix) :]
+            head, _, tail = rest.partition(".")
+            if not head.isdigit() or not tail:
+                continue
+            if nested:
+                if not tail.startswith("message."):
+                    continue
+                tail = tail[len("message.") :]
+            buckets.setdefault(int(head), {})[tail] = value
+        return [buckets[i] for i in sorted(buckets)]
+
+    messages = _collect(oi_prefix, nested=True)
+    if not messages:
+        messages = _collect(ga_prefix, nested=False)
+    return messages
+
+
 def _build_llm_span(span: dict[str, Any], attrs: dict[str, Any]) -> LLMCallSpan:
     tokens = TokenBreakdown(
         input=int(attrs.get("gen_ai.usage.input_tokens", 0) or 0),
@@ -154,13 +207,30 @@ def _build_llm_span(span: dict[str, Any], attrs: dict[str, Any]) -> LLMCallSpan:
             )
         ),
     )
+    messages_in = _extract_messages(attrs, kind="input")
+    messages_out = _extract_messages(attrs, kind="output")
+
     output = LLMOutput(
         stop_reason=_normalize_stop_reason(attrs.get("gen_ai.response.finish_reasons")),
+        content_hash=content_hash(messages_out) if messages_out else None,
     )
-    known_prefixes = ("gen_ai.", "openinference.")
+
+    # Raw flattened message keys are reconstructed above; drop them from the
+    # generic metadata sweep so the structured form is the single source.
+    known_prefixes = (
+        "gen_ai.",
+        "openinference.",
+        "llm.input_messages.",
+        "llm.output_messages.",
+    )
     provider_metadata = {
         k: v for k, v in attrs.items() if not any(k.startswith(p) for p in known_prefixes)
     }
+    if messages_in:
+        provider_metadata["bootstrap.messages_in"] = messages_in
+    if messages_out:
+        provider_metadata["bootstrap.messages_out"] = messages_out
+
     return LLMCallSpan(
         id=span.get("span_id") or new_prefixed_id("sp"),
         parent_id=span.get("parent_span_id"),
@@ -170,6 +240,7 @@ def _build_llm_span(span: dict[str, Any], attrs: dict[str, Any]) -> LLMCallSpan:
         provider=str(attrs.get("gen_ai.system", "unknown")),
         model=str(attrs.get("gen_ai.request.model", "unknown")),
         model_version_pinned=attrs.get("gen_ai.response.model"),
+        messages_hash=content_hash(messages_in) if messages_in else None,
         params={
             k.removeprefix("gen_ai.request."): v
             for k, v in attrs.items()
@@ -297,6 +368,23 @@ def _link_tool_use_ids(spans: list[Span]) -> list[Span]:
     return out
 
 
+def _detect_thread_id(spans: list[dict[str, Any]]) -> str | None:
+    """Find a conversation/session id across the spans.
+
+    Two attribute keys carry it depending on instrumentor: OpenInference's
+    ``session.id`` and the OTel GenAI ``gen_ai.conversation.id``. The first
+    non-empty value wins (they should agree when both are present). Returns
+    None when neither is set — the trace is then standalone.
+    """
+    for raw in spans:
+        attrs = raw.get("attributes") or {}
+        for key in ("session.id", "gen_ai.conversation.id"):
+            value = attrs.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
 def import_otel_spans(
     spans: list[dict[str, Any]],
     *,
@@ -339,6 +427,14 @@ def import_otel_spans(
     # it (same parent or immediate predecessor), synthesize a
     # ToolUseRequest on that LLM span so the schema invariant holds.
     parsed_spans = _link_tool_use_ids(parsed_spans)
+
+    # Thread grouping: prefer an explicit thread_id on the passed run; else
+    # detect a session/conversation id from the spans so multi-turn traces
+    # can be reassembled into the hilo they belong to.
+    if run.thread_id is None:
+        detected = _detect_thread_id(spans)
+        if detected is not None:
+            run = run.model_copy(update={"thread_id": detected})
 
     env_start = environment_started_at or earliest or datetime.now(tz=UTC)
     env = EnvironmentInfo(
