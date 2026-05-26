@@ -32,6 +32,7 @@ from bootstrap.api.queries import (
     iteration_detail,
     list_experiments,
     list_workspaces,
+    load_thread,
     load_trace,
     workspace_detail,
 )
@@ -40,6 +41,7 @@ from bootstrap.api.schemas import (
     ExperimentDetailResponse,
     HealthResponse,
     IterationListResponse,
+    ThreadResponse,
     TraceResponse,
     WorkspaceListResponse,
     WorkspaceResponse,
@@ -296,6 +298,27 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
             if trace is None:
                 raise HTTPException(status_code=404, detail="trace not found")
             return trace
+        finally:
+            storage.close()
+
+    # --- threads: all traces of one conversation, ordered ---
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/threads/{thread_id}",
+        response_model=ThreadResponse,
+        tags=["traces"],
+    )
+    def threads_show(
+        workspace_id: str,
+        thread_id: str,
+        storage: SQLiteStorage = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> ThreadResponse:
+        try:
+            thread = load_thread(storage, workspace_id=workspace_id, thread_id=thread_id)
+            if thread is None:
+                raise HTTPException(status_code=404, detail="thread not found")
+            return thread
         finally:
             storage.close()
 

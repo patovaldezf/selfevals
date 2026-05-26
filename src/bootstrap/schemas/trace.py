@@ -52,6 +52,16 @@ class RunInfo(BootstrapModel):
     eval_case_id: NonEmptyStr | None = None
     repetition: int = Field(default=0, ge=0)
     seed: int | None = None
+    thread_id: NonEmptyStr | None = None
+    """Groups multiple traces that belong to one conversation / session.
+
+    A multi-turn eval case produces one Trace per turn; they all share a
+    `thread_id` so the traces can be assembled back into the ordered hilo.
+    Sourced from OTel `session.id` / `gen_ai.conversation.id` on import, or
+    set explicitly by the caller."""
+    thread_position: int | None = Field(default=None, ge=0)
+    """0-based turn index within the thread. None when the run is standalone
+    (no thread) or when ordering is to be inferred from `started_at`."""
 
 
 class AgentSnapshotRef(BootstrapModel):

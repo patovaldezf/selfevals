@@ -118,8 +118,34 @@ class TraceResponse(BaseModel):
     run_id: str
     experiment_id: str | None
     iteration: int | None
+    thread_id: str | None = None
+    thread_position: int | None = None
     final_state: str
     started_at: datetime
     ended_at: datetime | None
     spans: list[SpanSummary]
     metrics: dict[str, Any]
+
+
+class ThreadTurn(BaseModel):
+    """One trace within a thread, projected as a turn for the hilo view."""
+
+    trace_id: str
+    run_id: str
+    position: int
+    experiment_id: str | None = None
+    iteration: int | None = None
+    final_state: str
+    started_at: datetime
+    ended_at: datetime | None = None
+    primary_grade: str | None = None
+    grader_results: list[dict[str, Any]] = Field(default_factory=list)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+
+
+class ThreadResponse(BaseModel):
+    """All traces sharing a thread_id, assembled into an ordered conversation."""
+
+    thread_id: str
+    turn_count: int
+    turns: list[ThreadTurn] = Field(default_factory=list)

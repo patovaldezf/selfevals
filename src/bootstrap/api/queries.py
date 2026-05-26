@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel
@@ -21,6 +22,8 @@ from bootstrap.api.schemas import (
     ExperimentSummary,
     IterationSummary,
     SpanSummary,
+    ThreadResponse,
+    ThreadTurn,
     TraceResponse,
     WorkspaceResponse,
     WorkspaceSummary,
@@ -243,12 +246,67 @@ def load_trace(storage: SQLiteStorage, *, workspace_id: str, trace_id: str) -> T
         run_id=trace.run.run_id,
         experiment_id=trace.run.experiment_id,
         iteration=trace.run.iteration,
+        thread_id=trace.run.thread_id,
+        thread_position=trace.run.thread_position,
         final_state=str(trace.final_state.status),
         started_at=trace.environment.started_at,
         ended_at=trace.environment.ended_at,
         spans=[_span_summary(s) for s in trace.spans],
         metrics=trace.metrics.model_dump(mode="json"),
     )
+
+
+def load_thread(
+    storage: SQLiteStorage, *, workspace_id: str, thread_id: str
+) -> ThreadResponse | None:
+    """Assemble every Trace sharing `thread_id` into an ordered conversation.
+
+    Traces are ordered by `run.thread_position` when set, falling back to
+    `environment.started_at` so a thread without explicit turn indices still
+    reads in chronological order. Each turn carries its grader results so the
+    hilo view shows the calificación per turn, not just the transcript.
+    Returns None when no trace carries the thread_id.
+    """
+    rows = storage.connection.execute(
+        "SELECT payload FROM entities "
+        "WHERE workspace_id = ? AND entity_type = 'Trace' "
+        "AND json_extract(payload, '$.run.thread_id') = ?",
+        (workspace_id, thread_id),
+    ).fetchall()
+    if not rows:
+        return None
+
+    traces = [Trace.model_validate(json.loads(payload)) for (payload,) in rows]
+
+    def _sort_key(t: Trace) -> tuple[int, int, datetime]:
+        # Explicitly-positioned turns first (by position), then the rest by
+        # start time. The leading int makes positioned turns sort ahead of
+        # unpositioned ones deterministically.
+        pos = t.run.thread_position
+        has_pos = 0 if pos is not None else 1
+        return (has_pos, pos if pos is not None else 0, t.environment.started_at)
+
+    traces.sort(key=_sort_key)
+
+    turns: list[ThreadTurn] = []
+    for idx, trace in enumerate(traces):
+        primary_grade = trace.grader_results[0].label if trace.grader_results else None
+        turns.append(
+            ThreadTurn(
+                trace_id=trace.id,
+                run_id=trace.run.run_id,
+                position=trace.run.thread_position if trace.run.thread_position is not None else idx,
+                experiment_id=trace.run.experiment_id,
+                iteration=trace.run.iteration,
+                final_state=str(trace.final_state.status),
+                started_at=trace.environment.started_at,
+                ended_at=trace.environment.ended_at,
+                primary_grade=primary_grade,
+                grader_results=[g.model_dump(mode="json") for g in trace.grader_results],
+                metrics=trace.metrics.model_dump(mode="json"),
+            )
+        )
+    return ThreadResponse(thread_id=thread_id, turn_count=len(turns), turns=turns)
 
 
 def anchor_set_history(storage: SQLiteStorage, *, workspace_id: str) -> list[AnchorPoint]:
