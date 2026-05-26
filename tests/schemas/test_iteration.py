@@ -168,6 +168,29 @@ def test_iteration_happy() -> None:
     assert itr.state == IterationState.COMPLETED
 
 
+def test_failure_mode_counts_survive_serialization_round_trip() -> None:
+    # Storage persists the JSON payload, so a model_dump/model_validate
+    # round-trip is exactly the persistence path. error_analysis_design.md §5.
+    itr = _iteration(
+        metrics=IterationMetrics(
+            primary=MetricObservation(name="pass@1", value=0.8),
+            failure_mode_counts={"fm_invented_price": 3, "schema_violation": 1},
+        )
+    )
+    restored = IterationRecord.model_validate(itr.model_dump(mode="json"))
+    assert restored.metrics is not None
+    assert restored.metrics.failure_mode_counts == {
+        "fm_invented_price": 3,
+        "schema_violation": 1,
+    }
+
+
+def test_failure_mode_counts_default_empty() -> None:
+    itr = _iteration()
+    assert itr.metrics is not None
+    assert itr.metrics.failure_mode_counts == {}
+
+
 def test_iteration_completed_requires_metrics() -> None:
     with pytest.raises(ValidationError):
         _iteration(metrics=None)

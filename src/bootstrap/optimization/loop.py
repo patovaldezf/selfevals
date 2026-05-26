@@ -282,6 +282,7 @@ class OptimizationLoop:
             duration_seconds=(
                 aggregate.total_duration_ms / 1000 if aggregate.total_duration_ms else None
             ),
+            failure_mode_counts=dict(aggregate.failure_mode_counts),
         )
         variant_id = new_prefixed_id("var")
         trace_run_ids = [rep.trace.run.run_id for run in case_runs for rep in run.repetitions]

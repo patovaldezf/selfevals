@@ -314,6 +314,7 @@ def _reconstruct_result(
             primary_value=primary.value,
             guardrails=guardrails,
             reliability=reliability,
+            failure_mode_counts=dict(record.metrics.failure_mode_counts),
             total_cost_usd=record.metrics.cost_usd or 0.0,
             total_duration_ms=int((record.metrics.duration_seconds or 0.0) * 1000),
             case_count=int(record.execution.ran_against.get("case_count", 0)),
