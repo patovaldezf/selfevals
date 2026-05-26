@@ -1,4 +1,4 @@
-# Status — v0.1.0
+# Status — v0.2.0
 
 This file is the honest snapshot of what bootstrap can and cannot do
 today. Updated on every release; the CHANGELOG records what *changed*,

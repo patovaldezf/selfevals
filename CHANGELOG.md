@@ -7,6 +7,12 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-26
+
+First release published to PyPI (distribution name `selfeval`; import and
+CLI remain `bootstrap`). Adds the error-analysis closed loop, thread
+grouping, and trace message-content capture on top of the 0.1.0 runtime.
+
 ### Added
 
 - **Error analysis + failure-mode taxonomy** — a closed loop, not a dashboard:
