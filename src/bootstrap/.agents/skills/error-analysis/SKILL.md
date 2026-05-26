@@ -109,8 +109,8 @@ bootstrap --db <db> analyze push <workspace_id> <experiment_id> --by "agent:<you
      "definition": "Agent states a price not present in the catalog context."}
   ],
   "assignments": [
-    {"trace_id": "trc_…", "mode_id": "fm_…", "quote": "…", "note": "…"},
-    {"trace_id": "trc_…", "new_mode_slug": "invented_price", "quote": "$499", "note": "…"}
+    {"trace_id": "trc_…", "mode_id": "fm_…", "quote": "…", "open_note": "…"},
+    {"trace_id": "trc_…", "new_mode_slug": "invented_price", "quote": "$499", "open_note": "…"}
   ],
   "hypotheses": [
     {"targets_mode_slug": "invented_price",
