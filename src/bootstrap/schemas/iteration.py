@@ -110,6 +110,12 @@ class ProposerInputs(BootstrapModel):
     type: ProposerStrategy
     strategy_parameters: dict[str, Any] = Field(default_factory=dict)
     iterations_consulted: list[int] = Field(default_factory=list)
+    failure_modes_consulted: list[str] = Field(default_factory=list)
+    """Stable failure-mode ids the proposer was shown when proposing this
+    iteration — the dominant official modes carried over from prior iterations.
+    Lets a Proposal.hypothesis say "reduce mode fm_…" and makes the
+    before/after on `IterationMetrics.failure_mode_counts` interpretable.
+    See docs/spec/error_analysis_design.md §7."""
 
 
 class ExecutionInfo(BootstrapModel):

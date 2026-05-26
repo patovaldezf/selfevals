@@ -62,6 +62,18 @@ class IterationAggregate:
     case_count: int = 0
     case_outcomes: list[CaseOutcome] = field(default_factory=list)
 
+    @property
+    def fail_rate(self) -> float:
+        """Fraction of cases whose first repetition did not pass.
+
+        This is the trigger signal for staging error analysis (§9): a healthy
+        run stays below the configured threshold and is never staged.
+        """
+        if not self.case_outcomes:
+            return 0.0
+        failed = sum(1 for o in self.case_outcomes if o.pass_at_1 == 0.0)
+        return failed / len(self.case_outcomes)
+
 
 def _trace_cost_and_duration(traces: list[Trace]) -> tuple[float, int]:
     cost = sum(t.metrics.total_cost_usd for t in traces)

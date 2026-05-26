@@ -11,10 +11,12 @@ from __future__ import annotations
 from bootstrap.analysis.bundle import build_bundle
 from bootstrap.analysis.ingest import IngestSummary, ingest_result
 from bootstrap.analysis.schemas import AnalysisBundle, AnalysisResult
+from bootstrap.analysis.staging import AnalysisStagingRecord
 
 __all__ = [
     "AnalysisBundle",
     "AnalysisResult",
+    "AnalysisStagingRecord",
     "IngestSummary",
     "build_bundle",
     "ingest_result",

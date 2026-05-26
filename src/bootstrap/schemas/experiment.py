@@ -205,6 +205,44 @@ class DecisionPolicy(BootstrapModel):
     )
 
 
+class AnalysisTriggerSpec(BootstrapModel):
+    """When bootstrap should stage an error-analysis bundle.
+
+    `fail_rate_above` is the only trigger in v1: stage only when the
+    iteration's fraction of failed cases exceeds `threshold`. This is the
+    sample-size instinct — don't spend an agent's coding effort on a healthy
+    run. See docs/spec/error_analysis_design.md §9.
+    """
+
+    when: Literal["fail_rate_above"] = "fail_rate_above"
+    threshold: float = Field(default=0.10, ge=0.0, le=1.0)
+
+
+class ErrorAnalysisSpec(BootstrapModel):
+    """Declarative opt-in for the continuous error-analysis loop (§9).
+
+    Declarative and governable, not a boolean afterthought: the intent lives
+    with the experiment and is reviewable in the diff. bootstrap stages a
+    bundle (and records that the trigger fired) when the trigger condition
+    holds; it never invokes an agent or an LLM itself — agents own the
+    intelligence, bootstrap owns the data + contract.
+    """
+
+    enabled: bool = False
+    taxonomy: Literal["workspace"] = "workspace"
+    """Which taxonomy to classify against. Only per-workspace in v1."""
+    trigger: AnalysisTriggerSpec = Field(default_factory=AnalysisTriggerSpec)
+    scope: Literal["failed_only", "all"] = "failed_only"
+
+    def should_stage(self, *, fail_rate: float) -> bool:
+        """True when this iteration warrants staging an analysis bundle."""
+        if not self.enabled:
+            return False
+        if self.trigger.when == "fail_rate_above":
+            return fail_rate > self.trigger.threshold
+        return False
+
+
 class ExperimentTaxonomy(BootstrapModel):
     """High-level classification of an Experiment."""
 
@@ -265,6 +303,7 @@ class Experiment(BaseEntity):
     judge_defenses: JudgeDefenses = Field(default_factory=JudgeDefenses)
     reliability: ReliabilitySpec = Field(default_factory=ReliabilitySpec)
     decision: DecisionPolicy = Field(default_factory=DecisionPolicy)
+    error_analysis: ErrorAnalysisSpec = Field(default_factory=ErrorAnalysisSpec)
     state: ExperimentState = ExperimentState.DRAFT
     content_hash: str | None = None
 
