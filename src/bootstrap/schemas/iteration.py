@@ -132,6 +132,12 @@ class IterationMetrics(BootstrapModel):
     reliability: dict[str, float] = Field(default_factory=dict)
     cost_usd: float | None = Field(default=None, ge=0.0)
     duration_seconds: float | None = Field(default=None, ge=0.0)
+    failure_mode_counts: dict[str, int] = Field(default_factory=dict)
+    """How often each failure mode occurred this iteration, keyed by the stable
+    mode identity (a `FailureMode` id once analysis has run, or a raw
+    deterministic-grader tag before then). Persisting these is what makes the
+    "did this change reduce mode X?" question answerable across iterations.
+    See docs/spec/error_analysis_design.md §5."""
 
 
 class IterationDecision(BootstrapModel):

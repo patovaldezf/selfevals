@@ -189,12 +189,10 @@ def _metrics_map(record: IterationRecord) -> dict[str, float]:
 
 
 def _failure_modes(record: IterationRecord) -> dict[str, int]:
-    # IterationMetrics doesn't carry failure mode counts post-persist
-    # (they live on the aggregate in-memory only). Once we add them to
-    # IterationMetrics this will pick them up. For now, this returns {}
-    # and the diff tables show "(no failure modes recorded)".
-    counts = getattr(record.metrics, "failure_mode_counts", None) if record.metrics else None
-    if isinstance(counts, dict):
+    # failure_mode_counts persists on IterationMetrics (see
+    # error_analysis_design.md §5), keyed by stable mode identity.
+    counts = record.metrics.failure_mode_counts if record.metrics else None
+    if counts:
         return {str(k): int(v) for k, v in counts.items()}
     return {}
 

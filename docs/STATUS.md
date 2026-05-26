@@ -51,10 +51,10 @@ this file records what *is*.
 - `GradeResult` is flat: `label + score + reason + failure_modes`.
   No `breakdown` for funnel-style multi-level scoring (planned for
   v0.2 once seals dogfooding identifies the exact shape).
-- Failure-mode counts do not survive persistence — they exist on
-  fresh `OptimizationResult` objects but `IterationMetrics` does
-  not carry them. The compare and report tooling already handles
-  their presence gracefully for when this is fixed.
+- Failure-mode counts now persist on
+  `IterationMetrics.failure_mode_counts` (keyed by stable mode
+  identity), so the compare/report tooling shows real data and
+  per-mode trends are queryable across iterations.
 - `Annotation` exists as a schema but there is no UI workflow for
   collecting human labels. The CLI ingests them via direct API.
 
