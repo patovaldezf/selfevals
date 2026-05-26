@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 
 from bootstrap._internal.ids import new_prefixed_id
 from bootstrap.analysis.staging import AnalysisStagingRecord
-from bootstrap.graders.base import Grader, GraderContext, GradeResult
+from bootstrap.graders.base import GradeLabel, Grader, GraderContext, GradeResult
 from bootstrap.optimization.aggregator import (
     Aggregator,
     CaseOutcome,
@@ -45,9 +45,10 @@ from bootstrap.schemas.iteration import (
     Proposal,
     ProposerInputs,
 )
+from bootstrap.schemas.trace import GraderResult
 
 if TYPE_CHECKING:
-    from bootstrap.runner.executor import CaseRun, Executor
+    from bootstrap.runner.executor import CaseRun, Executor, RepetitionResult
     from bootstrap.schemas.eval_case import EvalCase
     from bootstrap.storage.interface import WorkspaceScope
 
@@ -164,7 +165,9 @@ class OptimizationLoop:
                 result.terminated_reason = f"search_space_exhausted: {exc}"
                 break
 
-            aggregate, case_runs, _per_case_grades = self._run_iteration(proposal)
+            aggregate, case_runs, _per_case_grades = self._run_iteration(
+                proposal, iteration=index
+            )
             decision_outcome, rationale = self._evaluator.evaluate(
                 experiment=self._experiment,
                 aggregate=aggregate,
@@ -230,7 +233,7 @@ class OptimizationLoop:
     # --- internals ---
 
     def _run_iteration(
-        self, proposal: Proposal
+        self, proposal: Proposal, *, iteration: int
     ) -> tuple[IterationAggregate, list[CaseRun], dict[str, list[list[GradeResult]]]]:
         case_runs: list[CaseRun] = []
         per_case_grades: dict[str, list[list[GradeResult]]] = {}
@@ -240,6 +243,7 @@ class OptimizationLoop:
                 case,
                 repetitions=self._reps,
                 experiment_id=self._experiment.id,
+                iteration=iteration,
                 parameter_overrides=proposal.parameters,
             )
             case_runs.append(case_run)
@@ -251,6 +255,7 @@ class OptimizationLoop:
                     for g in active_graders
                 ]
                 grades_per_rep.append(grades)
+                self._maybe_persist_trace(rep, grades)
             per_case_grades[case.id] = grades_per_rep
             case_outcomes.append(Aggregator.case_outcome(case, case_run, grades_per_rep))
         primary_metric = self._experiment.target.primary.name
@@ -261,6 +266,29 @@ class OptimizationLoop:
             reliability_metrics=reliability_metrics,
         )
         return aggregate, case_runs, per_case_grades
+
+    def _maybe_persist_trace(
+        self, rep: RepetitionResult, grades: list[GradeResult]
+    ) -> None:
+        """Persist this repetition's trace per `run.persist_traces` (§5).
+
+        The trace is stamped with its grader results first, so `analyze pull`
+        can classify it without re-running the agent. `none` skips entirely;
+        `failed` keeps only errored / failing-graded traces; `all` keeps them
+        all. No-op without a scope (e.g. `--no-persist` runs).
+        """
+        mode = self._experiment.run.persist_traces
+        if self._scope is None or mode == "none":
+            return
+        failed = rep.error is not None or any(
+            g.label in (GradeLabel.FAIL, GradeLabel.ERROR, GradeLabel.PARTIAL) for g in grades
+        )
+        if mode == "failed" and not failed:
+            return
+        trace = rep.trace.model_copy(
+            update={"grader_results": [_to_trace_grader_result(g) for g in grades]}
+        )
+        self._scope.put_entity(trace)
 
     def _build_iteration_record(
         self,
@@ -349,6 +377,22 @@ class OptimizationLoop:
                 ),
             )
         )
+
+
+def _to_trace_grader_result(grade: GradeResult) -> GraderResult:
+    """Project the loop's `GradeResult` onto the trace's `GraderResult`.
+
+    Carries the fields error analysis needs — grader, label, score, confidence,
+    failure_modes. The free-text `reason` is dropped (the trace schema routes
+    reasons through an object-store pointer, which the loop doesn't populate).
+    """
+    return GraderResult(
+        grader=grade.grader,
+        label=str(grade.label),
+        score=grade.score,
+        confidence=grade.confidence,
+        failure_modes=list(grade.failure_modes),
+    )
 
 
 def _dominant_modes(failure_mode_counts: dict[str, int]) -> list[str]:

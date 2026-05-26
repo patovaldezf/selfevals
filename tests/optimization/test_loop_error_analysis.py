@@ -55,6 +55,7 @@ from bootstrap.schemas.experiment import (
     TargetSpec,
 )
 from bootstrap.schemas.fleet import Agent, ModelRef
+from bootstrap.schemas.trace import Trace
 from bootstrap.schemas.workspace import Workspace
 from bootstrap.storage.sqlite import SQLiteStorage
 
@@ -94,6 +95,7 @@ def _experiment(
     max_iterations: int,
     search_space: dict[str, Any],
     error_analysis: ErrorAnalysisSpec | None = None,
+    persist_traces: str = "failed",
 ) -> Experiment:
     return Experiment(
         id=Experiment.make_id(),
@@ -118,6 +120,7 @@ def _experiment(
             sandbox=SandboxMode.MOCK,
             max_iterations=max_iterations,
             convergence=ConvergenceSpec(min_delta=1e-6, patience=max_iterations + 1),
+            persist_traces=persist_traces,  # type: ignore[arg-type]
         ),
         search_space=SearchSpace(model_params=search_space),
         reliability=ReliabilitySpec(metrics=["pass@1"]),
@@ -142,10 +145,10 @@ def _passing_adapter() -> EmbeddedAdapter:
     return EmbeddedAdapter(fn, agent=_agent())
 
 
-def _scoped_loop(exp: Experiment, adapter: EmbeddedAdapter, tmp_path: Path) -> tuple[
-    OptimizationLoop, SQLiteStorage
-]:
-    storage = SQLiteStorage(tmp_path / "db.sqlite")
+def _scoped_loop(
+    exp: Experiment, adapter: EmbeddedAdapter, tmp_path: Path, *, db_name: str = "db.sqlite"
+) -> tuple[OptimizationLoop, SQLiteStorage]:
+    storage = SQLiteStorage(tmp_path / db_name)
     with storage.open(WS) as scope:
         scope.put_entity(Workspace(id=WS, workspace_id=WS, slug="t", name="t"))
     executor = Executor(
@@ -228,3 +231,50 @@ def test_failure_modes_consulted_carries_prior_iteration(tmp_path: Path) -> None
     assert second.iteration_record.proposer.failure_modes_consulted == [
         "missing_required_substring"
     ]
+
+
+def _persisted_traces(storage: SQLiteStorage) -> list[Trace]:
+    with storage.open(WS) as s:
+        return [t for t in s.list_entities(Trace) if isinstance(t, Trace)]
+
+
+def test_persist_traces_none_writes_no_traces(tmp_path: Path) -> None:
+    exp = _experiment(max_iterations=1, search_space={"level": [0.0]}, persist_traces="none")
+    loop, storage = _scoped_loop(exp, _failing_adapter(), tmp_path)
+    loop.run()
+    traces = _persisted_traces(storage)
+    storage.close()
+    assert traces == []
+
+
+def test_persist_traces_all_writes_every_trace(tmp_path: Path) -> None:
+    # One passing iteration → its trace is still persisted under `all`.
+    exp = _experiment(max_iterations=1, search_space={"level": [1.0]}, persist_traces="all")
+    loop, storage = _scoped_loop(exp, _passing_adapter(), tmp_path)
+    loop.run()
+    traces = _persisted_traces(storage)
+    storage.close()
+    assert len(traces) == 1
+    # Persisted with its grader results, so analyze pull can classify it.
+    assert traces[0].grader_results
+    assert traces[0].run.experiment_id == exp.id
+    assert traces[0].run.iteration == 0
+
+
+def test_persist_traces_failed_keeps_only_failures(tmp_path: Path) -> None:
+    # A failing run → the trace IS persisted (it failed) with its mode tag.
+    failing = _experiment(max_iterations=1, search_space={"level": [0.0]})  # default "failed"
+    loop, storage = _scoped_loop(failing, _failing_adapter(), tmp_path)
+    loop.run()
+    traces = _persisted_traces(storage)
+    assert len(traces) == 1
+    assert "missing_required_substring" in traces[0].grader_results[0].failure_modes
+    storage.close()
+
+    # A passing run under the same default → nothing persisted.
+    passing = _experiment(max_iterations=1, search_space={"level": [1.0]})
+    loop2, storage2 = _scoped_loop(passing, _passing_adapter(), tmp_path, db_name="pass.sqlite")
+    loop2.run()
+    traces2 = _persisted_traces(storage2)
+    storage2.close()
+    assert traces2 == []

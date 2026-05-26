@@ -384,6 +384,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             raise CommandError("--max-iterations must be >= 1")
         spec.experiment.run.max_iterations = args.max_iterations
 
+    if args.persist_traces is not None:
+        spec.experiment.run.persist_traces = args.persist_traces
+
     try:
         callable_obj = resolve_agent_callable(spec.agent)
     except LoaderError as exc:

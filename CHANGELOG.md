@@ -33,6 +33,12 @@ Versions follow [SemVer](https://semver.org/).
     prior iteration's dominant modes so a hypothesis can target a named mode;
     `IterationAggregate.fail_rate` is the trigger signal; verification reuses
     the existing `compare.py` before/after on stable mode ids.
+  - **Trace persistence** — `RunSpec.persist_traces` (`none` / `all` / `failed`,
+    default `failed`) controls which per-repetition traces the loop writes,
+    stamped with their grader results. A plain `bootstrap run` now leaves the
+    failed traces in storage so `analyze pull` works without the SDK/OTLP path;
+    `--persist-traces` overrides it on the CLI. Traces also carry their
+    `iteration` so `analyze pull --iteration N` scopes correctly.
   - **YAML opt-in** — a declarative, governable `error_analysis:` block on an
     experiment (`enabled`, `taxonomy`, `trigger.fail_rate_above + threshold`,
     `scope`). Default off. When the trigger fires, bootstrap persists an
