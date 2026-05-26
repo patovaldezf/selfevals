@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from bootstrap._internal.ids import new_prefixed_id
+from bootstrap.analysis.staging import AnalysisStagingRecord
 from bootstrap.graders.base import Grader, GraderContext, GradeResult
 from bootstrap.optimization.aggregator import (
     Aggregator,
@@ -148,6 +149,9 @@ class OptimizationLoop:
         max_iter = self._experiment.run.max_iterations
         convergence = self._experiment.run.convergence
         recent_primary: list[float] = []
+        # Dominant failure modes carried from the prior iteration — the context
+        # the proposer is "shown" so a hypothesis can target a specific mode (§7).
+        prev_failure_modes: list[str] = []
 
         for index in range(max_iter):
             context = ProposerContext(
@@ -175,6 +179,7 @@ class OptimizationLoop:
                 decision_outcome=decision_outcome,
                 rationale=rationale,
                 baseline=baseline,
+                failure_modes_consulted=prev_failure_modes,
             )
             decision_record = DecisionRecord(
                 id=DecisionRecord.make_id(),
@@ -204,6 +209,9 @@ class OptimizationLoop:
                     decision_record=decision_record,
                 )
             )
+
+            self._maybe_stage_analysis(iteration=index, aggregate=aggregate)
+            prev_failure_modes = _dominant_modes(aggregate.failure_mode_counts)
 
             recent_primary.append(aggregate.primary_value)
             if baseline is None or aggregate.primary_value > baseline.primary_value:
@@ -264,6 +272,7 @@ class OptimizationLoop:
         decision_outcome: DecisionOutcome,
         rationale: str,
         baseline: IterationAggregate | None,
+        failure_modes_consulted: list[str],
     ) -> IterationRecord:
         primary_delta: float | None = None
         if baseline is not None:
@@ -296,6 +305,7 @@ class OptimizationLoop:
                 type=self._experiment.proposer.strategy,
                 strategy_parameters=dict(self._experiment.proposer.parameters),
                 iterations_consulted=list(range(iteration)),
+                failure_modes_consulted=failure_modes_consulted,
             ),
             hypothesis=proposal.hypothesis,
             proposed_parameters=dict(proposal.parameters),
@@ -310,6 +320,45 @@ class OptimizationLoop:
                 rationale=rationale,
             ),
         )
+
+    def _maybe_stage_analysis(self, *, iteration: int, aggregate: IterationAggregate) -> None:
+        """Persist an advisory staging marker when the trigger fires (§9).
+
+        bootstrap stages a bundle's worth of signal — it never runs an agent
+        or an LLM. No-op when error analysis is disabled, when the run is
+        healthy enough to stay under the threshold, or when there is nowhere
+        to persist (the loop ran without a scope).
+        """
+        spec = self._experiment.error_analysis
+        fail_rate = aggregate.fail_rate
+        if self._scope is None or not spec.should_stage(fail_rate=fail_rate):
+            return
+        self._scope.put_entity(
+            AnalysisStagingRecord(
+                id=AnalysisStagingRecord.make_id(),
+                workspace_id=self._experiment.workspace_id,
+                experiment_id=self._experiment.id,
+                iteration=iteration,
+                fail_rate=fail_rate,
+                threshold=spec.trigger.threshold,
+                scope=spec.scope,
+                reason=(
+                    f"fail_rate {fail_rate:.0%} > threshold "
+                    f"{spec.trigger.threshold:.0%}; run `bootstrap analyze pull` "
+                    f"{self._experiment.id} to code these failures"
+                ),
+            )
+        )
+
+
+def _dominant_modes(failure_mode_counts: dict[str, int]) -> list[str]:
+    """Mode identities ordered by frequency (desc), ties broken by id.
+
+    This is the carryover the proposer is shown next iteration: the modes that
+    hurt most, so a hypothesis can name one explicitly. Empty when no modes
+    were tagged. See docs/spec/error_analysis_design.md §7.
+    """
+    return [mode for mode, _ in sorted(failure_mode_counts.items(), key=lambda kv: (-kv[1], kv[0]))]
 
 
 def _graders_for_case(graders: list[Grader], case: EvalCase) -> list[Grader]:

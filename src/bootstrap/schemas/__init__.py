@@ -18,16 +18,14 @@ from bootstrap.schemas.eval_case import (
     GroundTruthSpec,
     SourceInfo,
 )
-from bootstrap.schemas.failure_mode import (
-    FailureMode,
-    FailureModeExample,
-)
 from bootstrap.schemas.experiment import (
+    AnalysisTriggerSpec,
     ConvergenceSpec,
     CounterfactualSpec,
     DatasetUsage,
     DecisionPolicy,
     EditableContract,
+    ErrorAnalysisSpec,
     Experiment,
     ExperimentTaxonomy,
     FrozenSnapshot,
@@ -42,6 +40,10 @@ from bootstrap.schemas.experiment import (
     RunSpec,
     SearchSpace,
     TargetSpec,
+)
+from bootstrap.schemas.failure_mode import (
+    FailureMode,
+    FailureModeExample,
 )
 from bootstrap.schemas.fleet import Agent, AgentFleet, ModelRef
 from bootstrap.schemas.grader_card import (
@@ -113,6 +115,7 @@ __all__ = [
     "AgentFleet",
     "AgentSnapshotRef",
     "AgentTurnSpan",
+    "AnalysisTriggerSpec",
     "Annotation",
     "AnnotationLabels",
     "BaseEntity",
@@ -137,6 +140,7 @@ __all__ = [
     "EditableContract",
     "EntityRef",
     "EnvironmentInfo",
+    "ErrorAnalysisSpec",
     "ErrorSpan",
     "EvalCase",
     "ExecutionInfo",
