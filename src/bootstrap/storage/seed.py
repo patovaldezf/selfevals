@@ -16,9 +16,53 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from bootstrap.schemas.enums import Role
+from bootstrap.schemas.enums import FailureModeStatus, Role
+from bootstrap.schemas.failure_mode import FailureMode
 from bootstrap.schemas.workspace import Member, Workspace
 from bootstrap.storage.interface import ListFilter, StorageInterface
+
+# Industry-common failure modes (LangSmith Insights / Hamel & Shankar). Seeded
+# as OFFICIAL so a fresh workspace isn't starting the taxonomy from zero. See
+# docs/spec/error_analysis_design.md §2.
+CANONICAL_FAILURE_MODES: list[tuple[str, str, str]] = [
+    (
+        "groundedness_miss",
+        "Groundedness miss",
+        "Asserts something unsupported by the provided context or sources.",
+    ),
+    (
+        "refusal_over_trigger",
+        "Refusal over-trigger",
+        "Refuses or hedges on a request that is in fact answerable and allowed.",
+    ),
+    (
+        "refusal_under_trigger",
+        "Refusal under-trigger",
+        "Answers a request that should have been refused or escalated.",
+    ),
+    (
+        "tool_call_arg_mismatch",
+        "Tool-call argument mismatch",
+        "Calls the right tool with wrong, malformed, or missing arguments.",
+    ),
+    (
+        "tool_call_wrong_tool",
+        "Tool-call wrong tool",
+        "Invokes a tool other than the one the task required.",
+    ),
+    ("agent_loop", "Agent loop", "Repeats the same step or thought without making progress."),
+    (
+        "retrieval_miss",
+        "Retrieval miss",
+        "Fails to retrieve the relevant document that was available.",
+    ),
+    (
+        "schema_violation",
+        "Schema violation",
+        "Output does not conform to the required structure or schema.",
+    ),
+    ("hallucinated", "Hallucinated", "Fabricates a fact, entity, or value with no basis in input."),
+]
 
 
 @dataclass(frozen=True)
@@ -78,6 +122,38 @@ def seed_workspace(
             scope.put_entity(member)
 
     return SeededWorkspace(workspace=workspace, members=members)
+
+
+def seed_failure_taxonomy(storage: StorageInterface, *, workspace_id: str) -> list[FailureMode]:
+    """Seed the canonical failure-mode vocabulary into a workspace.
+
+    Idempotent on slug: modes whose slug already exists are left untouched, so
+    re-seeding never duplicates or clobbers human edits. Returns the modes that
+    now exist for the canonical slugs (created or pre-existing).
+    """
+    with storage.open(workspace_id) as scope:
+        existing = {
+            fm.slug: fm
+            for fm in scope.list_entities(FailureMode, ListFilter())
+            if isinstance(fm, FailureMode)
+        }
+        out: list[FailureMode] = []
+        for slug, title, definition in CANONICAL_FAILURE_MODES:
+            if slug in existing:
+                out.append(existing[slug])
+                continue
+            mode = FailureMode(
+                id=FailureMode.make_id(),
+                workspace_id=workspace_id,
+                slug=slug,
+                title=title,
+                definition=definition,
+                status=FailureModeStatus.OFFICIAL,
+                proposed_by="seed",
+            )
+            scope.put_entity(mode)
+            out.append(mode)
+    return out
 
 
 def _find_workspace_by_slug(
