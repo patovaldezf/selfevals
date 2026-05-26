@@ -342,6 +342,40 @@ def _build_parser() -> argparse.ArgumentParser:
     p_fm_edit.add_argument("--definition", default=None)
     p_fm_edit.set_defaults(func=analyze_commands.cmd_failuremode_edit)
 
+    # --- skills (bundled agent skills) ---
+    p_skills = make_subparser(
+        sub,
+        "skills",
+        help_text="List the agent skills bundled with this install, or print one's path.",
+        description=(
+            "bootstrap ships agent skills (e.g. error-analysis) inside the "
+            "package. `list` shows them; `path` prints a skill's directory so "
+            "an agent or onboarding flow can read or install it."
+        ),
+        examples=[
+            "bootstrap skills list",
+            "bootstrap skills path error-analysis",
+        ],
+    )
+    skills_sub = p_skills.add_subparsers(dest="skills_command", required=True)
+    p_skills_list = skills_sub.add_parser(
+        "list",
+        help="List bundled skills.",
+        description="List every agent skill shipped with this bootstrap install.",
+        epilog="Example:\n  bootstrap skills list",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_skills_list.set_defaults(func=commands.cmd_skills_list)
+    p_skills_path = skills_sub.add_parser(
+        "path",
+        help="Print the directory of a bundled skill.",
+        description="Print the on-disk directory of the named bundled skill.",
+        epilog="Example:\n  bootstrap skills path error-analysis",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_skills_path.add_argument("name", help="Skill name, e.g. error-analysis.")
+    p_skills_path.set_defaults(func=commands.cmd_skills_path)
+
     return parser
 
 
