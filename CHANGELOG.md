@@ -9,6 +9,43 @@ Versions follow [SemVer](https://semver.org/).
 
 ### Added
 
+- **Error analysis + failure-mode taxonomy** — a closed loop, not a dashboard:
+  it grows a per-workspace failure-mode taxonomy and drives the next experiment.
+  bootstrap owns the data, contract, persistence, and verification; the
+  intelligence (open/axial coding) lives in an external coding agent. bootstrap
+  never calls an LLM. Design: `docs/spec/error_analysis_design.md`.
+  - **Persistence fix** — `IterationMetrics.failure_mode_counts` now persists
+    and survives a round-trip, so "top modes of experiment X" / "trend of mode
+    Y across iterations" are answerable. Closes the v0.1.0 known gap; the
+    markdown report and `compare` start showing real failure-mode data.
+  - **`FailureMode` entity** + per-workspace taxonomy seeded by `init` (9
+    canonical modes). Lifecycle CANDIDATE → OFFICIAL → RETIRED with a **human
+    promotion gate**; `superseded_by` back-pointer on merge.
+  - **Handshake** — `bootstrap analyze pull <ws> <exp>` emits an
+    `AnalysisBundle` (failed traces + live taxonomy) as JSON; `analyze push`
+    ingests an `AnalysisResult` from stdin, validating-before-writing and
+    enforcing the assignment XOR (`mode_id` *or* `new_mode_slug`) and
+    classify-don't-rename invariants. Re-proposing an existing slug doesn't
+    duplicate it (discover-once, classify-thereafter).
+  - **`failuremode` CLI** — `list / promote / retire / merge / edit` for
+    taxonomy management and the human gate.
+  - **Closing the loop** — `ProposerInputs.failure_modes_consulted` carries the
+    prior iteration's dominant modes so a hypothesis can target a named mode;
+    `IterationAggregate.fail_rate` is the trigger signal; verification reuses
+    the existing `compare.py` before/after on stable mode ids.
+  - **YAML opt-in** — a declarative, governable `error_analysis:` block on an
+    experiment (`enabled`, `taxonomy`, `trigger.fail_rate_above + threshold`,
+    `scope`). Default off. When the trigger fires, bootstrap persists an
+    advisory `AnalysisStagingRecord` ("this run is worth coding") — it never
+    invokes an agent. The pingpong example opts in.
+  - **Bundled `error-analysis` skill** — ships inside the package
+    (`bootstrap/.agents/skills/`, FastAPI convention) so `pip install bootstrap`
+    makes it discoverable. It encodes the *method* (open → axial coding,
+    saturation, the handshake, the human gate), not intelligence. New
+    `bootstrap.skills` locator + `bootstrap skills list / path` CLI.
+  - 60+ new tests across schema round-trips, the push invariants, the
+    second-round stability property, loop staging + mode carryover, the YAML
+    loader, the skills locator, and the CLI cycle. mypy --strict + ruff clean.
 - **Thread grouping** — traces can now be assembled into the conversation
   (hilo) they belong to. `RunInfo` gains `thread_id` + `thread_position`; the
   OTel importer auto-detects the thread from `session.id` (OpenInference) or
@@ -119,7 +156,8 @@ Reporter (Day 4):
   (`uv sync --extra web`) to install FastAPI.
 - Failure modes do not yet survive persistence to SQLite — the
   compare and report tooling already handles their presence gracefully
-  for when the schema is extended.
+  for when the schema is extended. *(Resolved in [Unreleased]: error
+  analysis persists `failure_mode_counts`.)*
 - `CliCommandAdapter` and `HttpEndpointAdapter` are not yet
   auto-wired from YAML; users instantiate them via a Python
   entrypoint. `docs/adapters.md` documents the workaround.
