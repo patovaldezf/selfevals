@@ -189,6 +189,15 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not write iterations/decisions to the SQLite db.",
     )
+    p_run.add_argument(
+        "--persist-traces",
+        choices=["none", "all", "failed"],
+        default=None,
+        help=(
+            "Override run.persist_traces: which traces to store — none, all, or "
+            "failed (default in the spec). Failed traces feed `analyze pull`."
+        ),
+    )
     p_run.set_defaults(func=commands.cmd_run)
 
     # --- compare ---

@@ -141,6 +141,13 @@ class RunSpec(BootstrapModel):
     parallelism: int = Field(default=1, ge=1, le=64)
     convergence: ConvergenceSpec = Field(default_factory=ConvergenceSpec)
     seed: int | None = None
+    persist_traces: Literal["none", "all", "failed"] = "failed"
+    """Which per-repetition traces the loop writes to storage:
+    `none` (keep the DB small — traces aren't queryable afterward),
+    `all` (full observability), or `failed` (default — only traces that
+    errored or got a failing grade, the ones error analysis needs). Persisted
+    traces carry their grader results, so `analyze pull` can classify them
+    without re-running the agent. See docs/spec/error_analysis_design.md §5."""
 
 
 class JudgePanel(BootstrapModel):
