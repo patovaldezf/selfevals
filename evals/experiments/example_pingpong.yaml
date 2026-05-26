@@ -45,6 +45,16 @@ experiment:
   reliability:
     metrics:
       - pass@1
+  # Opt into the continuous error-analysis loop (design §9). When an iteration's
+  # fail rate clears the threshold, bootstrap stages a bundle and the bundled
+  # `error-analysis` skill can run `analyze pull` → code → `analyze push`.
+  error_analysis:
+    enabled: true
+    taxonomy: workspace
+    trigger:
+      when: fail_rate_above
+      threshold: 0.10
+    scope: failed_only
 
 dataset:
   cases_path: ../datasets/pingpong.jsonl

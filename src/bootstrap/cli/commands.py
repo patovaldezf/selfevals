@@ -259,6 +259,32 @@ def cmd_estimate(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- skills ---
+
+
+def cmd_skills_list(args: argparse.Namespace) -> int:
+    from bootstrap import skills
+
+    names = skills.list_skills()
+    if not names:
+        print("(no bundled skills)")
+        return 0
+    for name in names:
+        print(name)
+    return 0
+
+
+def cmd_skills_path(args: argparse.Namespace) -> int:
+    from bootstrap import skills
+
+    try:
+        path = skills.skill_path(args.name)
+    except KeyError as exc:
+        raise CommandError(str(exc)) from exc
+    print(path)
+    return 0
+
+
 # --- internals ---
 
 

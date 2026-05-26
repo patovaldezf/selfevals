@@ -58,6 +58,12 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/bootstrap"]
+# Ship the bundled agent skills (mirrors FastAPI's `.agents/skills/`
+# convention) so `pip install bootstrap` makes them discoverable. They live
+# under a dot-directory inside the package; `artifacts` overrides hatchling's
+# default exclusion of dotfiles without double-including (a `force-include`
+# here duplicates the entry, since `packages` already globs the tree).
+artifacts = ["src/bootstrap/.agents/**"]
 
 [dependency-groups]
 dev = [

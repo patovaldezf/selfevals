@@ -26,6 +26,7 @@ TOP_LEVEL_SUBCOMMANDS = (
     "estimate",
     "analyze",
     "failuremode",
+    "skills",
 )
 
 
