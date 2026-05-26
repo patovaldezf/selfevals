@@ -58,7 +58,7 @@ from bootstrap.schemas.experiment import Experiment
 from bootstrap.schemas.iteration import DecisionRecord, IterationRecord
 from bootstrap.schemas.workspace import Workspace
 from bootstrap.storage.interface import ListFilter
-from bootstrap.storage.seed import seed_workspace
+from bootstrap.storage.seed import seed_failure_taxonomy, seed_workspace
 from bootstrap.storage.sqlite import SQLiteStorage
 
 if TYPE_CHECKING:
@@ -104,11 +104,13 @@ def cmd_init(args: argparse.Namespace) -> int:
             name=args.name or args.slug,
             user_id=args.user,
         )
+        modes = seed_failure_taxonomy(storage, workspace_id=seeded.workspace.id)
     finally:
         storage.close()
     ws = seeded.workspace
     print(f"workspace id={ws.id} slug={ws.slug} name={ws.name}")
     print(f"members: {len(seeded.members)} role(s)")
+    print(f"failure-mode taxonomy: {len(modes)} canonical mode(s) seeded")
     return 0
 
 
