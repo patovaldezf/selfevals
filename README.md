@@ -1,16 +1,25 @@
-# bootstrap
+# selfeval
 
 Self-improving evals framework for AI agents.
 
-Install the SDK, point it at your agent, and bootstrap reads your repo,
+Install the SDK, point it at your agent, and selfeval reads your repo,
 proposes an eval structure, runs experiments, and iterates on parameters
 toward a target metric. CLI-first, multi-tenant from day one, agnostic to
 the agent framework underneath.
 
-> Status: **v0.1.0 — runtime functional.** CLI end-to-end works: load
+> Status: **v0.2.0 — runtime functional.** CLI end-to-end works: load
 > an experiment spec → run cases through an adapter → grade traces →
 > persist iterations → render report. See `docs/spec/` for the
 > canonical and operational specs that drive design.
+
+## Install
+
+```bash
+pip install selfeval
+```
+
+The distribution is `selfeval`; the import name and the CLI command are
+both `bootstrap` (`import bootstrap`, `bootstrap --help`).
 
 ## Quickstart
 
@@ -33,7 +42,7 @@ uv run bootstrap report <workspace_id> <experiment_id>
 
 ## Try with a real LLM agent
 
-The `examples/hello_llm/` directory shows boostrap optimizing a real
+The `examples/hello_llm/` directory shows selfeval optimizing a real
 Anthropic agent over three eval cases (sentiment classification,
 structured extraction, and an open-ended customer-support reply) with
 two graders combined: a `DeterministicGrader` for the rule-based cases
@@ -62,7 +71,7 @@ The full setup lives in three files you can copy into your own repo:
 
 ## Adapters
 
-bootstrap ships three concrete `AgentAdapter` implementations so you can
+selfeval ships three concrete `AgentAdapter` implementations so you can
 point the loop at any agent:
 
 - `EmbeddedAdapter` — a Python callable in-process. Best for quick tests.
@@ -75,7 +84,7 @@ YAML/code snippets, and a comparison table.
 
 ## Docs
 
-- [Adapters](docs/adapters.md) — write agents that bootstrap can call.
+- [Adapters](docs/adapters.md) — write agents that selfeval can call.
 - [`docs/spec/`](docs/spec/) — canonical and operational specs (source
   of truth for design decisions).
 

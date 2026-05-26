@@ -1,9 +1,9 @@
 [project]
-name = "bootstrap"
-version = "0.1.0"
+name = "selfeval"
+version = "0.2.0"
 description = "Self-improving evals framework for AI agents."
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
 authors = [
     { name = "Patricio Valdez", email = "patovaldezflores@gmail.com" },
@@ -12,8 +12,11 @@ keywords = ["evals", "agents", "llm", "optimization"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
+    "Topic :: Software Development :: Testing",
+    "Intended Audience :: Developers",
 ]
 dependencies = [
     "pydantic>=2.7,<3",
@@ -34,16 +37,16 @@ telemetry = [
     "opentelemetry-exporter-otlp-proto-http>=1.25,<2",
     "opentelemetry-proto>=1.25,<2",
 ]
-anthropic = ["bootstrap[telemetry]", "openinference-instrumentation-anthropic>=0.1"]
-openai = ["bootstrap[telemetry]", "openinference-instrumentation-openai>=0.1"]
-bedrock = ["bootstrap[telemetry]", "openinference-instrumentation-bedrock>=0.1"]
-vertex = ["bootstrap[telemetry]", "openinference-instrumentation-vertexai>=0.1"]
+anthropic = ["selfeval[telemetry]", "openinference-instrumentation-anthropic>=0.1"]
+openai = ["selfeval[telemetry]", "openinference-instrumentation-openai>=0.1"]
+bedrock = ["selfeval[telemetry]", "openinference-instrumentation-bedrock>=0.1"]
+vertex = ["selfeval[telemetry]", "openinference-instrumentation-vertexai>=0.1"]
 # LangGraph traces flow through the LangChain instrumentor (it builds on
 # LangChain); there is no standalone openinference-instrumentation-langgraph.
-langchain = ["bootstrap[telemetry]", "openinference-instrumentation-langchain>=0.1"]
-crewai = ["bootstrap[telemetry]", "openinference-instrumentation-crewai>=0.1"]
+langchain = ["selfeval[telemetry]", "openinference-instrumentation-langchain>=0.1"]
+crewai = ["selfeval[telemetry]", "openinference-instrumentation-crewai>=0.1"]
 all = [
-    "bootstrap[web,anthropic,openai,bedrock,vertex,langchain,crewai]",
+    "selfeval[web,anthropic,openai,bedrock,vertex,langchain,crewai]",
 ]
 
 [project.scripts]
@@ -51,10 +54,37 @@ bootstrap = "bootstrap.cli.main:main"
 
 [project.urls]
 Homepage = "https://github.com/patovaldezf-berkeley/boostrap"
+Repository = "https://github.com/patovaldezf-berkeley/boostrap"
+Changelog = "https://github.com/patovaldezf-berkeley/boostrap/blob/main/CHANGELOG.md"
+Issues = "https://github.com/patovaldezf-berkeley/boostrap/issues"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+# Explicit allow-list. Without it, hatchling sweeps the whole repo into the
+# sdist — including `web/node_modules/` (3k+ files, 24MB). The sdist only
+# needs the package source plus the material that lets a consumer build,
+# test, and understand it.
+include = [
+    "src/bootstrap",
+    "tests",
+    "docs",
+    "evals",
+    "examples",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+# Belt-and-suspenders: the SvelteKit app under web/ (node_modules + build
+# output) must never reach the sdist. exclude wins over include in hatchling.
+exclude = [
+    "web",
+    "**/node_modules",
+    "**/*.sqlite*",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/bootstrap"]
@@ -74,6 +104,8 @@ dev = [
     "types-pyyaml>=6,<7",
     "httpx>=0.27,<1",  # fastapi.testclient.TestClient backend, used by tests/api
     "pytest-asyncio>=0.23,<1",  # runs @pytest.mark.asyncio tests (tests/api/test_broker)
+    "build>=1.2,<2",  # PEP 517 frontend for `python -m build` (sdist + wheel)
+    "twine>=5,<7",  # validate + upload distributions to (Test)PyPI
 ]
 
 [tool.ruff]
