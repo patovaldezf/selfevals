@@ -66,6 +66,28 @@ def _normalize_stop_reason(value: str | None) -> StopReason | None:
     return _STOP_REASON_NORMALIZE.get(value.strip().lower())
 
 
+def _optional_int(value: object) -> int | None:
+    """Coerce a provider-metadata timing value to a non-negative int, or None.
+
+    Adapters put streaming timings into `provider_metadata` as plain JSON; be
+    forgiving about numeric types but reject anything that is not a usable
+    non-negative number.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return int(value) if value >= 0 else None
+    return None
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value) if value >= 0 else None
+    return None
+
+
 class Executor:
     def __init__(
         self,
@@ -213,6 +235,14 @@ class Executor:
             llm.set_output(
                 stop_reason=_normalize_stop_reason(response.stop_reason),
                 tool_use_requested=tool_use_requests,
+            )
+            llm.set_timing(
+                time_to_first_token_ms=_optional_int(
+                    response.provider_metadata.get("time_to_first_token_ms")
+                ),
+                tokens_per_second=_optional_float(
+                    response.provider_metadata.get("tokens_per_second")
+                ),
             )
             llm.provider_metadata = dict(response.provider_metadata)
         for tu in response.tool_uses:

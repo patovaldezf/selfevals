@@ -81,6 +81,25 @@ def _trace_cost_and_duration(traces: list[Trace]) -> tuple[float, int]:
     return cost, duration
 
 
+def _percentile(sorted_values: list[float], q: float) -> float:
+    """Linear-interpolated percentile of an already-sorted, non-empty list.
+
+    `q` is a fraction in [0, 1] (e.g. 0.95 for p95). Matches the common
+    "type 7" interpolation so a single value yields itself and the result is
+    stable across runs.
+    """
+    if not sorted_values:
+        return 0.0
+    if len(sorted_values) == 1:
+        return sorted_values[0]
+    rank = q * (len(sorted_values) - 1)
+    low = int(rank)
+    frac = rank - low
+    if low + 1 >= len(sorted_values):
+        return sorted_values[-1]
+    return sorted_values[low] + frac * (sorted_values[low + 1] - sorted_values[low])
+
+
 def _pick_label(results: list[GradeResult]) -> GradeLabel:
     """Worst-of policy for combining multiple graders on one repetition.
 
@@ -168,6 +187,13 @@ def aggregate_iteration(
         guardrails["cost_usd_per_case"] = total_cost / n
     if total_duration > 0:
         guardrails["latency_ms_per_case_avg"] = total_duration / n
+        # Percentiles over the per-case latency distribution. p95 is the
+        # guardrail the experiment contract reads (§6); p50/p99 round out the
+        # tail picture. The DecisionMatrix looks these up by name.
+        latencies = sorted(float(o.duration_ms) for o in case_outcomes)
+        guardrails["latency_ms_p50"] = _percentile(latencies, 0.50)
+        guardrails["latency_ms_p95"] = _percentile(latencies, 0.95)
+        guardrails["latency_ms_p99"] = _percentile(latencies, 0.99)
     return IterationAggregate(
         primary_metric=primary_metric,
         primary_value=primary_value,
