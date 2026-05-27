@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from selfeval.graders.base import GradeLabel
-from selfeval.optimization.aggregator import CaseOutcome, aggregate_iteration
+from selfevals.graders.base import GradeLabel
+from selfevals.optimization.aggregator import CaseOutcome, aggregate_iteration
 
 
 def _outcome(

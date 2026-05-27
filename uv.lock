@@ -1251,7 +1251,7 @@ wheels = [
 ]
 
 [[package]]
-name = "selfeval"
+name = "selfevals"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [
@@ -1351,13 +1351,13 @@ requires-dist = [
     { name = "opentelemetry-sdk", marker = "extra == 'telemetry'", specifier = ">=1.25,<2" },
     { name = "pydantic", specifier = ">=2.7,<3" },
     { name = "pyyaml", specifier = ">=6,<7" },
-    { name = "selfeval", extras = ["telemetry"], marker = "extra == 'anthropic'" },
-    { name = "selfeval", extras = ["telemetry"], marker = "extra == 'bedrock'" },
-    { name = "selfeval", extras = ["telemetry"], marker = "extra == 'crewai'" },
-    { name = "selfeval", extras = ["telemetry"], marker = "extra == 'langchain'" },
-    { name = "selfeval", extras = ["telemetry"], marker = "extra == 'openai'" },
-    { name = "selfeval", extras = ["telemetry"], marker = "extra == 'vertex'" },
-    { name = "selfeval", extras = ["web", "anthropic", "openai", "bedrock", "vertex", "langchain", "crewai"], marker = "extra == 'all'" },
+    { name = "selfevals", extras = ["telemetry"], marker = "extra == 'anthropic'" },
+    { name = "selfevals", extras = ["telemetry"], marker = "extra == 'bedrock'" },
+    { name = "selfevals", extras = ["telemetry"], marker = "extra == 'crewai'" },
+    { name = "selfevals", extras = ["telemetry"], marker = "extra == 'langchain'" },
+    { name = "selfevals", extras = ["telemetry"], marker = "extra == 'openai'" },
+    { name = "selfevals", extras = ["telemetry"], marker = "extra == 'vertex'" },
+    { name = "selfevals", extras = ["web", "anthropic", "openai", "bedrock", "vertex", "langchain", "crewai"], marker = "extra == 'all'" },
     { name = "uvicorn", marker = "extra == 'web'", specifier = ">=0.29,<1" },
 ]
 provides-extras = ["web", "telemetry", "anthropic", "openai", "bedrock", "vertex", "langchain", "crewai", "all"]

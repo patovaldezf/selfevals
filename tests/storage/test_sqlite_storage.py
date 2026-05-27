@@ -4,16 +4,16 @@ from pathlib import Path
 
 import pytest
 
-from selfeval.schemas.enums import FeatureKind
-from selfeval.schemas.registry import FeatureRegistry, RiskProfile
-from selfeval.schemas.workspace import Workspace
-from selfeval.storage.errors import (
+from selfevals.schemas.enums import FeatureKind
+from selfevals.schemas.registry import FeatureRegistry, RiskProfile
+from selfevals.schemas.workspace import Workspace
+from selfevals.storage.errors import (
     EntityNotFoundError,
     OptimisticConcurrencyError,
     WorkspaceMismatchError,
 )
-from selfeval.storage.interface import ListFilter
-from selfeval.storage.sqlite import SQLiteStorage
+from selfevals.storage.interface import ListFilter
+from selfevals.storage.sqlite import SQLiteStorage
 
 
 def _ws(slug: str = "pato") -> Workspace:

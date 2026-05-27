@@ -1,11 +1,11 @@
-"""`selfeval skills list` lists bundled skills; `skills path` prints a skill's
-directory and exits 2 (SelfEvalUserError) on an unknown name."""
+"""`selfevals skills list` lists bundled skills; `skills path` prints a skill's
+directory and exits 2 (SelfEvalsUserError) on an unknown name."""
 
 from __future__ import annotations
 
 import pytest
 
-from selfeval.cli.main import app
+from selfevals.cli.main import app
 
 
 def _capture(capsys: pytest.CaptureFixture[str], argv: list[str]) -> tuple[int, str]:

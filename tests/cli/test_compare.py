@@ -1,4 +1,4 @@
-"""Tests for `selfeval compare` CLI + the underlying render_compare."""
+"""Tests for `selfevals compare` CLI + the underlying render_compare."""
 
 from __future__ import annotations
 
@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from selfeval.cli.main import app
-from selfeval.reporter.compare import render_compare
-from selfeval.schemas.enums import (
+from selfevals.cli.main import app
+from selfevals.reporter.compare import render_compare
+from selfevals.schemas.enums import (
     DecisionOutcome,
     IterationState,
     ProposerStrategy,
 )
-from selfeval.schemas.iteration import (
+from selfevals.schemas.iteration import (
     ExecutionInfo,
     IterationDecision,
     IterationMetrics,
@@ -21,7 +21,7 @@ from selfeval.schemas.iteration import (
     MetricObservation,
     ProposerInputs,
 )
-from selfeval.storage.sqlite import SQLiteStorage
+from selfevals.storage.sqlite import SQLiteStorage
 from tests.cli.test_cli import _seed_experiment_into_db, _ws_id_from
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"

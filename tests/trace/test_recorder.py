@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from selfeval.schemas.enums import SandboxMode, StopReason, ToolCallStatus, TraceState
-from selfeval.schemas.trace import (
+from selfevals.schemas.enums import SandboxMode, StopReason, ToolCallStatus, TraceState
+from selfevals.schemas.trace import (
     AgentSnapshotRef,
     AgentTurnSpan,
     LLMCallSpan,
@@ -12,9 +12,9 @@ from selfeval.schemas.trace import (
     ToolCallSpan,
     ToolUseRequest,
 )
-from selfeval.storage.filesystem import FilesystemObjectStore
-from selfeval.trace.payload_router import PayloadRouter
-from selfeval.trace.recorder import TraceRecorder
+from selfevals.storage.filesystem import FilesystemObjectStore
+from selfevals.trace.payload_router import PayloadRouter
+from selfevals.trace.recorder import TraceRecorder
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 T0 = datetime(2026, 5, 16, 12, 0, 0, tzinfo=UTC)
@@ -25,7 +25,7 @@ def _recorder(tmp_path: Path) -> TraceRecorder:
         workspace_id=WS,
         run=RunInfo(run_id="run_01"),
         agent=AgentSnapshotRef(agent_id="ag_x", agent_version=1),
-        framework_version="selfeval/0.0.3",
+        framework_version="selfevals/0.0.3",
         runtime="python-3.12",
         sandbox=SandboxMode.MOCK,
         environment_started_at=T0,

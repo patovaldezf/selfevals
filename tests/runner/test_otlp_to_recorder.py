@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from selfeval._internal.time import utc_now
-from selfeval.runner.otlp_to_recorder import DecodedSpan, feed_to_recorder
-from selfeval.schemas.enums import SandboxMode
-from selfeval.schemas.trace import (
+from selfevals._internal.time import utc_now
+from selfevals.runner.otlp_to_recorder import DecodedSpan, feed_to_recorder
+from selfevals.schemas.enums import SandboxMode
+from selfevals.schemas.trace import (
     AgentSnapshotRef,
     LLMCallSpan,
     RunInfo,
     ToolCallSpan,
 )
-from selfeval.trace.recorder import TraceRecorder
+from selfevals.trace.recorder import TraceRecorder
 
 
 def _fresh_recorder() -> TraceRecorder:

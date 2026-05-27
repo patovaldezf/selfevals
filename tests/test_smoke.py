@@ -1,4 +1,4 @@
-from selfeval import __version__
+from selfevals import __version__
 
 
 def test_version_is_string() -> None:

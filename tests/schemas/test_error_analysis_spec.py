@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from selfeval.schemas.experiment import AnalysisTriggerSpec, ErrorAnalysisSpec
+from selfevals.schemas.experiment import AnalysisTriggerSpec, ErrorAnalysisSpec
 
 
 def test_disabled_never_stages() -> None:

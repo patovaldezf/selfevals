@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 import pytest
 
-from selfeval.runner.otlp_receiver import start_receiver
+from selfevals.runner.otlp_receiver import start_receiver
 
 
 @pytest.fixture(autouse=True)
@@ -73,7 +73,7 @@ def test_receiver_get_liveness() -> None:
         with urllib.request.urlopen(handle.endpoint + "/") as resp:
             assert resp.status == 200
             body = resp.read()
-        assert b"selfeval-otlp-receiver" in body
+        assert b"selfevals-otlp-receiver" in body
 
 
 def test_receiver_404_on_wrong_path() -> None:
@@ -112,10 +112,10 @@ def test_receiver_buffers_spans_when_no_recorder_bound() -> None:
 
 
 def test_receiver_routes_spans_to_bound_recorder() -> None:
-    from selfeval._internal.time import utc_now
-    from selfeval.schemas.enums import SandboxMode
-    from selfeval.schemas.trace import AgentSnapshotRef, RunInfo
-    from selfeval.trace.recorder import TraceRecorder
+    from selfevals._internal.time import utc_now
+    from selfevals.schemas.enums import SandboxMode
+    from selfevals.schemas.trace import AgentSnapshotRef, RunInfo
+    from selfevals.trace.recorder import TraceRecorder
 
     rec = TraceRecorder(
         workspace_id="ws_test",
@@ -164,10 +164,10 @@ def test_receiver_routes_spans_to_bound_recorder() -> None:
 
 def test_receiver_drains_pending_on_bind_exit() -> None:
     """Spans buffered before bind_recorder should land in the recorder."""
-    from selfeval._internal.time import utc_now
-    from selfeval.schemas.enums import SandboxMode
-    from selfeval.schemas.trace import AgentSnapshotRef, RunInfo
-    from selfeval.trace.recorder import TraceRecorder
+    from selfevals._internal.time import utc_now
+    from selfevals.schemas.enums import SandboxMode
+    from selfevals.schemas.trace import AgentSnapshotRef, RunInfo
+    from selfevals.trace.recorder import TraceRecorder
 
     rec = TraceRecorder(
         workspace_id="ws_test",

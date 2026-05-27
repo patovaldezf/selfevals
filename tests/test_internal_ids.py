@@ -1,4 +1,4 @@
-from selfeval._internal.ids import is_prefixed_id, is_ulid, new_prefixed_id, new_ulid
+from selfevals._internal.ids import is_prefixed_id, is_ulid, new_prefixed_id, new_ulid
 
 
 def test_new_ulid_is_26_chars_crockford() -> None:

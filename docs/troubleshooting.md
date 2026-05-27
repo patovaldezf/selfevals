@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Common errors `selfeval` may show, what they mean, and how to fix
+Common errors `selfevals` may show, what they mean, and how to fix
 them. All user-facing errors exit with code **2** (`error: ...` on
 stderr, no traceback). An exit code of **1** means something internal
 went wrong — file a bug.
@@ -12,7 +12,7 @@ went wrong — file a bug.
 **Symptom**
 
 ```text
-$ selfeval run evals/experiments/foo.yaml --no-persist
+$ selfevals run evals/experiments/foo.yaml --no-persist
 error: could not parse YAML /path/to/foo.yaml: while parsing a flow node
   expected the node content, but found ']'
   in "<unicode string>", line 1, column 18
@@ -89,7 +89,7 @@ not in the grader registry.
 - Register your grader at startup:
 
   ```python
-  from selfeval.graders.registry import register_grader
+  from selfevals.graders.registry import register_grader
   from my_pkg.graders import MyGrader
 
   register_grader("my_grader", lambda: MyGrader())
@@ -103,7 +103,7 @@ not in the grader registry.
 
 ## 4. HTTP adapter cannot reach the endpoint
 
-**Symptom (from a trace, after `selfeval run`)**
+**Symptom (from a trace, after `selfevals run`)**
 
 ```text
 adapter_error: HTTP adapter could not reach http://localhost:8080/agent
@@ -120,11 +120,11 @@ times out before responding.
 **Fix**
 
 - Boot the endpoint and re-run. `curl <url>` should succeed before
-  `selfeval run` does.
+  `selfevals run` does.
 - If the server is slow, increase `timeout_seconds` on the
   `HttpEndpointAdapter` construction site.
 - If you are running behind a proxy, set `HTTPS_PROXY` / `HTTP_PROXY`
-  before invoking `selfeval`.
+  before invoking `selfevals`.
 
 ---
 
@@ -133,23 +133,23 @@ times out before responding.
 **Symptom (locked)**
 
 ```text
-error: sqlite database /path/to/selfeval.sqlite is locked
-  hint: another selfeval process is using it; try `--db <new-path>` or wait
+error: sqlite database /path/to/selfevals.sqlite is locked
+  hint: another selfevals process is using it; try `--db <new-path>` or wait
 ```
 
 **Symptom (corrupted)**
 
 ```text
-error: sqlite database /path/to/selfeval.sqlite is corrupted or not a valid
-  selfeval db
+error: sqlite database /path/to/selfevals.sqlite is corrupted or not a valid
+  selfevals db
   hint: back up the file and re-run with `--db <new-path>` to start clean
 ```
 
 **Cause**
 
-- *Locked*: a different `selfeval` process holds a write lock — common
-  if you have `selfeval serve` running and then start a second
-  `selfeval run` against the same db.
+- *Locked*: a different `selfevals` process holds a write lock — common
+  if you have `selfevals serve` running and then start a second
+  `selfevals run` against the same db.
 - *Corrupted*: the file is not a SQLite database (overwritten, truncated,
   copied mid-write) or it was created by a different application.
 

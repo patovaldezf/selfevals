@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from selfeval.schemas.enums import SpanKind, StopReason, ToolCallStatus
-from selfeval.schemas.trace import (
+from selfevals.schemas.enums import SpanKind, StopReason, ToolCallStatus
+from selfevals.schemas.trace import (
     AgentSnapshotRef,
     AgentTurnSpan,
     CustomSpan,
@@ -14,7 +14,7 @@ from selfeval.schemas.trace import (
     RunInfo,
     ToolCallSpan,
 )
-from selfeval.trace.otel_importer import import_otel_spans
+from selfevals.trace.otel_importer import import_otel_spans
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 T0 = datetime(2026, 5, 16, 12, 0, 0, tzinfo=UTC).isoformat()
@@ -215,12 +215,12 @@ def test_messages_extracted_via_openinference_native_attrs() -> None:
     )
     s = trace.spans[0]  # type: ignore[attr-defined]
     assert isinstance(s, LLMCallSpan)
-    msgs_in = s.provider_metadata["selfeval.messages_in"]
+    msgs_in = s.provider_metadata["selfevals.messages_in"]
     assert msgs_in == [
         {"role": "system", "content": "You are helpful."},
         {"role": "user", "content": "Hola"},
     ]
-    msgs_out = s.provider_metadata["selfeval.messages_out"]
+    msgs_out = s.provider_metadata["selfevals.messages_out"]
     assert msgs_out == [{"role": "assistant", "content": "¡Hola! ¿Cómo ayudo?"}]
     # Hashes are always set when messages exist, for dedup / drift detection.
     assert s.messages_hash is not None and s.messages_hash.startswith("sha256:")
@@ -251,10 +251,10 @@ def test_messages_extracted_via_gen_ai_alias_attrs() -> None:
     )
     s = trace.spans[0]  # type: ignore[attr-defined]
     assert isinstance(s, LLMCallSpan)
-    assert s.provider_metadata["selfeval.messages_in"] == [
+    assert s.provider_metadata["selfevals.messages_in"] == [
         {"role": "user", "content": "What is 2+2?"}
     ]
-    assert s.provider_metadata["selfeval.messages_out"] == [
+    assert s.provider_metadata["selfevals.messages_out"] == [
         {"role": "assistant", "content": "4"}
     ]
 
@@ -269,7 +269,7 @@ def test_message_index_order_is_numeric_not_lexical() -> None:
         [{"span_id": "sp_1", "name": "model", "start_time": T0, "end_time": T1, "attributes": attrs}]
     )
     s = trace.spans[0]  # type: ignore[attr-defined]
-    contents = [m["content"] for m in s.provider_metadata["selfeval.messages_in"]]
+    contents = [m["content"] for m in s.provider_metadata["selfevals.messages_in"]]
     assert contents == [f"msg{i}" for i in range(12)]
 
 
@@ -293,7 +293,7 @@ def test_openinference_native_wins_when_both_families_present() -> None:
         ]
     )
     s = trace.spans[0]  # type: ignore[attr-defined]
-    assert s.provider_metadata["selfeval.messages_in"] == [{"role": "user", "content": "native"}]
+    assert s.provider_metadata["selfevals.messages_in"] == [{"role": "user", "content": "native"}]
 
 
 def test_no_messages_leaves_hashes_none() -> None:
@@ -311,8 +311,8 @@ def test_no_messages_leaves_hashes_none() -> None:
     s = trace.spans[0]  # type: ignore[attr-defined]
     assert s.messages_hash is None
     assert s.output.content_hash is None
-    assert "selfeval.messages_in" not in s.provider_metadata
-    assert "selfeval.messages_out" not in s.provider_metadata
+    assert "selfevals.messages_in" not in s.provider_metadata
+    assert "selfevals.messages_out" not in s.provider_metadata
 
 
 def test_thread_id_detected_from_openinference_session_id() -> None:

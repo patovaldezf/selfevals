@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from selfeval.optimization.aggregator import IterationAggregate
-from selfeval.optimization.loop import IterationOutcome, OptimizationResult
-from selfeval.reporter._metrics import (
+from selfevals.optimization.aggregator import IterationAggregate
+from selfevals.optimization.loop import IterationOutcome, OptimizationResult
+from selfevals.reporter._metrics import (
     compute_cost_time_summary,
     compute_total_cases,
     compute_total_cost,
     compute_total_time_seconds,
 )
-from selfeval.schemas._base import EntityRef
-from selfeval.schemas.enums import (
+from selfevals.schemas._base import EntityRef
+from selfevals.schemas.enums import (
     DatasetType,
     DecisionOutcome,
     IterationState,
@@ -19,7 +19,7 @@ from selfeval.schemas.enums import (
     ProposerStrategy,
     SandboxMode,
 )
-from selfeval.schemas.experiment import (
+from selfevals.schemas.experiment import (
     ConvergenceSpec,
     DatasetUsage,
     EditableContract,
@@ -33,7 +33,7 @@ from selfeval.schemas.experiment import (
     SearchSpace,
     TargetSpec,
 )
-from selfeval.schemas.iteration import (
+from selfevals.schemas.iteration import (
     DecisionRationale,
     DecisionRecord,
     ExecutionInfo,

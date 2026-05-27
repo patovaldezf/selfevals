@@ -29,20 +29,20 @@ experiment runs (cheap; no LLM clustering inline)
         ▼
 deterministic graders tag known failures  (already exists)
         │
-        ▼  YAML opted in → selfeval leaves an analysis bundle ready
+        ▼  YAML opted in → selfevals leaves an analysis bundle ready
 [external coding agent runs the `error-analysis` skill]
-   1. selfeval analyze pull <experiment>   → JSON bundle (failed traces + live taxonomy)
+   1. selfevals analyze pull <experiment>   → JSON bundle (failed traces + live taxonomy)
    2. agent does open coding + axial coding against the EXISTING taxonomy
-   3. selfeval analyze push <experiment> < result.json
+   3. selfevals analyze push <experiment> < result.json
         │
-        ▼  selfeval persists: failure_mode_ids on outcomes, candidate modes in taxonomy
-human promotes candidate modes → official   (selfeval failuremode promote)
+        ▼  selfevals persists: failure_mode_ids on outcomes, candidate modes in taxonomy
+human promotes candidate modes → official   (selfevals failuremode promote)
         │
         ▼  proposer reads dominant modes → next iteration targets mode X
         ▼  compare verifies: did mode X shrink?
 ```
 
-selfeval **never calls an LLM** for this. It owns the data, the contract, the
+selfevals **never calls an LLM** for this. It owns the data, the contract, the
 persistence, and the verification. The intelligence lives in an external agent
 (Claude Code, the harness, any agent that honours the contract). This mirrors
 the telemetry decision: consume the expensive/generic layer through a standard
@@ -50,11 +50,11 @@ rather than embedding it (see `sdk_otlp_design.md`).
 
 ### Why a skill, installed with the SDK
 
-`pip install selfeval` installs a small set of bundled skills under a
+`pip install selfevals` installs a small set of bundled skills under a
 discoverable path. The `error-analysis` skill is one of them. A coding agent
-pointed at a selfeval repo can discover the skill, run the CLI handshake, and
+pointed at a selfevals repo can discover the skill, run the CLI handshake, and
 do the categorization. The skill is **part of the product**, versioned with
-selfeval, so the contract and the agent instructions never drift apart.
+selfevals, so the contract and the agent instructions never drift apart.
 
 ---
 
@@ -87,7 +87,7 @@ taxonomy so users aren't starting from zero: `groundedness_miss`,
 
 | Decision | Picked | Killed alternatives |
 |---|---|---|
-| Who clusters | **External coding agent via bundled skill** | Embedded LLM client in selfeval (deps, keys, cost, latency in the loop) |
+| Who clusters | **External coding agent via bundled skill** | Embedded LLM client in selfevals (deps, keys, cost, latency in the loop) |
 | Handshake | **CLI `analyze pull` / `analyze push` (JSON)** | API endpoints (needs server), in-proc callback (couples runtime) |
 | Taxonomy lifecycle | **Discover-once, classify-thereafter** | Re-cluster from scratch each run (drift), pure fixed taxonomy (blind) |
 | Mode identity | **Stable `fm_…` entity id; agent classifies, never renames** | Free-string tags per run (no longitudinal tracking) |
@@ -105,14 +105,14 @@ exist", with stable ids so the same mode can be tracked across every experiment
 and iteration forever.
 
 ```python
-# src/selfeval/schemas/failure_mode.py  (NEW)
+# src/selfevals/schemas/failure_mode.py  (NEW)
 
 class FailureModeStatus(StrEnum):
     CANDIDATE = "candidate"   # proposed by an agent, not yet human-confirmed
     OFFICIAL  = "official"    # confirmed; counts toward metrics & proposer input
     RETIRED   = "retired"     # kept for history, no longer assigned
 
-class FailureModeExample(SelfEvalModel):
+class FailureModeExample(SelfEvalsModel):
     trace_id: NonEmptyStr
     quote_pointer: str | None = None   # evidence snippet (payload-routed)
     quote_hash: str | None = None
@@ -137,12 +137,12 @@ candidates that turn out to be the same mode get merged via `superseded_by`
 
 ---
 
-## 4. The handshake — `selfeval analyze pull` / `push`
+## 4. The handshake — `selfevals analyze pull` / `push`
 
 CLI-first, JSON over stdout/stdin, no server. This is the contract; get it right
 and any agent honours it.
 
-### `selfeval analyze pull <experiment_id> [--iteration N] [--only-failed]`
+### `selfevals analyze pull <experiment_id> [--iteration N] [--only-failed]`
 
 Emits a single JSON **AnalysisBundle** to stdout:
 
@@ -177,7 +177,7 @@ Notes:
   already done) so the agent reads real text, not pointers.
 - `first_error_span` operationalizes Hamel's "code the first failure" rule.
 
-### `selfeval analyze push <experiment_id>` (reads JSON on stdin)
+### `selfevals analyze push <experiment_id>` (reads JSON on stdin)
 
 Accepts an **AnalysisResult**:
 
@@ -189,7 +189,7 @@ Accepts an **AnalysisResult**:
      "mode_id": "fm_…",               // set when it matched an existing mode
      "new_mode_slug": null,           // XOR: set when proposing a NEW candidate
      "open_note": "quoted a price absent from the catalog",
-     "quote": "the X costs $499",     // evidence; selfeval payload-routes it
+     "quote": "the X costs $499",     // evidence; selfevals payload-routes it
      "confidence": 0.82}
   ],
   "proposed_modes": [                 // axial coding: new candidates
@@ -206,7 +206,7 @@ Accepts an **AnalysisResult**:
 }
 ```
 
-selfeval's `push` handler, transactionally:
+selfevals's `push` handler, transactionally:
 1. Creates `proposed_modes` as `status=candidate` (idempotent on `slug` within
    workspace; a repeat slug updates the existing candidate's examples).
 2. Records each assignment: stamps the `failure_mode_id` onto the trace's
@@ -246,17 +246,17 @@ iterations", "modes of thread Z" — all via the queries we already have
 ## 6. CLI surface (new commands)
 
 ```
-selfeval analyze pull <exp> [--iteration N] [--only-failed/--all]   # emit bundle
-selfeval analyze push <exp>                                          # ingest result (stdin)
-selfeval failuremode list <ws> [--status candidate|official|retired]
-selfeval failuremode promote <fm_id>      # candidate → official (the human gate)
-selfeval failuremode retire <fm_id>
-selfeval failuremode merge <fm_id> --into <fm_id>   # sets superseded_by
-selfeval failuremode edit <fm_id> [--title …] [--definition …]
+selfevals analyze pull <exp> [--iteration N] [--only-failed/--all]   # emit bundle
+selfevals analyze push <exp>                                          # ingest result (stdin)
+selfevals failuremode list <ws> [--status candidate|official|retired]
+selfevals failuremode promote <fm_id>      # candidate → official (the human gate)
+selfevals failuremode retire <fm_id>
+selfevals failuremode merge <fm_id> --into <fm_id>   # sets superseded_by
+selfevals failuremode edit <fm_id> [--title …] [--definition …]
 ```
 
 All follow the existing `_help.py` one-line + `Example:` epilog contract, and the
-`SelfEvalUserError` (exit code 2) convention.
+`SelfEvalsUserError` (exit code 2) convention.
 
 ---
 
@@ -279,11 +279,11 @@ The half that turns analysis into improvement, reusing existing parts:
 
 ## 8. The `error-analysis` skill (bundled with the SDK)
 
-Shipped under the package so `pip install selfeval` makes it discoverable. The
+Shipped under the package so `pip install selfevals` makes it discoverable. The
 skill is thin — it encodes the *method*, not intelligence:
 
-- **Preflight**: locate the selfeval CLI; identify the target experiment.
-- **Pull**: run `selfeval analyze pull` → load the bundle.
+- **Preflight**: locate the selfevals CLI; identify the target experiment.
+- **Pull**: run `selfevals analyze pull` → load the bundle.
 - **Open coding**: for each failed trace, read the transcript + `first_error_span`,
   write a one-line note on the first failure. Skip traces already fully explained
   by a deterministic tag unless the residue suggests a deeper mode.
@@ -291,7 +291,7 @@ skill is thin — it encodes the *method*, not intelligence:
   an existing mode's `definition`? → assign that `mode_id`. Else → propose a
   `new_mode_slug` with a testable definition. **Never rename existing modes.**
 - **Saturation check**: report when ~20 consecutive traces produced no new mode.
-- **Push**: emit the `AnalysisResult` and run `selfeval analyze push`.
+- **Push**: emit the `AnalysisResult` and run `selfevals analyze push`.
 - **Hand back to human**: print which candidates are strongest (frequency +
   confidence) so the human can `failuremode promote` in a batch.
 
@@ -315,13 +315,13 @@ error_analysis:
   scope: failed_only         # failed_only | all
 ```
 
-Semantics: selfeval **stages an analysis bundle** (marks the experiment
+Semantics: selfevals **stages an analysis bundle** (marks the experiment
 `analysis_pending` and makes `analyze pull` return data) **only when the trigger
 fires**. It never invokes an agent or an LLM. This is the senior choice because:
 (a) it's declarative — the intent lives with the experiment, reviewable in the
 diff; (b) the threshold prevents wasting analysis effort on healthy runs (the
 same instinct as LangSmith's sample-size controls); (c) it keeps the hard
-boundary that selfeval owns data + contract, agents own intelligence. Default
+boundary that selfevals owns data + contract, agents own intelligence. Default
 `enabled: false` keeps the loop fast for experiments that don't need it.
 
 ---
@@ -339,11 +339,11 @@ boundary that selfeval owns data + contract, agents own intelligence. Default
 - **Cross-workspace / shared taxonomies.** Per-workspace only in v1.
 - **Inline clustering during the run.** Explicitly rejected (§2) — analysis is a
   deliberate, opt-in, post-hoc step so the loop stays cheap.
-- **Embedded LLM judge re-clustering.** selfeval never calls an LLM here.
+- **Embedded LLM judge re-clustering.** selfevals never calls an LLM here.
 - **Web UI for the taxonomy + cluster explorer.** The queries expose the data;
   rendering it (hierarchical cluster view à la LangSmith Insights) belongs to the
   web session.
-- **PII handling in the analysis bundle.** Transcripts leave selfeval to the
+- **PII handling in the analysis bundle.** Transcripts leave selfevals to the
   agent; redaction policy is pending (shares the open question from
   `sdk_otlp_design.md` §10).
 
@@ -358,7 +358,7 @@ Done when, on a clean machine:
    STATUS.md gap).
 2. `FailureMode` entity + CRUD + the six `failuremode` CLI commands work, with
    the human promotion gate.
-3. `selfeval analyze pull <exp>` emits a valid AnalysisBundle; `analyze push`
+3. `selfevals analyze pull <exp>` emits a valid AnalysisBundle; `analyze push`
    ingests an AnalysisResult, enforces the XOR + classify-don't-rename invariants
    transactionally, and lands assignments + candidates + hypotheses.
 4. The bundled `error-analysis` skill is discoverable after install and drives a

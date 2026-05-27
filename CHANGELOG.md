@@ -9,16 +9,16 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [0.2.0] - 2026-05-26
 
-First release prepared for PyPI (distribution name `selfeval`; import and
-CLI remain `selfeval`). Adds the error-analysis closed loop, thread
+First release prepared for PyPI (distribution name `selfevals`; import and
+CLI remain `selfevals`). Adds the error-analysis closed loop, thread
 grouping, and trace message-content capture on top of the 0.1.0 runtime.
 
 ### Added
 
 - **Error analysis + failure-mode taxonomy** — a closed loop, not a dashboard:
   it grows a per-workspace failure-mode taxonomy and drives the next experiment.
-  selfeval owns the data, contract, persistence, and verification; the
-  intelligence (open/axial coding) lives in an external coding agent. selfeval
+  selfevals owns the data, contract, persistence, and verification; the
+  intelligence (open/axial coding) lives in an external coding agent. selfevals
   never calls an LLM. Design: `docs/spec/error_analysis_design.md`.
   - **Persistence fix** — `IterationMetrics.failure_mode_counts` now persists
     and survives a round-trip, so "top modes of experiment X" / "trend of mode
@@ -27,7 +27,7 @@ grouping, and trace message-content capture on top of the 0.1.0 runtime.
   - **`FailureMode` entity** + per-workspace taxonomy seeded by `init` (9
     canonical modes). Lifecycle CANDIDATE → OFFICIAL → RETIRED with a **human
     promotion gate**; `superseded_by` back-pointer on merge.
-  - **Handshake** — `selfeval analyze pull <ws> <exp>` emits an
+  - **Handshake** — `selfevals analyze pull <ws> <exp>` emits an
     `AnalysisBundle` (failed traces + live taxonomy) as JSON; `analyze push`
     ingests an `AnalysisResult` from stdin, validating-before-writing and
     enforcing the assignment XOR (`mode_id` *or* `new_mode_slug`) and
@@ -41,20 +41,20 @@ grouping, and trace message-content capture on top of the 0.1.0 runtime.
     the existing `compare.py` before/after on stable mode ids.
   - **Trace persistence** — `RunSpec.persist_traces` (`none` / `all` / `failed`,
     default `failed`) controls which per-repetition traces the loop writes,
-    stamped with their grader results. A plain `selfeval run` now leaves the
+    stamped with their grader results. A plain `selfevals run` now leaves the
     failed traces in storage so `analyze pull` works without the SDK/OTLP path;
     `--persist-traces` overrides it on the CLI. Traces also carry their
     `iteration` so `analyze pull --iteration N` scopes correctly.
   - **YAML opt-in** — a declarative, governable `error_analysis:` block on an
     experiment (`enabled`, `taxonomy`, `trigger.fail_rate_above + threshold`,
-    `scope`). Default off. When the trigger fires, selfeval persists an
+    `scope`). Default off. When the trigger fires, selfevals persists an
     advisory `AnalysisStagingRecord` ("this run is worth coding") — it never
     invokes an agent. The pingpong example opts in.
   - **Bundled `error-analysis` skill** — ships inside the package
-    (`selfeval/.agents/skills/`, FastAPI convention) so `pip install selfeval`
+    (`selfevals/.agents/skills/`, FastAPI convention) so `pip install selfevals`
     makes it discoverable. It encodes the *method* (open → axial coding,
     saturation, the handshake, the human gate), not intelligence. New
-    `selfeval.skills` locator + `selfeval skills list / path` CLI.
+    `selfevals.skills` locator + `selfevals skills list / path` CLI.
   - 60+ new tests across schema round-trips, the push invariants, the
     second-round stability property, loop staging + mode carryover, the YAML
     loader, the skills locator, and the CLI cycle. mypy --strict + ruff clean.
@@ -77,13 +77,13 @@ grouping, and trace message-content capture on top of the 0.1.0 runtime.
   native family wins. Each side gets a stable `content_hash` (on
   `messages_hash` / `output.content_hash`) for dedup and drift detection, and
   the structured messages are kept inline under `provider_metadata`
-  (`selfeval.messages_in` / `selfeval.messages_out`). Closes the last gap
+  (`selfevals.messages_in` / `selfevals.messages_out`). Closes the last gap
   versus LangSmith trace capture: the actual prompt and response text are now
   in the trace, not just tokens/model/stop_reason. Five new importer tests.
 
 ## [0.1.0] - 2026-05-25
 
-First version where the README no longer lies. `selfeval run` works
+First version where the README no longer lies. `selfevals run` works
 end-to-end against a real LLM agent, error paths are actionable, and
 the markdown/JSON reports answer the obvious follow-up questions.
 Schema-wise compatible with `0.0.9`.
@@ -105,22 +105,22 @@ CLI UX (Day 2):
 - Every subcommand (`init`, `workspace`, `experiment`, `iteration`,
   `report`, `run`, `compare`, `estimate`) now has a user-facing
   one-line description and a copy-paste `Example:` epilog. Helper
-  `src/selfeval/cli/_help.py` centralizes the pattern.
+  `src/selfevals/cli/_help.py` centralizes the pattern.
 - `tests/cli/test_help_texts.py` enforces the contract.
 - `docs/adapters.md` documents the three adapters with YAML config,
   per-adapter agent code, contracts, limitations, and a comparison
   table.
 
 Errors and hardening (Day 3):
-- `SelfEvalError` / `SelfEvalUserError` hierarchy. User-correctable
+- `SelfEvalsError` / `SelfEvalsUserError` hierarchy. User-correctable
   failures exit with code 2 and a clean one-line message; internal
   errors keep their traceback.
-- `src/selfeval/cli/_friendly.py` is the single translation
+- `src/selfevals/cli/_friendly.py` is the single translation
   chokepoint for YAML parse errors, dataset paths (with fuzzy-match
   suggestions via stdlib `difflib`), missing graders, HTTP adapter
   transport errors (URL + actionable suffix), and SQLite locked /
   corrupted cases.
-- `src/selfeval/graders/registry.py` — name→factory registry.
+- `src/selfevals/graders/registry.py` — name→factory registry.
   `deterministic` is pre-registered; `llm_judge` is registered
   on-demand by the CLI. YAML can declare top-level `graders:` and
   per-case `EvalCase.graders` filters which graders run.
@@ -131,7 +131,7 @@ Errors and hardening (Day 3):
   fixes.
 
 Reporter (Day 4):
-- `src/selfeval/reporter/_metrics.py` — pure helpers
+- `src/selfevals/reporter/_metrics.py` — pure helpers
   (`compute_total_cost`, `compute_total_time_seconds`, etc.) that
   return `None` when data is absent instead of misleading zeros.
 - Markdown report gains a "Cost & Time" section (omitted gracefully
@@ -139,18 +139,18 @@ Reporter (Day 4):
   copy-paste inspection commands.
 - JSON report exposes a stable `cost_time` block (`None` when
   missing).
-- `src/selfeval/reporter/compare.py` powers `selfeval compare`:
+- `src/selfevals/reporter/compare.py` powers `selfevals compare`:
   proposal diff table, metrics diff table, failure-mode diff, and a
   "B is better: primary +X; no new failure modes" recommendation.
 
 ### Fixed
 
-- Console script `selfeval` was pointing at `cli.main:app`, which
+- Console script `selfevals` was pointing at `cli.main:app`, which
   returns an int but never raised `SystemExit`, so user errors
   silently exited 0. Now points at `cli.main:main`, which wraps `app`
   in `SystemExit(...)`.
 - `pyproject.toml` ruff `per-file-ignores` had no entry for
-  `src/selfeval/api/**`, so legitimate FastAPI `Depends(...)`
+  `src/selfevals/api/**`, so legitimate FastAPI `Depends(...)`
   defaults were flagged as B008. Added the ignore.
 - `pyproject.toml` `pytest.ini_options` was missing the `asyncio`
   marker registration; `--strict-markers` was rejecting async tests.
@@ -176,9 +176,9 @@ Reporter (Day 4):
 
 ## [0.0.9] - 2026-05-16
 
-### Added — MVP Block A: YAML loader + `selfeval run` end-to-end
+### Added — MVP Block A: YAML loader + `selfevals run` end-to-end
 
-Repo loader (`src/selfeval/repo/`):
+Repo loader (`src/selfevals/repo/`):
 - `load_experiment_spec(path)` parses `evals/experiments/<name>.yaml` →
   `(workspace_id, Experiment, [EvalCase], AgentEntrypoint)`. YAML keys
   are 1:1 with the Pydantic field names — no DSL translation; the
@@ -187,12 +187,12 @@ Repo loader (`src/selfeval/repo/`):
   (`dataset.cases_path:`). Mutually exclusive; both empty rejected.
 - Agent entrypoint declared as `module.path:callable_name`.
   `resolve_agent_callable` defers import until the runner needs it
-  (lets `selfeval inspect` validate a spec without booting user code).
+  (lets `selfevals inspect` validate a spec without booting user code).
 - 14 tests covering inline/external loading, workspace override,
   missing fields, malformed YAML, invalid payloads, entrypoint
   resolution.
 
-CLI `selfeval run <yaml>`:
+CLI `selfevals run <yaml>`:
 - Loads spec → resolves agent callable → wraps as `EmbeddedAdapter`
   (str returns auto-coerced to `AdapterResponse`) → builds the
   proposer per `experiment.proposer.strategy` (grid / random /
@@ -207,8 +207,8 @@ CLI `selfeval run <yaml>`:
 
 Example experiment:
 - `evals/experiments/example_pingpong.yaml` + `evals/datasets/pingpong.jsonl` +
-  `selfeval.examples.pingpong` reference agent. Serves as smoke test
-  and onboarding artifact. `uv run selfeval run evals/experiments/example_pingpong.yaml --no-persist`
+  `selfevals.examples.pingpong` reference agent. Serves as smoke test
+  and onboarding artifact. `uv run selfevals run evals/experiments/example_pingpong.yaml --no-persist`
   produces a clean report out of the box.
 
 Refactor:
@@ -222,7 +222,7 @@ dep: `pyyaml>=6,<7`.
 ### Added — Design docs for next implementation surfaces
 
 - `docs/spec/sdk_otlp_design.md`: locked blueprint for the user-side
-  SDK façade (`selfeval.init()`) + embedded OTLP HTTP receiver +
+  SDK façade (`selfevals.init()`) + embedded OTLP HTTP receiver +
   OpenInference auto-instrumentation. Sections 1-11 cover the
   decisions already made (no re-litigation), package layout, exact
   signatures, span translation table, dependency tree (optional
@@ -238,7 +238,7 @@ dep: `pyyaml>=6,<7`.
 
 ### Added — PR 8 + PR 9: Reporter + CLI
 
-Reporter (`selfeval.reporter`):
+Reporter (`selfevals.reporter`):
 - `render_markdown(result)` produces a PR-comment-style summary:
   experiment header (name, goal, state, mode, proposer, iterations
   run, termination reason), target + guardrail spec line, best-
@@ -254,23 +254,23 @@ Reporter (`selfeval.reporter`):
 - Pure: no I/O, no global state — callers decide where the strings
   end up (stdout, a file, a GitHub PR comment).
 
-CLI (`selfeval` console script, argparse-only, zero new deps):
-- `selfeval init <slug>` — idempotent workspace seed via
+CLI (`selfevals` console script, argparse-only, zero new deps):
+- `selfevals init <slug>` — idempotent workspace seed via
   `seed_workspace`; prints workspace id + member count.
-- `selfeval workspace show <ws_id>` — workspace metadata +
+- `selfevals workspace show <ws_id>` — workspace metadata +
   experiment count.
-- `selfeval experiment list <ws_id>` / `show <ws_id> <exp_id>` —
+- `selfevals experiment list <ws_id>` / `show <ws_id> <exp_id>` —
   inspect experiments in storage with target + iteration progress.
-- `selfeval iteration list <ws_id> <exp_id>` — per-iteration
+- `selfevals iteration list <ws_id> <exp_id>` — per-iteration
   primary metric + decision outcome.
-- `selfeval report <ws_id> <exp_id> [--format markdown|json]` —
+- `selfevals report <ws_id> <exp_id> [--format markdown|json]` —
   reconstructs an OptimizationResult from stored IterationRecords +
   DecisionRecords (lossy on per-case GradeResults, lossless on
   aggregates) and pipes it through the reporter.
-- `selfeval compare <ws_id> <iter_a_id> <iter_b_id>` — side-by-
+- `selfevals compare <ws_id> <iter_a_id> <iter_b_id>` — side-by-
   side primary metric diff between two iterations of the same
   experiment.
-- `selfeval estimate --cases N --space-size M --reps K
+- `selfevals estimate --cases N --space-size M --reps K
   --cost-per-call X` — dry-run upper-bound on agent calls and
   total USD cost before paying for a run.
 - All user-facing errors (missing entity, primary-metric mismatch,
@@ -367,7 +367,7 @@ Decision matrix (PR 7):
 ### Added — PR 4: Runner (agent adapters + sandbox + executor)
 
 - `AgentAdapter` ABC + `AdapterRequest`/`AdapterResponse` dataclasses;
-  the narrow contract between selfeval and the agent under test.
+  the narrow contract between selfevals and the agent under test.
 - `EmbeddedAdapter`: wraps a Python callable. Used for tests and
   in-repo agents.
 - `CliCommandAdapter`: subprocess + JSON-over-stdio. Configurable
@@ -406,7 +406,7 @@ Decision matrix (PR 7):
   the span ERROR with type+message. Exiting the context with an
   uncaught exception marks the trace ERRORED.
 - `import_otel_spans` — adapter from a flat list of OTel-style span
-  dicts (gen_ai.*, openinference.*) to a selfeval Trace. Classifies
+  dicts (gen_ai.*, openinference.*) to a selfevals Trace. Classifies
   spans by `openinference.span.kind` / `gen_ai.*` presence,
   normalizes finish reasons, preserves parent/child links, retains
   unknown attributes in `provider_metadata` or CustomSpan.payload.
@@ -414,7 +414,7 @@ Decision matrix (PR 7):
   importer synthesizes ToolUseRequest entries on the nearest LLM
   span so the schema invariant holds; if no LLM span exists the
   call_id is dropped silently.
-- Public surface: `selfeval.trace` re-exports `PayloadRouter`,
+- Public surface: `selfevals.trace` re-exports `PayloadRouter`,
   `TraceRecorder`, `import_otel_spans`.
 
 26 new tests; 256 total. mypy strict + ruff clean. Zero new deps.
@@ -433,7 +433,7 @@ Decision matrix (PR 7):
   WAL journal mode + foreign keys on.
 - Homemade migration runner (no alembic dep): forward-only,
   `mNNNN_<slug>.py` modules with `up(conn)`, tracked in
-  `_selfeval_migrations`. Initial migration creates the tables.
+  `_selfevalss_migrations`. Initial migration creates the tables.
 - `FilesystemObjectStore`: content-addressed blobs at
   `{root}/{workspace_id}/{prefix2}/{sha256}.bin`; pointer URI
   `oss://{workspace_id}/sha256:...` encodes its workspace.

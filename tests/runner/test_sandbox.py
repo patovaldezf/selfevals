@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from selfeval.runner.sandbox import SandboxPolicy, SandboxViolationError
-from selfeval.schemas.enums import SandboxMode
+from selfevals.runner.sandbox import SandboxPolicy, SandboxViolationError
+from selfevals.schemas.enums import SandboxMode
 
 
 def test_mock_policy_mocks_everything() -> None:
