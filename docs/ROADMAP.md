@@ -49,7 +49,7 @@ Code-editing proposer (`agent_loop`). · El **frontend completo** vive en su pro
 | 7 | Inyección prompt/params end-to-end | §6 experiment contract | — | 🟡 parcial | M | con #11 |
 | 8 | Sampling estratificado + splits + holdout | §11 anti-overfit; §5 portfolio | Anthropic capability≠regression | 🟡 schema | S | F2 / PR-4 |
 | 9 | TTFT / p95 / tokens-per-sec | operational §8 trace model | τ-bench: reportar costo+latencia con accuracy | 🟡 schema | S | F2 / PR-2 |
-| 10 | Auto-wiring CLI/HTTP desde YAML | §6 contract | — | 🟡 parcial | S | F2 / PR-6 |
+| 10 | Auto-wiring CLI/HTTP desde YAML | §6 contract | — | ✅ | S | F2 / PR-6 |
 | 11 | Superficie pública limpia (consumidor externo) | §10 | — | ❌ | S | F0 / PR-0 |
 | 12 | Researcher-evaluable (artifacts) | §3 targets (full agent) | — | ❌ | M | F4 / PR-9 |
 | 14 | Cost model (esquema real de labs) | §6 (cost_per_task guardrail) | τ-bench cost tracking | 🟡 parcial | M | F2 / PR-3 |
