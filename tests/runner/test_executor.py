@@ -89,7 +89,8 @@ def _boom(req: AdapterRequest) -> AdapterResponse:
     raise RuntimeError("kaboom")
 
 
-def test_executor_runs_one_repetition() -> None:
+@pytest.mark.asyncio
+async def test_executor_runs_one_repetition() -> None:
     agent = _agent()
     adapter = EmbeddedAdapter(_ping, agent=agent)
     executor = Executor(
@@ -97,7 +98,7 @@ def test_executor_runs_one_repetition() -> None:
         sandbox=SandboxPolicy(SandboxMode.MOCK),
         workspace_id=WS,
     )
-    run = executor.run_case(_case())
+    run = await executor.run_case(_case())
     assert len(run.repetitions) == 1
     rep = run.repetitions[0]
     assert rep.error is None
@@ -109,14 +110,15 @@ def test_executor_runs_one_repetition() -> None:
     assert LLMCallSpan in kinds
 
 
-def test_executor_records_tool_calls_with_use_id_linkage() -> None:
+@pytest.mark.asyncio
+async def test_executor_records_tool_calls_with_use_id_linkage() -> None:
     agent = _agent()
     executor = Executor(
         adapter=EmbeddedAdapter(_tool_user, agent=agent),
         sandbox=SandboxPolicy(SandboxMode.MOCK),
         workspace_id=WS,
     )
-    run = executor.run_case(_case())
+    run = await executor.run_case(_case())
     rep = run.repetitions[0]
     tool_spans = [s for s in rep.trace.spans if isinstance(s, ToolCallSpan)]
     assert len(tool_spans) == 1
@@ -125,24 +127,26 @@ def test_executor_records_tool_calls_with_use_id_linkage() -> None:
     assert tool_spans[0].sandboxed is True  # mock mode → always sandboxed
 
 
-def test_executor_records_stop_reason() -> None:
+@pytest.mark.asyncio
+async def test_executor_records_stop_reason() -> None:
     executor = Executor(
         adapter=EmbeddedAdapter(_ping, agent=_agent()),
         sandbox=SandboxPolicy(SandboxMode.MOCK),
         workspace_id=WS,
     )
-    rep = executor.run_case(_case()).repetitions[0]
+    rep = (await executor.run_case(_case())).repetitions[0]
     llm_span = next(s for s in rep.trace.spans if isinstance(s, LLMCallSpan))
     assert llm_span.output.stop_reason == StopReason.END_TURN
 
 
-def test_executor_marks_failed_repetition() -> None:
+@pytest.mark.asyncio
+async def test_executor_marks_failed_repetition() -> None:
     executor = Executor(
         adapter=EmbeddedAdapter(_boom, agent=_agent()),
         sandbox=SandboxPolicy(SandboxMode.MOCK),
         workspace_id=WS,
     )
-    run = executor.run_case(_case())
+    run = await executor.run_case(_case())
     rep = run.repetitions[0]
     assert rep.error is not None
     assert "kaboom" in rep.error
@@ -153,25 +157,37 @@ def test_executor_marks_failed_repetition() -> None:
     assert run.successful_count == 0
 
 
-def test_executor_runs_multiple_repetitions() -> None:
+@pytest.mark.asyncio
+async def test_executor_runs_multiple_repetitions() -> None:
     executor = Executor(
         adapter=EmbeddedAdapter(_ping, agent=_agent()),
         sandbox=SandboxPolicy(SandboxMode.MOCK),
         workspace_id=WS,
     )
-    run = executor.run_case(_case(), repetitions=3)
+    run = await executor.run_case(_case(), repetitions=3)
     assert len(run.repetitions) == 3
     assert {r.repetition for r in run.repetitions} == {0, 1, 2}
 
 
-def test_executor_rejects_invalid_repetitions() -> None:
+@pytest.mark.asyncio
+async def test_executor_rejects_invalid_repetitions() -> None:
     executor = Executor(
         adapter=EmbeddedAdapter(_ping, agent=_agent()),
         sandbox=SandboxPolicy(SandboxMode.MOCK),
         workspace_id=WS,
     )
     with pytest.raises(ValueError):
-        executor.run_case(_case(), repetitions=0)
+        await executor.run_case(_case(), repetitions=0)
+
+
+def test_executor_rejects_invalid_concurrency() -> None:
+    with pytest.raises(ValueError):
+        Executor(
+            adapter=EmbeddedAdapter(_ping, agent=_agent()),
+            sandbox=SandboxPolicy(SandboxMode.MOCK),
+            workspace_id=WS,
+            concurrency=0,
+        )
 
 
 def test_executor_requires_workspace() -> None:
@@ -194,7 +210,8 @@ def test_executor_blocks_live_sandbox_at_construction() -> None:
         )
 
 
-def test_executor_no_agent_still_produces_trace() -> None:
+@pytest.mark.asyncio
+async def test_executor_no_agent_still_produces_trace() -> None:
     # AgentSnapshotRef falls back to 'unknown' so adapters without an
     # attached Agent still produce a valid Trace.
     executor = Executor(
@@ -202,6 +219,85 @@ def test_executor_no_agent_still_produces_trace() -> None:
         sandbox=SandboxPolicy(SandboxMode.MOCK),
         workspace_id=WS,
     )
-    rep = executor.run_case(_case()).repetitions[0]
+    rep = (await executor.run_case(_case())).repetitions[0]
     assert rep.trace.agent.agent_id == "unknown"
     assert rep.error is None
+
+
+@pytest.mark.asyncio
+async def test_executor_repetitions_run_concurrently() -> None:
+    import asyncio
+    import time
+
+    delay = 0.2
+
+    async def slow(req: AdapterRequest) -> AdapterResponse:
+        await asyncio.sleep(delay)
+        return AdapterResponse(content="pong", stop_reason="end_turn")
+
+    executor = Executor(
+        adapter=EmbeddedAdapter(slow, agent=_agent()),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+        concurrency=8,
+    )
+    start = time.perf_counter()
+    run = await executor.run_case(_case(), repetitions=5)
+    elapsed = time.perf_counter() - start
+    assert len(run.repetitions) == 5
+    # 5 reps each sleeping `delay`; if sequential, elapsed >= 5*delay. Concurrent
+    # execution should finish in well under the sequential sum.
+    assert elapsed < delay * 5 * 0.6
+
+
+@pytest.mark.asyncio
+async def test_executor_preserves_repetition_order_under_concurrency() -> None:
+    import asyncio
+
+    # Reverse the natural completion order: rep 0 sleeps longest so, if order
+    # were determined by completion, it would land last. gather must restore it.
+    counter = {"n": 0}
+
+    async def staggered(req: AdapterRequest) -> AdapterResponse:
+        idx = counter["n"]
+        counter["n"] += 1
+        await asyncio.sleep(0.05 * (5 - idx))
+        return AdapterResponse(content=f"rep-{idx}", stop_reason="end_turn")
+
+    executor = Executor(
+        adapter=EmbeddedAdapter(staggered, agent=_agent()),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+        concurrency=8,
+    )
+    run = await executor.run_case(_case(), repetitions=5)
+    assert [r.repetition for r in run.repetitions] == [0, 1, 2, 3, 4]
+
+
+@pytest.mark.asyncio
+async def test_executor_one_rep_errors_others_succeed() -> None:
+    import asyncio
+
+    from selfevals.runner.adapters import AdapterError
+
+    counter = {"n": 0}
+
+    async def flaky(req: AdapterRequest) -> AdapterResponse:
+        idx = counter["n"]
+        counter["n"] += 1
+        await asyncio.sleep(0.01)
+        if idx == 1:
+            raise AdapterError("rep 1 boom")
+        return AdapterResponse(content="pong", stop_reason="end_turn")
+
+    executor = Executor(
+        adapter=EmbeddedAdapter(flaky, agent=_agent()),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    run = await executor.run_case(_case(), repetitions=4)
+    assert run.successful_count == 3
+    assert run.failed_count == 1
+    errored = [r for r in run.repetitions if r.error is not None]
+    assert len(errored) == 1
+    assert "boom" in errored[0].error  # type: ignore[operator]

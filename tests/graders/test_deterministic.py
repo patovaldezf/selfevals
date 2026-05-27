@@ -114,82 +114,91 @@ def _ctx(case: EvalCase, trace: Trace, *, content: str | None = "ok") -> GraderC
     return GraderContext(case=case, trace=trace, response=response)
 
 
-def test_pass_when_all_rules_satisfied() -> None:
+@pytest.mark.asyncio
+async def test_pass_when_all_rules_satisfied() -> None:
     case = _case(Expected(must_include=["pong"]))
-    res = DeterministicGrader().grade(_ctx(case, _trace(), content="pong reply"))
+    res = await DeterministicGrader().grade(_ctx(case, _trace(), content="pong reply"))
     assert res.label == GradeLabel.PASS
     assert res.score == 1.0
 
 
-def test_must_include_case_insensitive_by_default() -> None:
+@pytest.mark.asyncio
+async def test_must_include_case_insensitive_by_default() -> None:
     case = _case(Expected(must_include=["Pong"]))
-    res = DeterministicGrader().grade(_ctx(case, _trace(), content="pong"))
+    res = await DeterministicGrader().grade(_ctx(case, _trace(), content="pong"))
     assert res.label == GradeLabel.PASS
 
 
-def test_case_sensitive_mode() -> None:
+@pytest.mark.asyncio
+async def test_case_sensitive_mode() -> None:
     case = _case(Expected(must_include=["Pong"]))
-    res = DeterministicGrader(case_sensitive=True).grade(_ctx(case, _trace(), content="pong"))
+    res = await DeterministicGrader(case_sensitive=True).grade(_ctx(case, _trace(), content="pong"))
     assert res.label == GradeLabel.FAIL
     assert "missing_required_substring" in res.failure_modes
 
 
-def test_must_not_include_violation() -> None:
+@pytest.mark.asyncio
+async def test_must_not_include_violation() -> None:
     case = _case(Expected(must_not_include=["secret"]))
-    res = DeterministicGrader().grade(_ctx(case, _trace(), content="here is a secret"))
+    res = await DeterministicGrader().grade(_ctx(case, _trace(), content="here is a secret"))
     assert res.label == GradeLabel.FAIL
     assert "forbidden_substring" in res.failure_modes
 
 
-def test_required_tool_must_appear_in_trace() -> None:
+@pytest.mark.asyncio
+async def test_required_tool_must_appear_in_trace() -> None:
     case = _case(Expected(required_tools=["search"]))
     # No tool calls in trace.
-    res = DeterministicGrader().grade(_ctx(case, _trace(), content="ok"))
+    res = await DeterministicGrader().grade(_ctx(case, _trace(), content="ok"))
     assert res.label == GradeLabel.FAIL
     assert "missing_required_tool" in res.failure_modes
     # Now with the tool present.
-    res2 = DeterministicGrader().grade(
+    res2 = await DeterministicGrader().grade(
         _ctx(case, _trace(tool_uses=[("search", "toolu_01")]), content="ok")
     )
     assert res2.label == GradeLabel.PASS
 
 
-def test_forbidden_tool_invoked() -> None:
+@pytest.mark.asyncio
+async def test_forbidden_tool_invoked() -> None:
     case = _case(Expected(forbidden_tools=["delete"]))
-    res = DeterministicGrader().grade(
+    res = await DeterministicGrader().grade(
         _ctx(case, _trace(tool_uses=[("delete", "toolu_01")]), content="ok")
     )
     assert res.label == GradeLabel.FAIL
     assert "forbidden_tool_invoked" in res.failure_modes
 
 
-def test_regex_match() -> None:
+@pytest.mark.asyncio
+async def test_regex_match() -> None:
     case = _case(Expected())
     grader = DeterministicGrader(regex_match=r"^ORD-\d{4}$")
-    res = grader.grade(_ctx(case, _trace(), content="ORD-1234"))
+    res = await grader.grade(_ctx(case, _trace(), content="ORD-1234"))
     assert res.label == GradeLabel.PASS
-    res2 = grader.grade(_ctx(case, _trace(), content="not matching"))
+    res2 = await grader.grade(_ctx(case, _trace(), content="not matching"))
     assert res2.label == GradeLabel.FAIL
     assert "regex_mismatch" in res2.failure_modes
 
 
-def test_structured_output_equality() -> None:
+@pytest.mark.asyncio
+async def test_structured_output_equality() -> None:
     case = _case(Expected(structured_output={"sku": "ABC-1", "qty": 2}))
     response = AdapterResponse(content=None, structured_output={"sku": "ABC-1", "qty": 2})
     ctx = GraderContext(case=case, trace=_trace(), response=response)
-    assert DeterministicGrader().grade(ctx).label == GradeLabel.PASS
+    assert (await DeterministicGrader().grade(ctx)).label == GradeLabel.PASS
     bad_response = AdapterResponse(content=None, structured_output={"sku": "ABC-1", "qty": 1})
     bad_ctx = GraderContext(case=case, trace=_trace(), response=bad_response)
-    res = DeterministicGrader().grade(bad_ctx)
+    res = await DeterministicGrader().grade(bad_ctx)
     assert res.label == GradeLabel.FAIL
     assert "structured_output_mismatch" in res.failure_modes
 
 
-def test_multiple_violations_reported() -> None:
+@pytest.mark.asyncio
+async def test_multiple_violations_reported() -> None:
     case = _case(
         Expected(must_include=["xenon"], must_not_include=["bug"], required_tools=["search"])
     )
-    res = DeterministicGrader().grade(_ctx(case, _trace(), content="contains bug only"))
+    res = await DeterministicGrader().grade(_ctx(case, _trace(), content="contains bug only"))
     assert res.label == GradeLabel.FAIL
     assert set(res.failure_modes) >= {
         "missing_required_substring",
@@ -198,9 +207,10 @@ def test_multiple_violations_reported() -> None:
     }
 
 
-def test_missing_response_treated_as_empty_text() -> None:
+@pytest.mark.asyncio
+async def test_missing_response_treated_as_empty_text() -> None:
     case = _case(Expected(must_include=["x"]))
-    res = DeterministicGrader().grade(GraderContext(case=case, trace=_trace(), response=None))
+    res = await DeterministicGrader().grade(GraderContext(case=case, trace=_trace(), response=None))
     assert res.label == GradeLabel.FAIL
 
 

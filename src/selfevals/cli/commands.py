@@ -8,6 +8,7 @@ code. Errors that should produce a clean `error: <msg>` line raise
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 from collections.abc import Callable, Sequence
 from importlib import resources
@@ -443,7 +444,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             decision_evaluator=DecisionMatrixEvaluator(),
             repetitions_per_case=args.reps,
         )
-        result = loop.run()
+        result = asyncio.run(loop.run())
     finally:
         if scope is not None:
             scope.close()

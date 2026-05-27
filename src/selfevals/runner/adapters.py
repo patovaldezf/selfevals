@@ -8,33 +8,40 @@ The recorder ingests these into a Trace separately — adapters do not own
 Trace assembly. This keeps adapters small and lets us swap them out for
 mocks in tests.
 
-Three concrete adapters ship in MVP:
+`invoke` is async — it is the one contract, and it awaits I/O natively.
 
-- `EmbeddedAdapter` — wraps a plain Python callable. Useful for tests
-  and for fast-iteration in-repo agents.
+Three concrete adapters ship:
+
+- `EmbeddedAdapter` — wraps a plain Python callable (sync or async).
+  Useful for tests and for fast-iteration in-repo agents.
 - `CliCommandAdapter` — runs a subprocess with JSON-over-stdio.
 - `HttpEndpointAdapter` — POSTs JSON to a URL (e.g. an ngrok tunnel).
 
-CLI and HTTP adapters are intentionally minimal here — they ship as
-stubs with the protocol nailed down. Full hardening (retries, streaming,
-auth headers) lands in a later PR when we dogfood Seals end-to-end.
+The CLI and HTTP adapters keep a deliberately small surface: the
+protocol is nailed down, retries/streaming/auth-header policy is left to
+the caller.
 """
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
-import subprocess
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+
+import httpx
 
 if TYPE_CHECKING:
     from selfevals.schemas.fleet import Agent
 
-EmbeddedCallable = Callable[["AdapterRequest"], "AdapterResponse"]
+EmbeddedCallable = Callable[
+    ["AdapterRequest"], "AdapterResponse | Awaitable[AdapterResponse]"
+]
+"""A wrapped agent callable. May be sync (returns an AdapterResponse) or
+async (returns an awaitable of one)."""
 
 
 class AdapterError(RuntimeError):
@@ -88,7 +95,7 @@ class AgentAdapter(ABC):
     Used by the Executor to bake snapshot ids into traces."""
 
     @abstractmethod
-    def invoke(self, request: AdapterRequest) -> AdapterResponse: ...
+    async def invoke(self, request: AdapterRequest) -> AdapterResponse: ...
 
 
 class EmbeddedAdapter(AgentAdapter):
@@ -105,9 +112,16 @@ class EmbeddedAdapter(AgentAdapter):
         self._fn = fn
         self.agent = agent
 
-    def invoke(self, request: AdapterRequest) -> AdapterResponse:
+    async def invoke(self, request: AdapterRequest) -> AdapterResponse:
         try:
-            result = self._fn(request)
+            if inspect.iscoroutinefunction(self._fn):
+                result = await self._fn(request)
+            else:
+                result = await asyncio.to_thread(self._fn, request)
+                if inspect.isawaitable(result):
+                    # A sync callable that itself returned a coroutine (e.g. a
+                    # lambda wrapping an async fn). Await it off the thread.
+                    result = await result
         except Exception as exc:
             raise AdapterError(f"embedded callable raised: {exc}") from exc
         if not isinstance(result, AdapterResponse):
@@ -125,8 +139,8 @@ class CliCommandAdapter(AgentAdapter):
       stdout → JSON-encoded AdapterResponse
       non-zero exit code → AdapterError
 
-    This is intentionally minimal for MVP. Streaming, retries, and richer
-    auth headers land later.
+    The subprocess is spawned and awaited asynchronously, so many cases
+    can run concurrently without blocking the event loop.
     """
 
     def __init__(
@@ -144,26 +158,30 @@ class CliCommandAdapter(AgentAdapter):
         self._timeout = timeout_seconds
         self.agent = agent
 
-    def invoke(self, request: AdapterRequest) -> AdapterResponse:
+    async def invoke(self, request: AdapterRequest) -> AdapterResponse:
         payload = json.dumps(_request_to_json(request)).encode("utf-8")
+        proc = await asyncio.create_subprocess_exec(
+            *self._command,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=self._env,
+        )
         try:
-            proc = subprocess.run(
-                self._command,
-                input=payload,
-                capture_output=True,
-                timeout=self._timeout,
-                env=self._env,
-                check=False,
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(input=payload), timeout=self._timeout
             )
-        except subprocess.TimeoutExpired as exc:
-            raise AdapterError(f"command timed out after {self._timeout}s: {exc}") from exc
+        except TimeoutError as exc:
+            proc.kill()
+            await proc.wait()
+            raise AdapterError(f"command timed out after {self._timeout}s") from exc
         if proc.returncode != 0:
             raise AdapterError(
                 f"command exited with {proc.returncode}: "
-                f"stderr={(proc.stderr or b'').decode('utf-8', errors='replace')[:1000]}"
+                f"stderr={(stderr or b'').decode('utf-8', errors='replace')[:1000]}"
             )
         try:
-            data = json.loads(proc.stdout.decode("utf-8"))
+            data = json.loads((stdout or b"").decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise AdapterError(f"could not decode subprocess stdout as JSON: {exc}") from exc
         return _json_to_response(data)
@@ -178,7 +196,8 @@ class HttpEndpointAdapter(AgentAdapter):
       response → JSON-encoded AdapterResponse
       non-2xx → AdapterError
 
-    For MVP this uses stdlib `urllib` — no third-party HTTP dep.
+    Backed by `httpx.AsyncClient`, so the POST is awaited natively and
+    many endpoints can be hit concurrently.
     """
 
     def __init__(
@@ -196,29 +215,30 @@ class HttpEndpointAdapter(AgentAdapter):
         self._timeout = timeout_seconds
         self.agent = agent
 
-    def invoke(self, request: AdapterRequest) -> AdapterResponse:
-        body = json.dumps(_request_to_json(request)).encode("utf-8")
-        req = Request(self._url, data=body, headers=self._headers, method="POST")
+    async def invoke(self, request: AdapterRequest) -> AdapterResponse:
+        payload = _request_to_json(request)
         try:
-            with urlopen(req, timeout=self._timeout) as resp:
-                raw = resp.read()
-        except HTTPError as exc:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(self._url, json=payload, headers=self._headers)
+                resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
             raise AdapterError(
-                f"HTTP adapter got {exc.code} {exc.reason} from {self._url}"
+                f"HTTP adapter got {exc.response.status_code} "
+                f"{exc.response.reason_phrase} from {self._url}"
             ) from exc
-        except URLError as exc:
-            # `URLError.reason` is usually a `socket.timeout` or an OSError; both
-            # render fine via str(). Include the URL so the message is actionable.
-            raise AdapterError(
-                f"HTTP adapter could not reach {self._url} ({exc.reason}); "
-                f"check the endpoint is running and reachable from this host"
-            ) from exc
-        except TimeoutError as exc:  # pragma: no cover - URLError covers most cases
+        except httpx.TimeoutException as exc:
             raise AdapterError(
                 f"HTTP adapter timed out after {self._timeout}s on {self._url}"
             ) from exc
+        except httpx.HTTPError as exc:
+            # Transport-level failure (connection refused, DNS, etc.). Include
+            # the URL so the message is actionable.
+            raise AdapterError(
+                f"HTTP adapter could not reach {self._url} ({exc}); "
+                f"check the endpoint is running and reachable from this host"
+            ) from exc
         try:
-            data = json.loads(raw.decode("utf-8"))
+            data = json.loads(resp.content.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise AdapterError(
                 f"HTTP adapter could not decode response from {self._url} as JSON: {exc}"
