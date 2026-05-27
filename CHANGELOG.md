@@ -7,6 +7,27 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-27
+
+### Changed
+
+- **Provider extras now bundle the provider SDK**, not just the
+  OpenInference instrumentor. `pip install selfevals[openai]` (and
+  `[anthropic]`, `[bedrock]`, `[vertex]`, `[langchain]`, `[crewai]`) now
+  pulls the provider's own SDK alongside the tracing integration — so a
+  single install is enough to run and trace a provider-backed agent. This
+  follows the Pydantic AI per-provider-extra pattern; core still depends on
+  no provider SDK (only `pydantic` + `pyyaml`).
+
+### Added
+
+- **`examples/hello_openai/`** — an OpenAI twin of `examples/hello_llm/`
+  (Anthropic): same three cases, same graders, same temperature sweep,
+  only the provider call differs. Calls OpenAI Chat Completions
+  (`gpt-4o-mini`) with a deterministic fake fallback when `OPENAI_API_KEY`
+  is unset. The lazy import distinguishes "SDK missing" (prints a
+  `pip install selfevals[openai]` hint) from "no API key" (silent fake).
+
 ## [0.2.0] - 2026-05-26
 
 First release prepared for PyPI (distribution name `selfevals`; import and
