@@ -6,8 +6,9 @@ concrete implementations ship in the runtime, all defined in
 `AdapterRequest`, return an `AdapterResponse` — and differ only in
 transport.
 
-This document is the reference for picking one and writing the agent on
-the other side.
+This document is the reference for picking one, writing the agent on the
+other side, and — when none of the three fit — writing your own adapter
+against the public package surface.
 
 ---
 
@@ -16,6 +17,11 @@ the other side.
 All adapters speak the same shape. Read these dataclasses straight from
 `src/selfevals/runner/adapters.py` if you need authoritative field
 information; the summary below tracks that source.
+
+The contract is **async**: `AgentAdapter.invoke` is an `async def`, and so
+is `Grader.grade`. `asyncio.run` lives only at the CLI edge — everything
+above the adapter awaits natively, so many cases run concurrently without
+blocking the event loop. There is no synchronous variant.
 
 ### `AdapterRequest`
 
@@ -60,12 +66,85 @@ JSON-serialised versions of these same shapes; see `_request_to_json` /
 
 ---
 
+## Writing your own adapter
+
+The three bundled adapters cover the common cases, but the contract is
+public: anything that can turn an `AdapterRequest` into an
+`AdapterResponse` is a valid adapter. Import the contract from the
+top-level package — these names are part of the supported public surface:
+
+```python
+from selfevals import (
+    AgentAdapter,
+    AdapterRequest,
+    AdapterResponse,
+    AdapterToolUse,
+)
+```
+
+Subclass `AgentAdapter` and implement the single async method. Set
+`self.agent` (it may be `None`); the executor reads it to stamp the
+agent's snapshot ids onto the trace.
+
+```python
+from selfevals import AdapterRequest, AdapterResponse, AgentAdapter
+
+
+class MyAgentAdapter(AgentAdapter):
+    def __init__(self, client, *, agent=None) -> None:
+        self._client = client
+        self.agent = agent
+
+    async def invoke(self, request: AdapterRequest) -> AdapterResponse:
+        messages = request.input.get("messages", [])
+        # `parameters` carries proposer overrides (temperature, model, …).
+        reply = await self._client.complete(
+            messages,
+            temperature=request.parameters.get("temperature", 0.0),
+        )
+        return AdapterResponse(
+            content=reply.text,
+            tool_uses=[
+                AdapterToolUse(tool=c.name, tool_use_id=c.id, args=c.args)
+                for c in reply.tool_calls
+            ],
+            tokens_input=reply.usage.input_tokens,
+            tokens_output=reply.usage.output_tokens,
+            cost_usd=reply.usage.cost_usd,
+            stop_reason=reply.stop_reason,
+        )
+```
+
+Rules of the road:
+
+- `invoke` **must** be `async def`. If your client library is
+  synchronous, either wrap it in `EmbeddedAdapter` (which offloads sync
+  callables to a thread for you) or call it through `asyncio.to_thread`
+  yourself.
+- Return an `AdapterResponse`, or raise `AdapterError` on failure. Do not
+  return `None` or a bare string.
+- Populate the token/`cost_usd` fields when the provider reports them —
+  the recorder and the cost/latency aggregation read them straight off
+  the response.
+- Adapters do not assemble traces. Return the response; the recorder
+  ingests it into a `Trace` separately.
+
+Custom adapters are wired today via a Python `entrypoint` (see
+`EmbeddedAdapter` below) that constructs and delegates to your adapter.
+Native `agent: {type: …}` wiring from YAML is roadmap work.
+
+---
+
 ## `EmbeddedAdapter`
 
 Wraps a plain Python callable. Use this when your agent lives in the
 same Python process as selfevals — the typical "iterate fast in-repo"
 mode. No serialisation, no transport, no isolation: a bug in the agent
 will crash the selfevals run.
+
+The callable may be sync or async. A sync callable is offloaded to a
+worker thread so it never blocks the event loop; an async callable is
+awaited directly.
 
 ### When to use
 
@@ -88,7 +167,7 @@ module and resolves the callable; the CLI then wraps it in an
 ### Agent code
 
 ```python
-from selfevals.runner.adapters import AdapterRequest, AdapterResponse
+from selfevals import AdapterRequest, AdapterResponse
 
 
 def run(req: AdapterRequest) -> AdapterResponse:
@@ -104,9 +183,10 @@ def run(req: AdapterRequest) -> AdapterResponse:
     )
 ```
 
-The CLI also accepts a bare `str` return type and wraps it as
-`AdapterResponse(content=...)`. Anything else raises a `TypeError` at
-invoke time.
+An `async def run(req)` works identically — the adapter awaits it. The
+CLI also accepts a bare `str` return type and wraps it as
+`AdapterResponse(content=...)`. Anything else raises an `AdapterError`
+at invoke time.
 
 ### Limitations
 
@@ -122,7 +202,8 @@ invoke time.
 Spawns a subprocess per case, writes a JSON request to its stdin, reads
 a JSON response from its stdout. Non-zero exit code raises
 `AdapterError`. Timeout defaults to 60 seconds; configurable per
-instance.
+instance. The subprocess is spawned and awaited asynchronously, so many
+cases run concurrently without blocking the event loop.
 
 ### When to use
 
@@ -149,8 +230,8 @@ from selfevals.runner.adapters import (
 _adapter = CliCommandAdapter(["./bin/my-agent"], timeout_seconds=30.0)
 
 
-def run(req: AdapterRequest) -> AdapterResponse:
-    return _adapter.invoke(req)
+async def run(req: AdapterRequest) -> AdapterResponse:
+    return await _adapter.invoke(req)
 ```
 
 ```yaml
@@ -182,8 +263,8 @@ jq -n --arg c "$content" '{
 - No retries on transient failure; non-zero exit is a hard error.
 - No streaming. The full response must arrive on stdout before
   selfevals parses it.
-- Timeout is enforced via `subprocess.run(timeout=...)`; on timeout the
-  child gets `SIGKILL`-equivalent and `AdapterError` is raised.
+- Timeout is enforced via `asyncio.wait_for`; on timeout the child is
+  killed and `AdapterError` is raised.
 - `env` overrides replace the inherited environment when supplied
   (stdlib `subprocess` semantics).
 
@@ -192,8 +273,8 @@ jq -n --arg c "$content" '{
 ## `HttpEndpointAdapter`
 
 POSTs a JSON request to a URL and reads a JSON response. Built on
-`urllib` so there's no third-party dependency. Default timeout 60
-seconds.
+`httpx.AsyncClient`, so the POST is awaited natively and many endpoints
+can be hit concurrently. Default timeout 60 seconds.
 
 ### When to use
 
@@ -220,8 +301,8 @@ _adapter = HttpEndpointAdapter(
 )
 
 
-def run(req: AdapterRequest) -> AdapterResponse:
-    return _adapter.invoke(req)
+async def run(req: AdapterRequest) -> AdapterResponse:
+    return await _adapter.invoke(req)
 ```
 
 ```yaml
@@ -272,8 +353,6 @@ def evaluate(req: Request) -> dict:
   parses it.
 - Auth is whatever you put in `headers`. There is no built-in OAuth /
   token-refresh layer.
-- No connection pooling beyond what `urllib` does on its own (i.e. very
-  little).
 
 ---
 
@@ -285,7 +364,7 @@ def evaluate(req: Request) -> dict:
 | `CliCommandAdapter`   | Subprocess spawn per case | OS process (clean exit)     | Multi-language agents, OS-level isolation, crash safety. |
 | `HttpEndpointAdapter` | Network round-trip       | Remote (different host OK)  | Deployed/staging agents, dogfooding through a tunnel.    |
 
-All three are MVP. Streaming, retries, batching, structured auth, and
-wire-format YAML helpers are intentionally **not yet implemented** — the
-protocol is nailed down so the layers above the adapter can stabilise
-first.
+The transport protocol is nailed down so the layers above the adapter
+can stabilise first. Streaming, retries, batching, structured auth, and
+wire-format YAML helpers are deliberately left out of the bundled
+adapters for now; reach for a custom adapter (above) when you need them.
