@@ -322,3 +322,12 @@ class Modality(StrEnum):
     VOICE = "voice"
     BROWSER_USE = "browser_use"
     SENSOR = "sensor"
+
+
+class MessageRole(StrEnum):
+    """Role of a single message in a conversation input."""
+
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL = "tool"
