@@ -46,6 +46,7 @@ from selfevals.schemas.enums import (
 from selfevals.schemas.trace import (
     AgentSnapshotRef,
     AgentTurnSpan,
+    CostBreakdown,
     DecisionSpan,
     EnvironmentInfo,
     ErrorSpan,
@@ -93,6 +94,7 @@ class _LLMSpanBuilder:
     reasoning: ReasoningBlock = field(default_factory=ReasoningBlock)
     output: LLMOutput = field(default_factory=LLMOutput)
     tokens: TokenBreakdown = field(default_factory=TokenBreakdown)
+    cost: CostBreakdown = field(default_factory=CostBreakdown)
     cache_hit: bool = False
     retries: int = 0
     provider_metadata: dict[str, Any] = field(default_factory=dict)
@@ -157,6 +159,15 @@ class _LLMSpanBuilder:
             self.time_to_first_token_ms = time_to_first_token_ms
         if tokens_per_second is not None:
             self.tokens_per_second = tokens_per_second
+
+    def set_cost(self, cost: CostBreakdown | None) -> None:
+        """Record this call's cost breakdown.
+
+        A None cost leaves the default zero breakdown in place (the model was
+        unpriced); the recorder never fabricates a cost.
+        """
+        if cost is not None:
+            self.cost = cost
 
 
 @dataclass
@@ -330,6 +341,7 @@ class TraceRecorder:
                 reasoning=builder.reasoning,
                 output=builder.output,
                 tokens=builder.tokens,
+                cost_usd=builder.cost,
                 time_to_first_token_ms=builder.time_to_first_token_ms,
                 tokens_per_second=tokens_per_second,
                 retries=builder.retries,
@@ -340,6 +352,7 @@ class TraceRecorder:
             self._llm_call_count += 1
             self._tokens_in += span.tokens.input + span.tokens.input_cache_read
             self._tokens_out += span.tokens.output
+            self._cost_usd += span.cost_usd.total
             self._retries += span.retries
 
     @contextmanager
