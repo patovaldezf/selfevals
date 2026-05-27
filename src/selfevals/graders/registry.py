@@ -6,9 +6,9 @@ all referenced names through this registry. Anything that is not
 registered raises a :class:`SelfEvalsUserError` with a list of the
 available names — no silent fallthrough.
 
-For MVP the registry is module-level; integration tests reset it in a
-fixture. Post-MVP we can scope it per Experiment if cross-experiment
-isolation becomes important.
+The registry is module-level; integration tests reset it in a fixture.
+It can be scoped per Experiment later if cross-experiment isolation
+becomes important.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from collections.abc import Callable
 
 from selfevals.graders.base import Grader
 from selfevals.graders.deterministic import DeterministicGrader
+from selfevals.graders.guardrail import GuardrailGrader
 
 GraderFactory = Callable[[], Grader]
 
@@ -64,3 +65,4 @@ def resolve_graders(names: list[str]) -> list[Grader]:
 # imports `selfevals.graders` (or just this module) sees the defaults.
 
 register_grader("deterministic", DeterministicGrader)
+register_grader("guardrail", GuardrailGrader)
