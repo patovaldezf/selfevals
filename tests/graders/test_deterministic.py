@@ -5,10 +5,10 @@ from typing import Any
 
 import pytest
 
-from bootstrap.graders.base import GradeLabel, GraderContext
-from bootstrap.graders.deterministic import DeterministicGrader
-from bootstrap.runner.adapters import AdapterResponse
-from bootstrap.schemas.enums import (
+from selfeval.graders.base import GradeLabel, GraderContext
+from selfeval.graders.deterministic import DeterministicGrader
+from selfeval.runner.adapters import AdapterResponse
+from selfeval.schemas.enums import (
     DatasetSource,
     DatasetType,
     GroundTruthMethod,
@@ -18,7 +18,7 @@ from bootstrap.schemas.enums import (
     ToolCallStatus,
     TraceState,
 )
-from bootstrap.schemas.eval_case import (
+from selfeval.schemas.eval_case import (
     CaseTaxonomy,
     EvalCase,
     Expected,
@@ -26,7 +26,7 @@ from bootstrap.schemas.eval_case import (
     GroundTruthSpec,
     SourceInfo,
 )
-from bootstrap.schemas.trace import (
+from selfeval.schemas.trace import (
     AgentSnapshotRef,
     AgentTurnSpan,
     EnvironmentInfo,
@@ -99,7 +99,7 @@ def _trace(*, tool_uses: list[tuple[str, str]] | None = None) -> Trace:
         run=RunInfo(run_id="run_01"),
         agent=AgentSnapshotRef(agent_id="ag_x", agent_version=1),
         environment=EnvironmentInfo(
-            framework_version="bootstrap/0.0.5",
+            framework_version="selfeval/0.0.5",
             runtime="python-3.12",
             sandbox=SandboxMode.MOCK,
             started_at=T0,

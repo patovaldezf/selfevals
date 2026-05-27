@@ -2,25 +2,25 @@ from __future__ import annotations
 
 import json
 
-from bootstrap.decision.matrix import DecisionMatrixEvaluator
-from bootstrap.graders.deterministic import DeterministicGrader
-from bootstrap.optimization.aggregator import (
+from selfeval.decision.matrix import DecisionMatrixEvaluator
+from selfeval.graders.deterministic import DeterministicGrader
+from selfeval.optimization.aggregator import (
     CaseOutcome,
     IterationAggregate,
 )
-from bootstrap.optimization.loop import (
+from selfeval.optimization.loop import (
     IterationOutcome,
     OptimizationLoop,
     OptimizationResult,
 )
-from bootstrap.optimization.proposers import GridProposer
-from bootstrap.reporter import render_json, render_markdown
-from bootstrap.reporter.json_report import to_dict
-from bootstrap.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
-from bootstrap.runner.executor import Executor
-from bootstrap.runner.sandbox import SandboxPolicy
-from bootstrap.schemas._base import EntityRef
-from bootstrap.schemas.enums import (
+from selfeval.optimization.proposers import GridProposer
+from selfeval.reporter import render_json, render_markdown
+from selfeval.reporter.json_report import to_dict
+from selfeval.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
+from selfeval.runner.executor import Executor
+from selfeval.runner.sandbox import SandboxPolicy
+from selfeval.schemas._base import EntityRef
+from selfeval.schemas.enums import (
     AgentType,
     DatasetSource,
     DatasetType,
@@ -32,7 +32,7 @@ from bootstrap.schemas.enums import (
     ProposerStrategy,
     SandboxMode,
 )
-from bootstrap.schemas.eval_case import (
+from selfeval.schemas.eval_case import (
     CaseTaxonomy,
     EvalCase,
     Expected,
@@ -40,7 +40,7 @@ from bootstrap.schemas.eval_case import (
     GroundTruthSpec,
     SourceInfo,
 )
-from bootstrap.schemas.experiment import (
+from selfeval.schemas.experiment import (
     ConvergenceSpec,
     DatasetUsage,
     EditableContract,
@@ -54,8 +54,8 @@ from bootstrap.schemas.experiment import (
     SearchSpace,
     TargetSpec,
 )
-from bootstrap.schemas.fleet import Agent, ModelRef
-from bootstrap.schemas.iteration import (
+from selfeval.schemas.fleet import Agent, ModelRef
+from selfeval.schemas.iteration import (
     DecisionRationale,
     DecisionRecord,
     ExecutionInfo,
@@ -256,9 +256,6 @@ def test_render_json_includes_decision_outcome_string() -> None:
     assert payload["iterations"][0]["decision"]["outcome"] == "reject"
 
 
-# ----- cost & time + next steps -----
-
-
 def test_markdown_omits_cost_time_section_when_no_data() -> None:
     """Echo agents report 0 cost / 0 time. We must not render the
     section in that case — a "$0.00" placeholder would mislead readers
@@ -291,10 +288,10 @@ def test_markdown_includes_next_steps_section() -> None:
     result = _run_real()
     md = render_markdown(result)
     assert "## Next steps" in md
-    assert "bootstrap iteration list" in md
-    assert "bootstrap report" in md
+    assert "selfeval iteration list" in md
+    assert "selfeval report" in md
     # With 2+ iterations, a compare command is suggested too.
-    assert "bootstrap compare" in md
+    assert "selfeval compare" in md
 
 
 def test_markdown_idempotent_under_repeat_renders() -> None:
@@ -324,9 +321,6 @@ def test_json_cost_time_block_populated_with_data() -> None:
     payload = to_dict(result)
     assert payload["cost_time"]["cost_total_usd"] is not None
     assert payload["cost_time"]["time_total_seconds"] == 2.0
-
-
-# ----- helpers -----
 
 
 def _synthetic_iteration(

@@ -5,15 +5,15 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from bootstrap.schemas._base import EntityRef
-from bootstrap.schemas.enums import (
+from selfeval.schemas._base import EntityRef
+from selfeval.schemas.enums import (
     DatasetType,
     ExperimentState,
     Mode,
     ProposerStrategy,
     SandboxMode,
 )
-from bootstrap.schemas.experiment import (
+from selfeval.schemas.experiment import (
     DatasetUsage,
     EditableContract,
     Experiment,
@@ -138,9 +138,6 @@ def test_reliability_metric_names_valid(metric: str) -> None:
 def test_reliability_metric_names_invalid(metric: str) -> None:
     with pytest.raises(ValidationError):
         ReliabilitySpec(metrics=[metric])
-
-
-# --- state machine ---
 
 
 def test_state_machine_happy_path() -> None:

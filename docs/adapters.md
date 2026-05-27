@@ -1,8 +1,8 @@
 # Agent adapters
 
-`bootstrap` invokes the agent under test through an `AgentAdapter`. Three
+`selfeval` invokes the agent under test through an `AgentAdapter`. Three
 concrete implementations ship in the runtime, all defined in
-`src/bootstrap/runner/adapters.py`. They share one contract — given an
+`src/selfeval/runner/adapters.py`. They share one contract — given an
 `AdapterRequest`, return an `AdapterResponse` — and differ only in
 transport.
 
@@ -14,12 +14,12 @@ the other side.
 ## The contract
 
 All adapters speak the same shape. Read these dataclasses straight from
-`src/bootstrap/runner/adapters.py` if you need authoritative field
+`src/selfeval/runner/adapters.py` if you need authoritative field
 information; the summary below tracks that source.
 
 ### `AdapterRequest`
 
-What bootstrap sends to your agent for each case.
+What selfeval sends to your agent for each case.
 
 | Field           | Type                 | Notes                                                                                 |
 | --------------- | -------------------- | ------------------------------------------------------------------------------------- |
@@ -63,9 +63,9 @@ JSON-serialised versions of these same shapes; see `_request_to_json` /
 ## `EmbeddedAdapter`
 
 Wraps a plain Python callable. Use this when your agent lives in the
-same Python process as bootstrap — the typical "iterate fast in-repo"
+same Python process as selfeval — the typical "iterate fast in-repo"
 mode. No serialisation, no transport, no isolation: a bug in the agent
-will crash the bootstrap run.
+will crash the selfeval run.
 
 ### When to use
 
@@ -77,7 +77,7 @@ will crash the bootstrap run.
 
 ```yaml
 agent:
-  entrypoint: bootstrap.examples.pingpong:run
+  entrypoint: selfeval.examples.pingpong:run
 ```
 
 `entrypoint` is `module.path:callable` (see
@@ -88,7 +88,7 @@ module and resolves the callable; the CLI then wraps it in an
 ### Agent code
 
 ```python
-from bootstrap.runner.adapters import AdapterRequest, AdapterResponse
+from selfeval.runner.adapters import AdapterRequest, AdapterResponse
 
 
 def run(req: AdapterRequest) -> AdapterResponse:
@@ -110,7 +110,7 @@ invoke time.
 
 ### Limitations
 
-- No process isolation. The agent runs in your bootstrap process.
+- No process isolation. The agent runs in your selfeval process.
 - No timeout enforcement at the adapter layer (you get whatever the
   Python callable does).
 - No retries, no streaming.
@@ -128,7 +128,7 @@ instance.
 
 - Your agent is implemented in another language (Go, Rust, Node) or
   needs OS-level isolation.
-- You want a clean process boundary so a crash doesn't kill bootstrap.
+- You want a clean process boundary so a crash doesn't kill selfeval.
 - You already have a CLI wrapper around the agent.
 
 ### YAML
@@ -142,7 +142,7 @@ A reasonable Python entrypoint that delegates:
 
 ```python
 # my_project/cli_proxy.py
-from bootstrap.runner.adapters import (
+from selfeval.runner.adapters import (
     AdapterRequest, AdapterResponse, CliCommandAdapter,
 )
 
@@ -181,7 +181,7 @@ jq -n --arg c "$content" '{
 - One subprocess per case: spawn overhead matters at scale.
 - No retries on transient failure; non-zero exit is a hard error.
 - No streaming. The full response must arrive on stdout before
-  bootstrap parses it.
+  selfeval parses it.
 - Timeout is enforced via `subprocess.run(timeout=...)`; on timeout the
   child gets `SIGKILL`-equivalent and `AdapterError` is raised.
 - `env` overrides replace the inherited environment when supplied
@@ -198,7 +198,7 @@ seconds.
 ### When to use
 
 - Your agent runs as a hosted service.
-- You want to point bootstrap at a deployed staging environment or a
+- You want to point selfeval at a deployed staging environment or a
   local server tunnelled via `ngrok`.
 - You need to evaluate the *deployed* surface, not an in-process copy.
 
@@ -209,7 +209,7 @@ today.
 
 ```python
 # my_project/http_proxy.py
-from bootstrap.runner.adapters import (
+from selfeval.runner.adapters import (
     AdapterRequest, AdapterResponse, HttpEndpointAdapter,
 )
 
@@ -268,7 +268,7 @@ def evaluate(req: Request) -> dict:
 - One request per case; no batching.
 - No retries on transient failure (non-2xx → `AdapterError`
   immediately).
-- No streaming; the full JSON body must come back before bootstrap
+- No streaming; the full JSON body must come back before selfeval
   parses it.
 - Auth is whatever you put in `headers`. There is no built-in OAuth /
   token-refresh layer.

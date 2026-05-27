@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from bootstrap.optimization.aggregator import IterationAggregate
-from bootstrap.optimization.loop import IterationOutcome, OptimizationResult
-from bootstrap.reporter._metrics import (
+from selfeval.optimization.aggregator import IterationAggregate
+from selfeval.optimization.loop import IterationOutcome, OptimizationResult
+from selfeval.reporter._metrics import (
     compute_cost_time_summary,
     compute_total_cases,
     compute_total_cost,
     compute_total_time_seconds,
 )
-from bootstrap.schemas._base import EntityRef
-from bootstrap.schemas.enums import (
+from selfeval.schemas._base import EntityRef
+from selfeval.schemas.enums import (
     DatasetType,
     DecisionOutcome,
     IterationState,
@@ -19,7 +19,7 @@ from bootstrap.schemas.enums import (
     ProposerStrategy,
     SandboxMode,
 )
-from bootstrap.schemas.experiment import (
+from selfeval.schemas.experiment import (
     ConvergenceSpec,
     DatasetUsage,
     EditableContract,
@@ -33,7 +33,7 @@ from bootstrap.schemas.experiment import (
     SearchSpace,
     TargetSpec,
 )
-from bootstrap.schemas.iteration import (
+from selfeval.schemas.iteration import (
     DecisionRationale,
     DecisionRecord,
     ExecutionInfo,
@@ -133,9 +133,6 @@ def _result(*iters: IterationOutcome) -> OptimizationResult:
     return r
 
 
-# ----- compute_total_cost -----
-
-
 def test_total_cost_returns_none_when_no_iterations() -> None:
     assert compute_total_cost(_result()) is None
 
@@ -169,9 +166,6 @@ def test_total_cost_partial_data_is_real() -> None:
     assert compute_total_cost(result) == 0.10
 
 
-# ----- compute_total_time_seconds -----
-
-
 def test_total_time_none_when_no_iterations() -> None:
     assert compute_total_time_seconds(_result()) is None
 
@@ -189,9 +183,6 @@ def test_total_time_sums_in_seconds() -> None:
     assert compute_total_time_seconds(result) == 2.0
 
 
-# ----- compute_total_cases -----
-
-
 def test_total_cases_sums_case_counts() -> None:
     result = _result(
         _iteration(case_count=3),
@@ -202,9 +193,6 @@ def test_total_cases_sums_case_counts() -> None:
 
 def test_total_cases_zero_when_empty() -> None:
     assert compute_total_cases(_result()) == 0
-
-
-# ----- compute_cost_time_summary -----
 
 
 def test_summary_no_data() -> None:

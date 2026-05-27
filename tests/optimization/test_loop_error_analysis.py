@@ -12,15 +12,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from bootstrap.analysis.staging import AnalysisStagingRecord
-from bootstrap.graders.deterministic import DeterministicGrader
-from bootstrap.optimization.loop import OptimizationLoop, _dominant_modes
-from bootstrap.optimization.proposers import GridProposer
-from bootstrap.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
-from bootstrap.runner.executor import Executor
-from bootstrap.runner.sandbox import SandboxPolicy
-from bootstrap.schemas._base import EntityRef
-from bootstrap.schemas.enums import (
+from selfeval.analysis.staging import AnalysisStagingRecord
+from selfeval.graders.deterministic import DeterministicGrader
+from selfeval.optimization.loop import OptimizationLoop, _dominant_modes
+from selfeval.optimization.proposers import GridProposer
+from selfeval.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
+from selfeval.runner.executor import Executor
+from selfeval.runner.sandbox import SandboxPolicy
+from selfeval.schemas._base import EntityRef
+from selfeval.schemas.enums import (
     AgentType,
     DatasetSource,
     DatasetType,
@@ -30,7 +30,7 @@ from bootstrap.schemas.enums import (
     ProposerStrategy,
     SandboxMode,
 )
-from bootstrap.schemas.eval_case import (
+from selfeval.schemas.eval_case import (
     CaseTaxonomy,
     EvalCase,
     Expected,
@@ -38,7 +38,7 @@ from bootstrap.schemas.eval_case import (
     GroundTruthSpec,
     SourceInfo,
 )
-from bootstrap.schemas.experiment import (
+from selfeval.schemas.experiment import (
     AnalysisTriggerSpec,
     ConvergenceSpec,
     DatasetUsage,
@@ -54,10 +54,10 @@ from bootstrap.schemas.experiment import (
     SearchSpace,
     TargetSpec,
 )
-from bootstrap.schemas.fleet import Agent, ModelRef
-from bootstrap.schemas.trace import Trace
-from bootstrap.schemas.workspace import Workspace
-from bootstrap.storage.sqlite import SQLiteStorage
+from selfeval.schemas.fleet import Agent, ModelRef
+from selfeval.schemas.trace import Trace
+from selfeval.schemas.workspace import Workspace
+from selfeval.storage.sqlite import SQLiteStorage
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 

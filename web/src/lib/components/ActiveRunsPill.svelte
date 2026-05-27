@@ -9,7 +9,7 @@
   async function fetchActive() {
     try {
       const res = await fetch('/api/runs/active', {
-        headers: { 'X-Bootstrap-User': 'local' }
+        headers: { 'X-SelfEval-User': 'local' }
       });
       if (!res.ok) return;
       runs = await res.json();

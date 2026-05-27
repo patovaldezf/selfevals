@@ -29,18 +29,18 @@ from pathlib import Path
 
 import pytest
 
-from bootstrap.cli.main import app
-from bootstrap.decision.matrix import DecisionMatrixEvaluator
-from bootstrap.graders.deterministic import DeterministicGrader
-from bootstrap.graders.llm_judge import LLMJudgeGrader, RubricTemplate
-from bootstrap.optimization.loop import OptimizationLoop
-from bootstrap.optimization.proposers import GridProposer
-from bootstrap.reporter import render_markdown
-from bootstrap.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
-from bootstrap.runner.executor import Executor
-from bootstrap.runner.sandbox import SandboxPolicy
-from bootstrap.schemas._base import EntityRef
-from bootstrap.schemas.enums import (
+from selfeval.cli.main import app
+from selfeval.decision.matrix import DecisionMatrixEvaluator
+from selfeval.graders.deterministic import DeterministicGrader
+from selfeval.graders.llm_judge import LLMJudgeGrader, RubricTemplate
+from selfeval.optimization.loop import OptimizationLoop
+from selfeval.optimization.proposers import GridProposer
+from selfeval.reporter import render_markdown
+from selfeval.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
+from selfeval.runner.executor import Executor
+from selfeval.runner.sandbox import SandboxPolicy
+from selfeval.schemas._base import EntityRef
+from selfeval.schemas.enums import (
     AgentType,
     DatasetSource,
     DatasetType,
@@ -52,7 +52,7 @@ from bootstrap.schemas.enums import (
     ProposerStrategy,
     SandboxMode,
 )
-from bootstrap.schemas.eval_case import (
+from selfeval.schemas.eval_case import (
     CaseTaxonomy,
     EvalCase,
     Expected,
@@ -60,7 +60,7 @@ from bootstrap.schemas.eval_case import (
     GroundTruthSpec,
     SourceInfo,
 )
-from bootstrap.schemas.experiment import (
+from selfeval.schemas.experiment import (
     ConvergenceSpec,
     DatasetUsage,
     EditableContract,
@@ -74,15 +74,12 @@ from bootstrap.schemas.experiment import (
     SearchSpace,
     TargetSpec,
 )
-from bootstrap.schemas.fleet import Agent, ModelRef
-from bootstrap.schemas.iteration import DecisionRecord, IterationRecord
-from bootstrap.schemas.workspace import Workspace
-from bootstrap.storage.sqlite import SQLiteStorage
+from selfeval.schemas.fleet import Agent, ModelRef
+from selfeval.schemas.iteration import DecisionRecord, IterationRecord
+from selfeval.schemas.workspace import Workspace
+from selfeval.storage.sqlite import SQLiteStorage
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
-
-
-# --- shared fixtures -------------------------------------------------------
 
 
 def _case(name: str, must_include: str) -> EvalCase:
@@ -180,9 +177,6 @@ def _mock_judge_adapter() -> EmbeddedAdapter:
     return EmbeddedAdapter(fn)
 
 
-# --- the end-to-end test ---------------------------------------------------
-
-
 def test_full_loop_with_deterministic_and_llm_judge(tmp_path: Path) -> None:
     """Run two iterations end-to-end with both graders, then re-read."""
     cases = [_case("c1", "pong"), _case("c2", "pong")]
@@ -218,8 +212,6 @@ def test_full_loop_with_deterministic_and_llm_judge(tmp_path: Path) -> None:
         result = loop.run()
     finally:
         scope.close()
-
-    # --- result structure ---
     assert len(result.iterations) == 2
     assert experiment.state == ExperimentState.COMPLETED
     for outcome in result.iterations:
@@ -233,8 +225,6 @@ def test_full_loop_with_deterministic_and_llm_judge(tmp_path: Path) -> None:
         assert outcome.iteration_record.metrics is not None
         # Decision must be a known outcome.
         assert outcome.decision_record.outcome in set(DecisionOutcome)
-
-    # --- persistence round-trip ---
     with storage.open(WS) as s:
         iter_records = [
             r for r in s.list_entities(IterationRecord) if isinstance(r, IterationRecord)
@@ -249,16 +239,11 @@ def test_full_loop_with_deterministic_and_llm_judge(tmp_path: Path) -> None:
     # decision records reference the same experiment.
     for d in decision_records:
         assert d.experiment_id == experiment.id
-
-    # --- reporter is happy with this shape ---
     md = render_markdown(result)
     assert "# Experiment: end-to-end smoke" in md
     assert "pass@1" in md
 
     storage.close()
-
-
-# --- friendly-error tests --------------------------------------------------
 
 
 def _run_cli(
@@ -319,7 +304,7 @@ def _write_minimal_yaml(tmp_path: Path, **overrides: object) -> Path:
         dataset:
           DATASET_BLOCK
         agent:
-          entrypoint: bootstrap.examples.pingpong:run
+          entrypoint: selfeval.examples.pingpong:run
         """
     ).strip()
     dataset_block = overrides.get(
@@ -401,7 +386,7 @@ def test_error_unknown_grader_lists_available(
               expected: { must_include: [pong] }
               graders: [not_a_real_grader]
         agent:
-          entrypoint: bootstrap.examples.pingpong:run
+          entrypoint: selfeval.examples.pingpong:run
         """
     ).strip()
     yaml = tmp_path / "exp.yaml"
@@ -418,7 +403,7 @@ def test_error_http_adapter_unreachable_endpoint(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """`HttpEndpointAdapter` surfaces a clean AdapterError naming the URL."""
-    from bootstrap.runner.adapters import AdapterError, HttpEndpointAdapter
+    from selfeval.runner.adapters import AdapterError, HttpEndpointAdapter
 
     # Port 1 is privileged and not in use — instant ECONNREFUSED.
     url = "http://127.0.0.1:1/"
@@ -429,8 +414,8 @@ def test_error_http_adapter_unreachable_endpoint(
     assert url in msg
     assert "could not reach" in msg or "transport" in msg.lower()
     # The friendly wrapper used by the CLI must lift this into a
-    # BootstrapUserError without losing the URL.
-    from bootstrap.cli._friendly import wrap_adapter_error
+    # SelfEvalUserError without losing the URL.
+    from selfeval.cli._friendly import wrap_adapter_error
 
     user_err = wrap_adapter_error(excinfo.value, url=url)
     user_msg = str(user_err)
@@ -456,10 +441,10 @@ def test_error_sqlite_locked_message_shape() -> None:
     instead we feed the wrapper a synthetic OperationalError whose
     message contains the word `locked`, the same shape libsqlite emits.
     """
-    from bootstrap.cli._friendly import wrap_sqlite_error
+    from selfeval.cli._friendly import wrap_sqlite_error
 
     err = wrap_sqlite_error(sqlite3.OperationalError("database is locked"), db_path="/x.db")
     msg = str(err)
     assert "locked" in msg
     assert "/x.db" in msg
-    assert "another bootstrap process" in msg
+    assert "another selfeval process" in msg

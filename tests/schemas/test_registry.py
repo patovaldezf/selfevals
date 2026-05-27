@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from bootstrap.schemas.enums import FeatureKind, FeatureStatus
-from bootstrap.schemas.registry import (
+from selfeval.schemas.enums import FeatureKind, FeatureStatus
+from selfeval.schemas.registry import (
     FeatureRegistry,
     RiskDimension,
     RiskProfile,

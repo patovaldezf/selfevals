@@ -8,7 +8,7 @@ from typing import ClassVar
 import pytest
 from pydantic import ValidationError
 
-from bootstrap.schemas._base import BaseEntity, EntityRef
+from selfeval.schemas._base import BaseEntity, EntityRef
 
 
 class _DummyEntity(BaseEntity):

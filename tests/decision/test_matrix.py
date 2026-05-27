@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import pytest
 
-from bootstrap.decision.matrix import DecisionMatrixEvaluator, evaluate_iteration
-from bootstrap.optimization.aggregator import IterationAggregate
-from bootstrap.schemas._base import EntityRef
-from bootstrap.schemas.enums import (
+from selfeval.decision.matrix import DecisionMatrixEvaluator, evaluate_iteration
+from selfeval.optimization.aggregator import IterationAggregate
+from selfeval.schemas._base import EntityRef
+from selfeval.schemas.enums import (
     DatasetType,
     DecisionOutcome,
     Mode,
     ProposerStrategy,
     SandboxMode,
 )
-from bootstrap.schemas.experiment import (
+from selfeval.schemas.experiment import (
     DatasetUsage,
     DecisionPolicy,
     Experiment,
@@ -72,9 +72,6 @@ def _agg(*, primary: float, guardrails: dict[str, float] | None = None) -> Itera
     )
 
 
-# --- first iteration (no baseline) ---
-
-
 def test_first_iteration_meeting_target_kept() -> None:
     exp = _experiment(target_op=">=", target_value=0.85)
     ev = evaluate_iteration(experiment=exp, aggregate=_agg(primary=0.9), baseline=None)
@@ -86,9 +83,6 @@ def test_first_iteration_below_target_investigated() -> None:
     exp = _experiment(target_op=">=", target_value=0.85)
     ev = evaluate_iteration(experiment=exp, aggregate=_agg(primary=0.6), baseline=None)
     assert ev.outcome == DecisionOutcome.INVESTIGATE
-
-
-# --- subsequent iterations ---
 
 
 def test_improvement_above_baseline_kept() -> None:
@@ -144,9 +138,6 @@ def test_regression_policy_spawn_subexperiment() -> None:
     assert ev.outcome == DecisionOutcome.SPAWN_SUBEXPERIMENT
 
 
-# --- guardrails ---
-
-
 def test_guardrail_violation_triggers_review() -> None:
     exp = _experiment(
         guardrails=[MetricTarget(name="cost_usd_per_case", operator="<=", value=0.02)],
@@ -187,9 +178,6 @@ def test_guardrail_missing_metric_treated_as_passing() -> None:
     assert ev.outcome == DecisionOutcome.KEEP_CANDIDATE
 
 
-# --- object form ---
-
-
 def test_object_form_returns_tuple() -> None:
     exp = _experiment()
     out, rationale = DecisionMatrixEvaluator().evaluate(
@@ -199,9 +187,6 @@ def test_object_form_returns_tuple() -> None:
     )
     assert out == DecisionOutcome.KEEP_CANDIDATE
     assert isinstance(rationale, str)
-
-
-# --- operator coverage ---
 
 
 @pytest.mark.parametrize(

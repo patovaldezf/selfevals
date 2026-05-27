@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from bootstrap.schemas import enums
+from selfeval.schemas import enums
 
 
 @pytest.mark.parametrize(

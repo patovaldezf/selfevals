@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from bootstrap import skills
+from selfeval import skills
 
 
 def test_error_analysis_is_bundled() -> None:

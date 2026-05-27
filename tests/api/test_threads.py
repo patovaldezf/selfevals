@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from bootstrap.api.queries import load_thread
-from bootstrap.schemas.enums import SandboxMode, TraceState
-from bootstrap.schemas.trace import (
+from selfeval.api.queries import load_thread
+from selfeval.schemas.enums import SandboxMode, TraceState
+from selfeval.schemas.trace import (
     AgentSnapshotRef,
     EnvironmentInfo,
     FinalState,
@@ -18,8 +18,8 @@ from bootstrap.schemas.trace import (
     RunInfo,
     Trace,
 )
-from bootstrap.storage.seed import seed_workspace
-from bootstrap.storage.sqlite import SQLiteStorage
+from selfeval.storage.seed import seed_workspace
+from selfeval.storage.sqlite import SQLiteStorage
 
 T0 = datetime(2026, 5, 25, 12, 0, 0, tzinfo=UTC)
 
@@ -60,7 +60,7 @@ def _trace(
 
 @pytest.fixture
 def storage(tmp_path: Path) -> SQLiteStorage:
-    st = SQLiteStorage(str(tmp_path / "bootstrap.sqlite"))
+    st = SQLiteStorage(str(tmp_path / "selfeval.sqlite"))
     seeded = seed_workspace(st, slug="t", name="t", user_id="local")
     ws = seeded.workspace
     # Three turns of one thread, inserted out of order, plus a decoy trace

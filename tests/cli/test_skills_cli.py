@@ -1,11 +1,11 @@
-"""`bootstrap skills list` lists bundled skills; `skills path` prints a skill's
-directory and exits 2 (BootstrapUserError) on an unknown name."""
+"""`selfeval skills list` lists bundled skills; `skills path` prints a skill's
+directory and exits 2 (SelfEvalUserError) on an unknown name."""
 
 from __future__ import annotations
 
 import pytest
 
-from bootstrap.cli.main import app
+from selfeval.cli.main import app
 
 
 def _capture(capsys: pytest.CaptureFixture[str], argv: list[str]) -> tuple[int, str]:

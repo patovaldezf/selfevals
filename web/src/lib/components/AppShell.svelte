@@ -20,8 +20,8 @@
       <span
         class="inline-block h-2.5 w-2.5 rounded-full bg-accent"
         aria-hidden="true"
-      />
-      <span>bootstrap</span>
+      ></span>
+      <span>selfeval</span>
     </a>
 
     <nav class="flex flex-col gap-1 text-sm">

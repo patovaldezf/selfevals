@@ -1,6 +1,6 @@
 """Anthropic-backed agent used by `experiment.yaml`.
 
-`run` is the boostrap entrypoint. It receives an `AdapterRequest`, calls
+`run` is the selfeval entrypoint. It receives an `AdapterRequest`, calls
 the Anthropic Messages API (or a deterministic fake when no API key is
 present), and returns an `AdapterResponse`.
 
@@ -24,7 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from bootstrap.runner.adapters import AdapterRequest, AdapterResponse
+from selfeval.runner.adapters import AdapterRequest, AdapterResponse
 
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 DEFAULT_MAX_TOKENS = 256
@@ -256,9 +256,6 @@ def _optional_float(value: Any) -> float | None:
         return None
 
 
-# --- Anthropic call --------------------------------------------------------
-
-
 class _AnthropicCallError(RuntimeError):
     """Internal sentinel: the Anthropic call failed but we want to fall back."""
 
@@ -318,9 +315,6 @@ def _join_text_blocks(blocks: Any) -> str:
         if isinstance(text, str):
             parts.append(text)
     return "".join(parts)
-
-
-# --- Fake responder --------------------------------------------------------
 
 
 _FAKE_TOKEN_COST = 0.000_001  # nominal; exercises the cost path without lying.
@@ -398,9 +392,6 @@ def _fake_support_reply(ctx: PromptContext) -> str:
         "I've checked the tracking and can offer either a refund or a "
         "replacement shipped today. Which would you prefer?"
     )
-
-
-# --- System prompts --------------------------------------------------------
 
 
 def _system_prompt_for(task_hint: str) -> str:
