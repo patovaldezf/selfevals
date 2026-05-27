@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from selfeval.api.broker import SpanBroker, _Closed
+from selfevals.api.broker import SpanBroker, _Closed
 
 
 @pytest.mark.asyncio

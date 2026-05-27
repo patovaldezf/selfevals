@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from selfeval.schemas.enums import Role
-from selfeval.schemas.workspace import Member, Workspace
+from selfevals.schemas.enums import Role
+from selfevals.schemas.workspace import Member, Workspace
 
 
 def _new_workspace(slug: str = "pato") -> Workspace:

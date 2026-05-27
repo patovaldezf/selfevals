@@ -19,7 +19,7 @@
 </script>
 
 <svelte:head>
-  <title>selfeval</title>
+  <title>selfevals</title>
 </svelte:head>
 
 <AppShell>
@@ -38,7 +38,7 @@
         <p>
           Start the API:
           <code class="font-mono text-xs px-1.5 py-0.5 rounded bg-surface-2"
-            >uv run selfeval-api</code
+            >uv run selfevals-api</code
           >.
         </p>
       </div>
@@ -48,7 +48,7 @@
           No workspaces yet. Seed one from the CLI:
         </p>
         <code class="font-mono text-xs px-2 py-1 rounded bg-surface-2"
-          >uv run selfeval init my-team</code
+          >uv run selfevals init my-team</code
         >
       </div>
     {:else}

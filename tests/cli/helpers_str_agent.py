@@ -7,7 +7,7 @@ CLI wrapper coerces it into an AdapterResponse.
 
 from __future__ import annotations
 
-from selfeval.runner.adapters import AdapterRequest
+from selfevals.runner.adapters import AdapterRequest
 
 
 def run(req: AdapterRequest) -> str:

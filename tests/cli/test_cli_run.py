@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from selfeval.cli.main import app
+from selfevals.cli.main import app
 
 REPO_EXAMPLE = (
     Path(__file__).resolve().parents[2] / "evals" / "experiments" / "example_pingpong.yaml"
@@ -61,8 +61,8 @@ def test_run_persists_iterations_to_storage(
     )
     assert rc == 0
     # IterationRecords + DecisionRecords should be in the db.
-    from selfeval.schemas.iteration import DecisionRecord, IterationRecord
-    from selfeval.storage.sqlite import SQLiteStorage
+    from selfevals.schemas.iteration import DecisionRecord, IterationRecord
+    from selfevals.storage.sqlite import SQLiteStorage
 
     storage = SQLiteStorage(db)
     try:

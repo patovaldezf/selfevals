@@ -1,4 +1,4 @@
-"""Realistic example: an Anthropic-backed agent optimized by selfeval.
+"""Realistic example: an Anthropic-backed agent optimized by selfevals.
 
 The companion `experiment.yaml` runs three EvalCases (sentiment, structured
 extraction, open-ended support reply) through `agent.run`, scores them with

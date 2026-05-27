@@ -4,13 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from selfeval._internal.hashing import bytes_hash
-from selfeval.storage.errors import (
+from selfevals._internal.hashing import bytes_hash
+from selfevals.storage.errors import (
     IntegrityViolationError,
     ObjectNotFoundError,
     PointerHashMismatchError,
 )
-from selfeval.storage.filesystem import (
+from selfevals.storage.filesystem import (
     FilesystemObjectStore,
     make_pointer,
     parse_pointer,

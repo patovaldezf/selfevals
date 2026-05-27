@@ -2,13 +2,13 @@
 
 Status: design specification v0.1.
 
-This document defines the conceptual model behind selfeval. It is intentionally
+This document defines the conceptual model behind selfevals. It is intentionally
 framework-agnostic: the same primitives should work for local CLIs, CI jobs,
 agent runtimes, web dashboards, and long-running optimization loops.
 
 ## 1. Thesis
 
-selfeval is not just an eval runner. It is a system for deciding what should be
+selfevals is not just an eval runner. It is a system for deciding what should be
 evaluated, capturing agent behavior, constructing reliable datasets, running
 reproducible experiments, analyzing failures, and turning production mistakes
 into permanent regression coverage.
@@ -38,7 +38,7 @@ Experiment + AgentFleet + Agent + Dataset + Trace + GraderCard + OptimizationLoo
 
 ## 3. Evaluation Targets
 
-selfeval can evaluate or iterate over the following components when an experiment
+selfevals can evaluate or iterate over the following components when an experiment
 explicitly allows it:
 
 | Component | Evaluated surface | Editable surface |
@@ -209,7 +209,7 @@ calibration. LLM judges are useful, but they are not an oracle.
 
 ## 5. Datasets as a Portfolio
 
-There should not be one monolithic dataset. selfeval operates a portfolio:
+There should not be one monolithic dataset. selfevals operates a portfolio:
 
 | Dataset | Purpose | Usually gates? |
 | --- | --- | --- |
@@ -332,7 +332,7 @@ user or business behavior, not just why a score increased.
 
 ## 10. Handoff and Agent Skills
 
-selfeval supports two complementary workflows:
+selfevals supports two complementary workflows:
 
 - Handoff mode: run longer experiments unattended, then review the resulting
   traces, aggregates, and decision records.

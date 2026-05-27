@@ -21,7 +21,7 @@
         class="inline-block h-2.5 w-2.5 rounded-full bg-accent"
         aria-hidden="true"
       ></span>
-      <span>selfeval</span>
+      <span>selfevals</span>
     </a>
 
     <nav class="flex flex-col gap-1 text-sm">

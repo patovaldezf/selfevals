@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from selfeval.schemas import (
+from selfevals.schemas import (
     Agent,
     AgentFleet,
     AgentSnapshotRef,
@@ -55,7 +55,7 @@ from selfeval.schemas import (
     Trace,
     Workspace,
 )
-from selfeval.schemas.enums import (
+from selfevals.schemas.enums import (
     AgentType,
     DatasetSource,
     DatasetStatus,
@@ -72,7 +72,7 @@ from selfeval.schemas.enums import (
     ToolCallStatus,
     TraceState,
 )
-from selfeval.schemas.eval_case import CaseTaxonomy, EvalCase
+from selfevals.schemas.eval_case import CaseTaxonomy, EvalCase
 
 
 def test_end_to_end_chain_constructable() -> None:
@@ -179,7 +179,7 @@ def test_end_to_end_chain_constructable() -> None:
         ),
         agent=AgentSnapshotRef(agent_id=agent.id, agent_version=agent.version),
         environment=EnvironmentInfo(
-            framework_version="selfeval/0.0.1",
+            framework_version="selfevals/0.0.1",
             runtime="python-3.12",
             sandbox=SandboxMode.DRY_RUN,
             started_at=started,

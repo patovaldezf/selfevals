@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from selfeval.graders.base import GradeLabel
-from selfeval.graders.calibration import (
+from selfevals.graders.base import GradeLabel
+from selfevals.graders.calibration import (
     HumanLabel,
     PredictedLabel,
     compute_classification_metrics,

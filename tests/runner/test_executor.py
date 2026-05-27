@@ -4,15 +4,15 @@ from typing import Any
 
 import pytest
 
-from selfeval.runner.adapters import (
+from selfevals.runner.adapters import (
     AdapterRequest,
     AdapterResponse,
     AdapterToolUse,
     EmbeddedAdapter,
 )
-from selfeval.runner.executor import Executor
-from selfeval.runner.sandbox import SandboxPolicy
-from selfeval.schemas.enums import (
+from selfevals.runner.executor import Executor
+from selfevals.runner.sandbox import SandboxPolicy
+from selfevals.schemas.enums import (
     AgentType,
     DatasetSource,
     DatasetType,
@@ -22,7 +22,7 @@ from selfeval.schemas.enums import (
     StopReason,
     ToolCallStatus,
 )
-from selfeval.schemas.eval_case import (
+from selfevals.schemas.eval_case import (
     CaseTaxonomy,
     EvalCase,
     Expected,
@@ -30,8 +30,8 @@ from selfeval.schemas.eval_case import (
     GroundTruthSpec,
     SourceInfo,
 )
-from selfeval.schemas.fleet import Agent, ModelRef
-from selfeval.schemas.trace import LLMCallSpan, ToolCallSpan
+from selfevals.schemas.fleet import Agent, ModelRef
+from selfevals.schemas.trace import LLMCallSpan, ToolCallSpan
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
@@ -184,7 +184,7 @@ def test_executor_requires_workspace() -> None:
 
 
 def test_executor_blocks_live_sandbox_at_construction() -> None:
-    from selfeval.runner.sandbox import SandboxViolationError
+    from selfevals.runner.sandbox import SandboxViolationError
 
     with pytest.raises(SandboxViolationError):
         Executor(

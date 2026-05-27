@@ -1,99 +1,171 @@
-# selfeval
+# selfevals
 
 Self-improving evals framework for AI agents.
 
-Install the SDK, point it at your agent, and selfeval reads your repo,
-proposes an eval structure, runs experiments, and iterates on parameters
-toward a target metric. CLI-first, multi-tenant from day one, agnostic to
-the agent framework underneath.
+Point selfevals at your agent and it runs a structured experiment: it
+feeds eval cases through an adapter, grades each trace, sweeps the
+parameters you expose, and renders a report that tells you which
+configuration to keep. CLI-first, multi-tenant from day one, and agnostic
+to the agent framework underneath — selfevals never calls your provider;
+your agent does, and selfevals grades the result.
 
-> Status: **v0.2.0 — runtime functional.** CLI end-to-end works: load
-> an experiment spec → run cases through an adapter → grade traces →
-> persist iterations → render report. See `docs/spec/` for the
-> canonical and operational specs that drive design.
+> Status: **v0.2.1 — runtime functional.** The CLI works end-to-end:
+> load an experiment spec → run cases through an adapter → grade traces →
+> persist iterations → render a report. See [`docs/spec/`](docs/spec/) for
+> the canonical and operational specs that drive design, and
+> [`docs/STATUS.md`](docs/STATUS.md) for an honest what-works / what-doesn't
+> snapshot.
 
 ## Install
 
 ```bash
-pip install selfeval
-selfeval examples copy pingpong
-selfeval run evals/experiments/example_pingpong.yaml --no-persist
+pip install selfevals
 ```
 
-The distribution is `selfeval`; the import name and the CLI command are
-both `selfeval` (`import selfeval`, `selfeval --help`).
+The distribution is `selfevals`; the import name and the CLI command are
+both `selfevals` (`import selfevals`, `selfevals --help`).
 
-## Quickstart from source
+To run or trace an agent backed by a real provider, install the matching
+**extra** — each one bundles the provider's SDK *and* the tracing
+integration, so a single install is enough:
 
 ```bash
-uv sync --extra web --extra telemetry
-uv run selfeval run evals/experiments/example_pingpong.yaml --no-persist
+pip install 'selfevals[openai]'      # or [anthropic], [bedrock], [vertex],
+                                      #    [langchain], [crewai]
+pip install 'selfevals[all]'         # every provider + the web API
 ```
 
-Expected output: a markdown report showing two iterations, the best
-one selected, and a top failure-modes table. End-to-end in <1 second
-against the bundled `EmbeddedAdapter` echo agent.
+The core install depends only on `pydantic` and `pyyaml`; no provider SDK
+is pulled until you ask for an extra.
 
-To persist to SQLite and inspect afterwards:
+## 60-second quickstart
 
 ```bash
-uv run selfeval run evals/experiments/example_pingpong.yaml --db ./selfeval.sqlite
-uv run selfeval experiment list <workspace_id>
-uv run selfeval report <workspace_id> <experiment_id>
+pip install selfevals
+selfevals examples copy pingpong     # writes evals/ into the current dir
+selfevals run evals/experiments/example_pingpong.yaml --no-persist
 ```
 
-## Try with a real LLM agent
+Expected output: a markdown report showing two iterations, the best one
+selected, and a top failure-modes table — end-to-end in under a second
+against the bundled `EmbeddedAdapter` echo agent. No API key needed.
 
-The `examples/hello_llm/` directory shows selfeval optimizing a real
-Anthropic agent over three eval cases (sentiment classification,
-structured extraction, and an open-ended customer-support reply) with
-two graders combined: a `DeterministicGrader` for the rule-based cases
-and an `LLMJudgeGrader` (driven by the same Anthropic backend with a
-different system prompt) for the open-ended one. The `GridProposer`
-sweeps `temperature ∈ {0.0, 0.5, 1.0}` and the report ranks them.
+To persist results to SQLite and inspect them afterwards (note: `--db` is a
+**global** flag, so it goes *before* the subcommand):
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...   # optional; see below
-uv run selfeval run examples/hello_llm/experiment.yaml --no-persist
+selfevals --db ./selfevals.sqlite run evals/experiments/example_pingpong.yaml
+selfevals --db ./selfevals.sqlite experiment list <workspace_id>
+selfevals --db ./selfevals.sqlite report <workspace_id> <experiment_id>
 ```
 
-If `ANTHROPIC_API_KEY` is unset or the `anthropic` SDK is not installed,
-the agent and the judge both fall back to deterministic fakes designed
-to produce different grader outcomes across the temperature sweep — so
-the example is fully runnable offline. Expect a markdown report with
-three iterations, the coolest temperature winning the primary metric
-(`pass@1 >= 0.7`), and the failure-modes table dominated by
-`structured_output_mismatch` at the warmer settings.
+The `run` command prints the workspace and experiment ids you need for the
+follow-up commands.
 
-The full setup lives in three files you can copy into your own repo:
+## Concepts
 
-- `examples/hello_llm/agent.py` — the agent + judge callables.
-- `examples/hello_llm/cases.jsonl` — the three EvalCases.
-- `examples/hello_llm/experiment.yaml` — proposer, target, graders.
+The five nouns you'll meet everywhere:
+
+| Term | What it is |
+|------|------------|
+| **EvalCase** | One test: an input, the expected outcome, and which graders apply. |
+| **Adapter** | The bridge to your agent — embedded callable, CLI subprocess, or HTTP endpoint. selfevals calls *it*, never the provider directly. |
+| **Grader** | Scores a trace. `DeterministicGrader` (rules: substrings, tools, JSON schema) or `LLMJudgeGrader` (a rubric-driven judge). |
+| **Proposer** | Picks the next parameter configuration to try — `manual`, `grid`, or `random`. |
+| **DecisionMatrix** | Turns each iteration's metrics into a verdict: keep, reject, investigate, spawn sub-experiment, or require a tradeoff review. |
+
+An **experiment** is a YAML spec wiring these together; a **run** executes
+it, producing **iterations** the reporter ranks.
+
+## Try it with a real LLM agent
+
+Two parallel examples live in [`examples/`](examples/) — same three eval
+cases (sentiment classification, structured extraction, open-ended support
+reply), same graders, same temperature sweep, differing only in the
+provider call. Both fall back to deterministic fakes when the API key is
+unset, so they're runnable offline.
+
+**Anthropic** ([`examples/hello_llm/`](examples/hello_llm/)):
+
+```bash
+pip install 'selfevals[anthropic]'
+export ANTHROPIC_API_KEY=sk-ant-...        # optional; falls back to a fake
+uv run selfevals run examples/hello_llm/experiment.yaml --no-persist
+```
+
+**OpenAI** ([`examples/hello_openai/`](examples/hello_openai/)):
+
+```bash
+pip install 'selfevals[openai]'
+export OPENAI_API_KEY=sk-...               # optional; falls back to a fake
+uv run selfevals run examples/hello_openai/experiment.yaml --no-persist
+```
+
+Each combines a `DeterministicGrader` (sentiment + extraction) with an
+`LLMJudgeGrader` (the open-ended reply). The `GridProposer` sweeps
+`temperature ∈ {0.0, 0.5, 1.0}`; the report ranks them and the
+`DecisionMatrix` selects the winner. Against the real models the coolest
+temperature typically wins `pass@1` while warmer settings degrade on the
+structured-output case.
+
+See [`examples/README.md`](examples/README.md) for a walk-through of the
+file layout and how to adapt them to your own agent.
+
+> The example specs and datasets reference `examples.hello_*.agent`
+> import paths, so they run from a **source checkout** (clone the repo).
+> The pip-installable `selfevals examples copy pingpong` flow ships only
+> the dependency-free pingpong example today.
 
 ## Adapters
 
-selfeval ships three concrete `AgentAdapter` implementations so you can
+selfevals ships three concrete `AgentAdapter` implementations so you can
 point the loop at any agent:
 
 - `EmbeddedAdapter` — a Python callable in-process. Best for quick tests.
 - `CliCommandAdapter` — invokes a subprocess and reads JSON on stdout.
 - `HttpEndpointAdapter` — POSTs each case to an HTTP endpoint and reads JSON.
 
-See `src/selfeval/runner/adapters.py` for the contract and
-[`docs/adapters.md`](docs/adapters.md) for usage examples, the per-adapter
+See `src/selfevals/runner/adapters.py` for the contract and
+[`docs/adapters.md`](docs/adapters.md) for usage examples, per-adapter
 YAML/code snippets, and a comparison table.
 
-## Docs
+## CLI reference
 
-- [Adapters](docs/adapters.md) — write agents that selfeval can call.
-- [`docs/spec/`](docs/spec/) — canonical and operational specs (source
-  of truth for design decisions).
+`selfevals --help` lists every command; `selfevals <command> --help` shows
+its arguments. The surface:
+
+| Command | Purpose |
+|---------|---------|
+| `init <slug>` | Create a workspace and seed the default failure-mode taxonomy. |
+| `run <spec.yaml>` | Run an experiment spec end-to-end. |
+| `report <ws> <exp>` | Render a stored experiment as markdown (`--format json` for JSON). |
+| `compare <ws> <itr_a> <itr_b>` | Diff two iterations side by side. |
+| `estimate` | Dry-run cost estimate for a search space × cases × reps. |
+| `workspace show <ws>` | Inspect a workspace. |
+| `experiment list/show <ws> [exp]` | List or inspect experiments. |
+| `iteration list <ws> <exp>` | List recorded iterations. |
+| `analyze pull/push <ws> <exp>` | The error-analysis handshake (see below). |
+| `failuremode list/promote/retire/merge/edit` | Manage the failure-mode taxonomy. |
+| `skills list / path <name>` | Locate the agent skills bundled with the install. |
+| `examples copy <name>` | Copy a runnable example into the current project. |
+
+`--db <path>` is a global flag (default `./selfevals.sqlite`) and goes
+before the subcommand.
+
+### Error analysis (closed loop)
+
+selfevals grows a per-workspace failure-mode taxonomy and drives the next
+experiment from it — it never calls an LLM itself. `analyze pull` emits the
+failed traces plus the live taxonomy; an external coding agent does the
+open/axial coding and `analyze push`es the result back; a human promotes
+candidate modes via `failuremode promote`. The bundled
+[`error-analysis` skill](src/selfevals/.agents/skills/error-analysis/SKILL.md)
+(discoverable via `selfevals skills list`) encodes the method.
 
 ## Layout
 
 ```
-src/selfeval/        # the SDK package
+src/selfevals/        # the SDK package
   schemas/            # Pydantic v2 entities + contractual validators
   storage/            # SQLite + filesystem object store (interface abstracted)
   trace/              # native SDK decorators + OTel importer
@@ -102,21 +174,24 @@ src/selfeval/        # the SDK package
   optimization/       # OptimizationLoop + proposers (manual/grid/random)
   decision/           # decision matrix → DecisionRecord
   reporter/           # markdown + JSON reports
+  analysis/           # error-analysis handshake (pull/push, bundles)
   cli/                # argparse entrypoint
-skills/               # markdown skills for Claude Code (propose/run/optimize)
+examples/             # runnable examples (pingpong, hello_llm, hello_openai)
 docs/spec/            # canonical + operational specs (source of truth)
-tests/                # pytest, mirrors src/selfeval layout
+tests/                # pytest, mirrors src/selfevals layout
 ```
 
-## Dev
+## Development
 
 ```bash
-uv sync --extra web --extra telemetry
-uv run --extra web --extra telemetry pytest
-uv run --extra web --extra telemetry mypy src/selfeval
-uv run ruff check .    # lint
-cd web && npm install && npm run check && npm run build
+uv sync --all-extras --dev        # venv + every extra + dev tooling
+uv run pytest                     # tests
+uv run mypy src/selfevals         # types (strict)
+uv run ruff check .               # lint
 ```
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the test layout, the optional
+telemetry/web extras some tests require, and PR conventions.
 
 ## License
 

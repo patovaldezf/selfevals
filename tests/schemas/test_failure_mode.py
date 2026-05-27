@@ -7,14 +7,14 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from selfeval.schemas.enums import FailureModeStatus
-from selfeval.schemas.failure_mode import FailureMode, FailureModeExample
-from selfeval.storage.seed import (
+from selfevals.schemas.enums import FailureModeStatus
+from selfevals.schemas.failure_mode import FailureMode, FailureModeExample
+from selfevals.storage.seed import (
     CANONICAL_FAILURE_MODES,
     seed_failure_taxonomy,
     seed_workspace,
 )
-from selfeval.storage.sqlite import SQLiteStorage
+from selfevals.storage.sqlite import SQLiteStorage
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
