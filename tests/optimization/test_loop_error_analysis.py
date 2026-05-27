@@ -12,6 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from selfevals.analysis.staging import AnalysisStagingRecord
 from selfevals.graders.deterministic import DeterministicGrader
 from selfevals.optimization.loop import OptimizationLoop, _dominant_modes
@@ -170,7 +172,8 @@ def test_dominant_modes_orders_by_count_then_id() -> None:
     assert _dominant_modes({}) == []
 
 
-def test_stages_analysis_when_fail_rate_clears_threshold(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_stages_analysis_when_fail_rate_clears_threshold(tmp_path: Path) -> None:
     exp = _experiment(
         max_iterations=1,
         search_space={"level": [0.0]},
@@ -179,7 +182,7 @@ def test_stages_analysis_when_fail_rate_clears_threshold(tmp_path: Path) -> None
         ),
     )
     loop, storage = _scoped_loop(exp, _failing_adapter(), tmp_path)
-    loop.run()
+    await loop.run()
     with storage.open(WS) as s:
         staged = [e for e in s.list_entities(AnalysisStagingRecord)]
     storage.close()
@@ -191,17 +194,19 @@ def test_stages_analysis_when_fail_rate_clears_threshold(tmp_path: Path) -> None
     assert rec.scope == "failed_only"
 
 
-def test_does_not_stage_when_disabled(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_does_not_stage_when_disabled(tmp_path: Path) -> None:
     exp = _experiment(max_iterations=1, search_space={"level": [0.0]})  # disabled default
     loop, storage = _scoped_loop(exp, _failing_adapter(), tmp_path)
-    loop.run()
+    await loop.run()
     with storage.open(WS) as s:
         staged = list(s.list_entities(AnalysisStagingRecord))
     storage.close()
     assert staged == []
 
 
-def test_does_not_stage_when_run_is_healthy(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_does_not_stage_when_run_is_healthy(tmp_path: Path) -> None:
     exp = _experiment(
         max_iterations=1,
         search_space={"level": [1.0]},
@@ -210,18 +215,19 @@ def test_does_not_stage_when_run_is_healthy(tmp_path: Path) -> None:
         ),
     )
     loop, storage = _scoped_loop(exp, _passing_adapter(), tmp_path)
-    loop.run()
+    await loop.run()
     with storage.open(WS) as s:
         staged = list(s.list_entities(AnalysisStagingRecord))
     storage.close()
     assert staged == []
 
 
-def test_failure_modes_consulted_carries_prior_iteration(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_failure_modes_consulted_carries_prior_iteration(tmp_path: Path) -> None:
     # Two failing iterations: iteration 1 should be shown iteration 0's modes.
     exp = _experiment(max_iterations=2, search_space={"level": [0.0, 0.0]})
     loop, storage = _scoped_loop(exp, _failing_adapter(), tmp_path)
-    result = loop.run()
+    result = await loop.run()
     storage.close()
     assert len(result.iterations) == 2
     first, second = result.iterations
@@ -238,20 +244,22 @@ def _persisted_traces(storage: SQLiteStorage) -> list[Trace]:
         return [t for t in s.list_entities(Trace) if isinstance(t, Trace)]
 
 
-def test_persist_traces_none_writes_no_traces(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_persist_traces_none_writes_no_traces(tmp_path: Path) -> None:
     exp = _experiment(max_iterations=1, search_space={"level": [0.0]}, persist_traces="none")
     loop, storage = _scoped_loop(exp, _failing_adapter(), tmp_path)
-    loop.run()
+    await loop.run()
     traces = _persisted_traces(storage)
     storage.close()
     assert traces == []
 
 
-def test_persist_traces_all_writes_every_trace(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_persist_traces_all_writes_every_trace(tmp_path: Path) -> None:
     # One passing iteration → its trace is still persisted under `all`.
     exp = _experiment(max_iterations=1, search_space={"level": [1.0]}, persist_traces="all")
     loop, storage = _scoped_loop(exp, _passing_adapter(), tmp_path)
-    loop.run()
+    await loop.run()
     traces = _persisted_traces(storage)
     storage.close()
     assert len(traces) == 1
@@ -261,11 +269,12 @@ def test_persist_traces_all_writes_every_trace(tmp_path: Path) -> None:
     assert traces[0].run.iteration == 0
 
 
-def test_persist_traces_failed_keeps_only_failures(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_persist_traces_failed_keeps_only_failures(tmp_path: Path) -> None:
     # A failing run → the trace IS persisted (it failed) with its mode tag.
     failing = _experiment(max_iterations=1, search_space={"level": [0.0]})  # default "failed"
     loop, storage = _scoped_loop(failing, _failing_adapter(), tmp_path)
-    loop.run()
+    await loop.run()
     traces = _persisted_traces(storage)
     assert len(traces) == 1
     assert "missing_required_substring" in traces[0].grader_results[0].failure_modes
@@ -274,7 +283,7 @@ def test_persist_traces_failed_keeps_only_failures(tmp_path: Path) -> None:
     # A passing run under the same default → nothing persisted.
     passing = _experiment(max_iterations=1, search_space={"level": [1.0]})
     loop2, storage2 = _scoped_loop(passing, _passing_adapter(), tmp_path, db_name="pass.sqlite")
-    loop2.run()
+    await loop2.run()
     traces2 = _persisted_traces(storage2)
     storage2.close()
     assert traces2 == []

@@ -177,7 +177,8 @@ def _mock_judge_adapter() -> EmbeddedAdapter:
     return EmbeddedAdapter(fn)
 
 
-def test_full_loop_with_deterministic_and_llm_judge(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_full_loop_with_deterministic_and_llm_judge(tmp_path: Path) -> None:
     """Run two iterations end-to-end with both graders, then re-read."""
     cases = [_case("c1", "pong"), _case("c2", "pong")]
     experiment = _experiment(max_iterations=2)
@@ -209,7 +210,7 @@ def test_full_loop_with_deterministic_and_llm_judge(tmp_path: Path) -> None:
             scope=scope,
             decision_evaluator=DecisionMatrixEvaluator(),
         )
-        result = loop.run()
+        result = await loop.run()
     finally:
         scope.close()
     assert len(result.iterations) == 2
@@ -399,7 +400,8 @@ def test_error_unknown_grader_lists_available(
     assert "Traceback" not in stderr
 
 
-def test_error_http_adapter_unreachable_endpoint(
+@pytest.mark.asyncio
+async def test_error_http_adapter_unreachable_endpoint(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """`HttpEndpointAdapter` surfaces a clean AdapterError naming the URL."""
@@ -409,7 +411,7 @@ def test_error_http_adapter_unreachable_endpoint(
     url = "http://127.0.0.1:1/"
     adapter = HttpEndpointAdapter(url, timeout_seconds=1.0)
     with pytest.raises(AdapterError) as excinfo:
-        adapter.invoke(AdapterRequest(workspace_id=WS, case_id="c", input={"messages": []}))
+        await adapter.invoke(AdapterRequest(workspace_id=WS, case_id="c", input={"messages": []}))
     msg = str(excinfo.value)
     assert url in msg
     assert "could not reach" in msg or "transport" in msg.lower()

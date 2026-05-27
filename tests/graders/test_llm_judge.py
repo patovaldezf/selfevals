@@ -97,46 +97,51 @@ def _judge_returning(payload: dict[str, object]) -> EmbeddedAdapter:
 _RUBRIC = RubricTemplate(rubric="Did the agent answer correctly?")
 
 
-def test_happy_path_parses_judge_response() -> None:
+@pytest.mark.asyncio
+async def test_happy_path_parses_judge_response() -> None:
     judge = _judge_returning(
         {"label": "pass", "reason": "matches", "score": 0.9, "confidence": 0.8}
     )
     grader = LLMJudgeGrader("rubric_v1", judge_adapter=judge, rubric=_RUBRIC)
-    res = grader.grade(_ctx())
+    res = await grader.grade(_ctx())
     assert res.label == GradeLabel.PASS
     assert res.score == 0.9
     assert res.confidence == 0.8
     assert "matches" in res.reason
 
 
-def test_unknown_label_marked_error() -> None:
+@pytest.mark.asyncio
+async def test_unknown_label_marked_error() -> None:
     judge = _judge_returning({"label": "great", "reason": "x"})
     grader = LLMJudgeGrader("g", judge_adapter=judge, rubric=_RUBRIC)
-    res = grader.grade(_ctx())
+    res = await grader.grade(_ctx())
     assert res.label == GradeLabel.ERROR
     assert "unknown label" in res.reason
 
 
-def test_invalid_json_marked_error() -> None:
+@pytest.mark.asyncio
+async def test_invalid_json_marked_error() -> None:
     def fn(_: AdapterRequest) -> AdapterResponse:
         return AdapterResponse(content="not json at all")
 
     grader = LLMJudgeGrader("g", judge_adapter=EmbeddedAdapter(fn), rubric=_RUBRIC)
-    res = grader.grade(_ctx())
+    res = await grader.grade(_ctx())
     assert res.label == GradeLabel.ERROR
 
 
-def test_judge_exception_marked_error() -> None:
+@pytest.mark.asyncio
+async def test_judge_exception_marked_error() -> None:
     def fn(_: AdapterRequest) -> AdapterResponse:
         raise RuntimeError("upstream rate-limited")
 
     grader = LLMJudgeGrader("g", judge_adapter=EmbeddedAdapter(fn), rubric=_RUBRIC)
-    res = grader.grade(_ctx())
+    res = await grader.grade(_ctx())
     assert res.label == GradeLabel.ERROR
     assert "upstream rate-limited" in res.reason
 
 
-def test_blocking_card_below_threshold_skips_unless_forced() -> None:
+@pytest.mark.asyncio
+async def test_blocking_card_below_threshold_skips_unless_forced() -> None:
     card = GraderCard(
         id=GraderCard.make_id(),
         workspace_id=WS,
@@ -157,16 +162,17 @@ def test_blocking_card_below_threshold_skips_unless_forced() -> None:
     )
     judge = _judge_returning({"label": "pass", "reason": "ok"})
     grader = LLMJudgeGrader("g", judge_adapter=judge, rubric=_RUBRIC, card=card)
-    res = grader.grade(_ctx())
+    res = await grader.grade(_ctx())
     assert res.label == GradeLabel.SKIPPED
     assert "degraded to advisory" in res.reason
 
     # force=True overrides.
     grader2 = LLMJudgeGrader("g", judge_adapter=judge, rubric=_RUBRIC, card=card, force=True)
-    assert grader2.grade(_ctx()).label == GradeLabel.PASS
+    assert (await grader2.grade(_ctx())).label == GradeLabel.PASS
 
 
-def test_blocking_card_meeting_thresholds_runs_normally() -> None:
+@pytest.mark.asyncio
+async def test_blocking_card_meeting_thresholds_runs_normally() -> None:
     card = GraderCard(
         id=GraderCard.make_id(),
         workspace_id=WS,
@@ -185,8 +191,22 @@ def test_blocking_card_meeting_thresholds_runs_normally() -> None:
     )
     judge = _judge_returning({"label": "pass", "reason": "ok"})
     grader = LLMJudgeGrader("g", judge_adapter=judge, rubric=_RUBRIC, card=card)
-    res = grader.grade(_ctx())
+    res = await grader.grade(_ctx())
     assert res.label == GradeLabel.PASS
+
+
+@pytest.mark.asyncio
+async def test_judge_with_async_adapter() -> None:
+    async def fn(_: AdapterRequest) -> AdapterResponse:
+        return AdapterResponse(
+            content=json.dumps({"label": "pass", "reason": "async-judged", "score": 0.5})
+        )
+
+    grader = LLMJudgeGrader("g", judge_adapter=EmbeddedAdapter(fn), rubric=_RUBRIC)
+    res = await grader.grade(_ctx())
+    assert res.label == GradeLabel.PASS
+    assert res.score == 0.5
+    assert "async-judged" in res.reason
 
 
 def test_empty_name_rejected() -> None:
