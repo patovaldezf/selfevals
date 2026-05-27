@@ -30,6 +30,10 @@ from selfevals.optimization.proposers import (
     RandomProposer,
     SearchSpaceExhaustedError,
 )
+from selfevals.optimization.sampling import (
+    OptimizationSplit,
+    select_optimization_set,
+)
 
 __all__ = [
     "Aggregator",
@@ -40,8 +44,10 @@ __all__ = [
     "ManualProposer",
     "OptimizationLoop",
     "OptimizationResult",
+    "OptimizationSplit",
     "Proposer",
     "RandomProposer",
     "SearchSpaceExhaustedError",
     "aggregate_iteration",
+    "select_optimization_set",
 ]
