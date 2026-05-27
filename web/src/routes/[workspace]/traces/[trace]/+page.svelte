@@ -79,7 +79,7 @@
 </script>
 
 <svelte:head>
-  <title>Trace {data.trace.run_id} · bootstrap</title>
+  <title>Trace {data.trace.run_id} · selfeval</title>
 </svelte:head>
 
 <div class="grid grid-cols-[420px_1fr] min-h-screen">

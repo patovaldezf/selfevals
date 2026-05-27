@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from bootstrap.schemas.enums import ToolStatus
-from bootstrap.schemas.tool import Tool
+from selfeval.schemas.enums import ToolStatus
+from selfeval.schemas.tool import Tool
 
 
 def _make(**overrides: object) -> Tool:

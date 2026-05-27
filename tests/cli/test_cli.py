@@ -6,16 +6,16 @@ from typing import Any
 
 import pytest
 
-from bootstrap.cli.main import app
-from bootstrap.decision.matrix import DecisionMatrixEvaluator
-from bootstrap.graders.deterministic import DeterministicGrader
-from bootstrap.optimization.loop import OptimizationLoop
-from bootstrap.optimization.proposers import GridProposer
-from bootstrap.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
-from bootstrap.runner.executor import Executor
-from bootstrap.runner.sandbox import SandboxPolicy
-from bootstrap.schemas._base import EntityRef
-from bootstrap.schemas.enums import (
+from selfeval.cli.main import app
+from selfeval.decision.matrix import DecisionMatrixEvaluator
+from selfeval.graders.deterministic import DeterministicGrader
+from selfeval.optimization.loop import OptimizationLoop
+from selfeval.optimization.proposers import GridProposer
+from selfeval.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
+from selfeval.runner.executor import Executor
+from selfeval.runner.sandbox import SandboxPolicy
+from selfeval.schemas._base import EntityRef
+from selfeval.schemas.enums import (
     AgentType,
     DatasetSource,
     DatasetType,
@@ -25,7 +25,7 @@ from bootstrap.schemas.enums import (
     ProposerStrategy,
     SandboxMode,
 )
-from bootstrap.schemas.eval_case import (
+from selfeval.schemas.eval_case import (
     CaseTaxonomy,
     EvalCase,
     Expected,
@@ -33,7 +33,7 @@ from bootstrap.schemas.eval_case import (
     GroundTruthSpec,
     SourceInfo,
 )
-from bootstrap.schemas.experiment import (
+from selfeval.schemas.experiment import (
     ConvergenceSpec,
     DatasetUsage,
     EditableContract,
@@ -47,8 +47,8 @@ from bootstrap.schemas.experiment import (
     SearchSpace,
     TargetSpec,
 )
-from bootstrap.schemas.fleet import Agent, ModelRef
-from bootstrap.storage.sqlite import SQLiteStorage
+from selfeval.schemas.fleet import Agent, ModelRef
+from selfeval.storage.sqlite import SQLiteStorage
 
 
 def _capture(capsys: pytest.CaptureFixture[str], argv: list[str]) -> tuple[int, str, str]:
@@ -184,7 +184,7 @@ def test_compare_two_iterations(tmp_path: Path, capsys: pytest.CaptureFixture[st
     storage = SQLiteStorage(db)
     try:
         with storage.open(ws_id) as scope:
-            from bootstrap.schemas.iteration import IterationRecord
+            from selfeval.schemas.iteration import IterationRecord
 
             iterations = sorted(
                 (it for it in scope.list_entities(IterationRecord)),
@@ -216,9 +216,6 @@ def test_workspace_show_missing_id_reports_error(
     )
     assert rc == 2
     assert "not found" in stderr
-
-
-# ----- helpers -----
 
 
 def _ws_id_from(stdout: str) -> str | None:

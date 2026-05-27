@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from bootstrap.repo.loader import (
+from selfeval.repo.loader import (
     AgentEntrypoint,
     LoaderError,
     load_experiment_spec,
@@ -94,6 +94,40 @@ def test_load_cases_from_jsonl(tmp_path: Path) -> None:
     }
     spec = load_experiment_spec(_write_yaml(tmp_path, body))
     assert len(spec.cases) == 3
+
+
+def test_error_analysis_block_hydrates_onto_experiment(tmp_path: Path) -> None:
+    # The YAML keys are 1:1 with Experiment fields, so the opt-in block needs
+    # no loader code — Pydantic validates it. This guards that contract (§9).
+    exp = _experiment_block()
+    exp["error_analysis"] = {
+        "enabled": True,
+        "trigger": {"when": "fail_rate_above", "threshold": 0.2},
+        "scope": "all",
+    }
+    body = {
+        "workspace": WS,
+        "experiment": exp,
+        "dataset": {"cases_inline": [_inline_case()]},
+        "agent": {"entrypoint": "mod:fn"},
+    }
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    ea = spec.experiment.error_analysis
+    assert ea.enabled is True
+    assert ea.scope == "all"
+    assert ea.trigger.threshold == 0.2
+    assert ea.should_stage(fail_rate=0.5) is True
+
+
+def test_error_analysis_defaults_off_when_omitted(tmp_path: Path) -> None:
+    body = {
+        "workspace": WS,
+        "experiment": _experiment_block(),
+        "dataset": {"cases_inline": [_inline_case()]},
+        "agent": {"entrypoint": "mod:fn"},
+    }
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    assert spec.experiment.error_analysis.enabled is False
 
 
 def test_workspace_override_takes_precedence(tmp_path: Path) -> None:
@@ -188,8 +222,8 @@ def test_top_level_not_mapping(tmp_path: Path) -> None:
 
 def test_resolve_agent_callable_finds_function() -> None:
     ep = AgentEntrypoint(
-        raw="bootstrap.repo.loader:resolve_agent_callable",
-        module="bootstrap.repo.loader",
+        raw="selfeval.repo.loader:resolve_agent_callable",
+        module="selfeval.repo.loader",
         attribute="resolve_agent_callable",
     )
     fn = resolve_agent_callable(ep)
@@ -204,8 +238,8 @@ def test_resolve_agent_callable_unknown_module() -> None:
 
 def test_resolve_agent_callable_unknown_attribute() -> None:
     ep = AgentEntrypoint(
-        raw="bootstrap.repo.loader:does_not_exist",
-        module="bootstrap.repo.loader",
+        raw="selfeval.repo.loader:does_not_exist",
+        module="selfeval.repo.loader",
         attribute="does_not_exist",
     )
     with pytest.raises(LoaderError, match="has no attribute"):

@@ -2,7 +2,7 @@
 
 These tests exercise the real example code: agent fake responder, judge
 fake responder, YAML loader path for the `graders:` extension, and the
-CLI's `bootstrap run` pipeline. We deliberately do NOT mock the agent
+CLI's `selfeval run` pipeline. We deliberately do NOT mock the agent
 module — the test would lose almost all signal if we did.
 """
 
@@ -14,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from bootstrap.cli.main import app
-from bootstrap.graders.registry import available_graders, unregister_grader
-from bootstrap.runner.adapters import AdapterRequest, AdapterResponse
+from selfeval.cli.main import app
+from selfeval.graders.registry import available_graders, unregister_grader
+from selfeval.runner.adapters import AdapterRequest, AdapterResponse
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXPERIMENT = REPO_ROOT / "examples" / "hello_llm" / "experiment.yaml"
@@ -125,7 +125,7 @@ def test_build_runner_uses_injected_fake() -> None:
 def test_cli_run_example_end_to_end(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`bootstrap run examples/hello_llm/experiment.yaml --no-persist` must
+    """`selfeval run examples/hello_llm/experiment.yaml --no-persist` must
     complete and produce a JSON OptimizationResult with one iteration per
     temperature value, and the cool temperature must be best."""
     # Don't leak registered grader names across tests.

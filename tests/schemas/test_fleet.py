@@ -3,9 +3,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from bootstrap.schemas._base import EntityRef
-from bootstrap.schemas.enums import AgentStatus, AgentType
-from bootstrap.schemas.fleet import Agent, AgentFleet, ModelRef
+from selfeval.schemas._base import EntityRef
+from selfeval.schemas.enums import AgentStatus, AgentType
+from selfeval.schemas.fleet import Agent, AgentFleet, ModelRef
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 

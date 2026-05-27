@@ -1,7 +1,7 @@
 """Smoke tests for the HTTP bridge.
 
 We pin against the real pingpong example so the test exercises the
-same path the web UI will: `bootstrap run` populates the SQLite db,
+same path the web UI will: `selfeval run` populates the SQLite db,
 then the API reads back what's there.
 """
 
@@ -13,8 +13,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from bootstrap.api.app import build_app
-from bootstrap.cli.main import app as cli_app
+from selfeval.api.app import build_app
+from selfeval.cli.main import app as cli_app
 
 # Starlette ships a deprecation warning we don't control; harmless for the API.
 warnings.filterwarnings(
@@ -31,7 +31,7 @@ REPO_EXAMPLE = (
 
 @pytest.fixture
 def seeded_db(tmp_path: Path) -> Path:
-    db = tmp_path / "bootstrap.sqlite"
+    db = tmp_path / "selfeval.sqlite"
     rc = cli_app(["--db", str(db), "run", str(REPO_EXAMPLE), "--max-iterations", "2"])
     assert rc == 0
     return db
@@ -47,7 +47,7 @@ def test_health_endpoint(client: TestClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
-    assert body["db_path"].endswith("bootstrap.sqlite")
+    assert body["db_path"].endswith("selfeval.sqlite")
 
 
 def test_list_workspaces_returns_seeded(client: TestClient) -> None:

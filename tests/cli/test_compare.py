@@ -1,4 +1,4 @@
-"""Tests for `bootstrap compare` CLI + the underlying render_compare."""
+"""Tests for `selfeval compare` CLI + the underlying render_compare."""
 
 from __future__ import annotations
 
@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from bootstrap.cli.main import app
-from bootstrap.reporter.compare import render_compare
-from bootstrap.schemas.enums import (
+from selfeval.cli.main import app
+from selfeval.reporter.compare import render_compare
+from selfeval.schemas.enums import (
     DecisionOutcome,
     IterationState,
     ProposerStrategy,
 )
-from bootstrap.schemas.iteration import (
+from selfeval.schemas.iteration import (
     ExecutionInfo,
     IterationDecision,
     IterationMetrics,
@@ -21,7 +21,7 @@ from bootstrap.schemas.iteration import (
     MetricObservation,
     ProposerInputs,
 )
-from bootstrap.storage.sqlite import SQLiteStorage
+from selfeval.storage.sqlite import SQLiteStorage
 from tests.cli.test_cli import _seed_experiment_into_db, _ws_id_from
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
@@ -44,9 +44,6 @@ def _load_iterations(db: Path, ws_id: str) -> list[IterationRecord]:
         storage.close()
     iterations.sort(key=lambda it: it.iteration)
     return iterations
-
-
-# ----- direct render_compare tests -----
 
 
 def _iteration_record(
@@ -149,9 +146,6 @@ def test_render_compare_different_primary_metrics_warns() -> None:
     )
     out = render_compare(a, b_alt)
     assert "different primary metrics" in out
-
-
-# ----- CLI end-to-end -----
 
 
 def test_cli_compare_shows_diff_tables(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

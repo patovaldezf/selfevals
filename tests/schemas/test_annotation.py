@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
-from bootstrap.schemas.annotation import Annotation, AnnotationLabels
+from selfeval.schemas.annotation import Annotation, AnnotationLabels
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
