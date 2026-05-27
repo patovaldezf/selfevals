@@ -11,6 +11,7 @@ from selfevals.schemas.trace import (
     RunInfo,
     ToolCallSpan,
     ToolUseRequest,
+    Trace,
 )
 from selfevals.storage.filesystem import FilesystemObjectStore
 from selfevals.trace.payload_router import PayloadRouter
@@ -127,3 +128,54 @@ def test_orphan_tool_call_without_llm_request_rejected(tmp_path: Path) -> None:
         pass
     with pytest.raises(ValidationError, match="toolu_lone"):
         rec.build()
+
+
+def _only_llm_span(trace: Trace) -> LLMCallSpan:
+    spans = [s for s in trace.spans if isinstance(s, LLMCallSpan)]
+    assert len(spans) == 1
+    return spans[0]
+
+
+def test_set_timing_populates_ttft_and_throughput(tmp_path: Path) -> None:
+    rec = _recorder(tmp_path)
+    with (
+        rec,
+        rec.agent_turn("turn"),
+        rec.llm_call("call", provider="anthropic", model="claude-sonnet-4-6") as llm,
+    ):
+        llm.add_tokens(input=10, output=40, total=50)
+        llm.set_timing(time_to_first_token_ms=120, tokens_per_second=33.5)
+    span = _only_llm_span(rec.build())
+    assert span.time_to_first_token_ms == 120
+    assert span.tokens_per_second == 33.5
+
+
+def test_throughput_derived_from_duration_when_not_reported(tmp_path: Path) -> None:
+    rec = _recorder(tmp_path)
+    with (
+        rec,
+        rec.agent_turn("turn"),
+        rec.llm_call("call", provider="anthropic", model="claude-sonnet-4-6") as llm,
+    ):
+        llm.add_tokens(input=10, output=40, total=50)
+        # No set_timing call → throughput is derived from the span duration.
+    span = _only_llm_span(rec.build())
+    # TTFT is never fabricated.
+    assert span.time_to_first_token_ms is None
+    # Output tokens > 0 and a positive duration → a positive derived throughput.
+    if span.duration_ms > 0:
+        assert span.tokens_per_second is not None
+        assert span.tokens_per_second > 0
+
+
+def test_no_throughput_without_output_tokens(tmp_path: Path) -> None:
+    rec = _recorder(tmp_path)
+    with (
+        rec,
+        rec.agent_turn("turn"),
+        rec.llm_call("call", provider="anthropic", model="claude-sonnet-4-6") as llm,
+    ):
+        llm.set_output(stop_reason=StopReason.END_TURN)
+        # Zero output tokens → nothing to derive throughput from.
+    span = _only_llm_span(rec.build())
+    assert span.tokens_per_second is None
