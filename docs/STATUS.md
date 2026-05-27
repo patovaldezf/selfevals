@@ -1,4 +1,4 @@
-# Status — v0.2.0
+# Status — v0.2.1
 
 This file is the honest snapshot of what selfevals can and cannot do
 today. Updated on every release; the CHANGELOG records what *changed*,
