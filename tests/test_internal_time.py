@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timezone
 
 import pytest
 
-from selfeval._internal.time import ensure_utc, utc_now
+from selfevals._internal.time import ensure_utc, utc_now
 
 
 def test_utc_now_is_tz_aware() -> None:

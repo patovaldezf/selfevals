@@ -3,7 +3,7 @@
 # Run from the repo root:
 #
 #   export ANTHROPIC_API_KEY=...      # optional; falls back to a fake otherwise
-#   uv run selfeval run examples/hello_llm/experiment.yaml --no-persist
+#   uv run selfevals run examples/hello_llm/experiment.yaml --no-persist
 #
 # The agent (examples/hello_llm/agent.py) calls Anthropic's Messages API
 # with the temperature value the GridProposer hands in. Two graders score

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from selfeval.runner.adapters import (
+from selfevals.runner.adapters import (
     AdapterError,
     AdapterRequest,
     AdapterResponse,

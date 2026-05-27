@@ -2,7 +2,7 @@
  * Thin typed wrapper around the FastAPI bridge.
  *
  * We don't generate types from OpenAPI yet. The shapes here are
- * mirrors of `selfeval.api.schemas` — keep them in sync by hand
+ * mirrors of `selfevals.api.schemas` — keep them in sync by hand
  * until the cost outweighs the friction.
  */
 
@@ -121,7 +121,7 @@ async function request<T>(
   const res = await f(DEFAULT_BASE + path, {
     ...init,
     headers: {
-      'X-SelfEval-User': 'local',
+      'X-SelfEvals-User': 'local',
       'Content-Type': 'application/json',
       ...(init?.headers ?? {})
     }

@@ -12,17 +12,17 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from selfeval.analysis import build_bundle, ingest_result
-from selfeval.analysis.ingest import AnalysisIngestError
-from selfeval.analysis.schemas import (
+from selfevals.analysis import build_bundle, ingest_result
+from selfevals.analysis.ingest import AnalysisIngestError
+from selfevals.analysis.schemas import (
     AnalysisResult,
     Assignment,
     Hypothesis,
     ProposedMode,
 )
-from selfeval.schemas.enums import FailureModeStatus, SandboxMode, TraceState
-from selfeval.schemas.failure_mode import FailureMode
-from selfeval.schemas.trace import (
+from selfevals.schemas.enums import FailureModeStatus, SandboxMode, TraceState
+from selfevals.schemas.failure_mode import FailureMode
+from selfevals.schemas.trace import (
     AgentSnapshotRef,
     EnvironmentInfo,
     FinalState,
@@ -31,8 +31,8 @@ from selfeval.schemas.trace import (
     RunInfo,
     Trace,
 )
-from selfeval.storage.seed import seed_workspace
-from selfeval.storage.sqlite import SQLiteStorage
+from selfevals.storage.seed import seed_workspace
+from selfevals.storage.sqlite import SQLiteStorage
 
 T0 = datetime(2026, 5, 25, 12, 0, 0, tzinfo=UTC)
 EXP = "exp_1"
@@ -49,8 +49,8 @@ def _failed_trace(ws: str, *, run_id: str, with_message: bool = True) -> Trace:
                 provider="anthropic",
                 model="claude-sonnet-4-6",
                 provider_metadata={
-                    "selfeval.messages_in": [{"role": "user", "content": "what is X?"}],
-                    "selfeval.messages_out": [{"role": "assistant", "content": "X costs $499"}],
+                    "selfevals.messages_in": [{"role": "user", "content": "what is X?"}],
+                    "selfevals.messages_out": [{"role": "assistant", "content": "X costs $499"}],
                 },
             )
         )

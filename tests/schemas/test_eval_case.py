@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from selfeval.schemas.enums import (
+from selfevals.schemas.enums import (
     DatasetSource,
     DatasetType,
     GroundTruthMethod,
@@ -14,7 +14,7 @@ from selfeval.schemas.enums import (
     PIIStatus,
     RuntimeLocation,
 )
-from selfeval.schemas.eval_case import (
+from selfevals.schemas.eval_case import (
     CaseMetadata,
     CaseTaxonomy,
     EvalCase,

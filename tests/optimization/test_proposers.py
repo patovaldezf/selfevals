@@ -4,21 +4,21 @@ from typing import Any
 
 import pytest
 
-from selfeval.optimization.proposers import (
+from selfevals.optimization.proposers import (
     GridProposer,
     ManualProposer,
     ProposerContext,
     RandomProposer,
     SearchSpaceExhaustedError,
 )
-from selfeval.schemas._base import EntityRef
-from selfeval.schemas.enums import (
+from selfevals.schemas._base import EntityRef
+from selfevals.schemas.enums import (
     DatasetType,
     Mode,
     ProposerStrategy,
     SandboxMode,
 )
-from selfeval.schemas.experiment import (
+from selfevals.schemas.experiment import (
     DatasetUsage,
     EditableContract,
     Experiment,
@@ -30,7 +30,7 @@ from selfeval.schemas.experiment import (
     SearchSpace,
     TargetSpec,
 )
-from selfeval.schemas.iteration import Proposal, ProposalRejectedError
+from selfevals.schemas.iteration import Proposal, ProposalRejectedError
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 

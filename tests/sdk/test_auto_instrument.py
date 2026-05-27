@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from selfeval.sdk import auto_instrument
+from selfevals.sdk import auto_instrument
 
 
 def test_detect_installed_returns_known_subset() -> None:
@@ -29,7 +29,7 @@ def test_install_missing_instrumentor_is_non_fatal() -> None:
     # Ask for "anthropic" but pretend the instrumentor module is missing.
     provider = MagicMock()
     with patch(
-        "selfeval.sdk.auto_instrument.importlib.import_module",
+        "selfevals.sdk.auto_instrument.importlib.import_module",
         side_effect=ImportError("no module"),
     ):
         report = auto_instrument.install_instrumentors(
@@ -62,7 +62,7 @@ def test_install_with_working_instrumentor_records_success() -> None:
     fake_module.AnthropicInstrumentor = fake_class
 
     with patch(
-        "selfeval.sdk.auto_instrument.importlib.import_module",
+        "selfevals.sdk.auto_instrument.importlib.import_module",
         return_value=fake_module,
     ):
         report = auto_instrument.install_instrumentors(
@@ -83,7 +83,7 @@ def test_instrument_failure_caught_as_warning() -> None:
     fake_module.AnthropicInstrumentor = fake_class
 
     with patch(
-        "selfeval.sdk.auto_instrument.importlib.import_module",
+        "selfevals.sdk.auto_instrument.importlib.import_module",
         return_value=fake_module,
     ):
         report = auto_instrument.install_instrumentors(

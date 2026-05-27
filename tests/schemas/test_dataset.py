@@ -3,9 +3,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from selfeval.schemas._base import EntityRef
-from selfeval.schemas.dataset import Dataset, DatasetStatistics, SplitAllocation
-from selfeval.schemas.enums import DatasetStatus, DatasetType
+from selfevals.schemas._base import EntityRef
+from selfevals.schemas.dataset import Dataset, DatasetStatistics, SplitAllocation
+from selfevals.schemas.enums import DatasetStatus, DatasetType
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
