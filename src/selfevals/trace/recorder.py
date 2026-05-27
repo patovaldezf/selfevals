@@ -23,8 +23,8 @@ Usage:
 
 The recorder is intentionally minimal — it stitches span_started_at +
 duration via `time.perf_counter()`, accumulates spans in order, and lets
-the caller fill in payload-specific fields via small builders. No threading
-in MVP.
+the caller fill in payload-specific fields via small builders. It is not
+threadsafe: one recorder per execution.
 """
 
 from __future__ import annotations
@@ -139,6 +139,24 @@ class _LLMSpanBuilder:
             reasoning=reasoning,
             total=total if total is not None else component_sum,
         )
+
+    def set_timing(
+        self,
+        *,
+        time_to_first_token_ms: int | None = None,
+        tokens_per_second: float | None = None,
+    ) -> None:
+        """Record streaming-latency signals for this call.
+
+        `time_to_first_token_ms` is only meaningful when the adapter streamed
+        and measured it; leave it None otherwise rather than fabricating one.
+        `tokens_per_second` may be measured by the adapter or derived from the
+        span duration when the adapter does not report it.
+        """
+        if time_to_first_token_ms is not None:
+            self.time_to_first_token_ms = time_to_first_token_ms
+        if tokens_per_second is not None:
+            self.tokens_per_second = tokens_per_second
 
 
 @dataclass
@@ -287,6 +305,12 @@ class TraceRecorder:
         finally:
             self._open_parents.pop()
             duration_ms = int((time.perf_counter() - t0) * 1000)
+            tokens_per_second = builder.tokens_per_second
+            if tokens_per_second is None and builder.tokens.output > 0 and duration_ms > 0:
+                # Derive throughput from wall-clock when the adapter did not
+                # measure it directly. TTFT stays None unless the adapter
+                # streamed and reported it — we never fabricate a TTFT.
+                tokens_per_second = builder.tokens.output / (duration_ms / 1000)
             span = LLMCallSpan(
                 id=span_id,
                 parent_id=parent,
@@ -307,7 +331,7 @@ class TraceRecorder:
                 output=builder.output,
                 tokens=builder.tokens,
                 time_to_first_token_ms=builder.time_to_first_token_ms,
-                tokens_per_second=builder.tokens_per_second,
+                tokens_per_second=tokens_per_second,
                 retries=builder.retries,
                 cache_hit=builder.cache_hit,
                 provider_metadata=builder.provider_metadata,
