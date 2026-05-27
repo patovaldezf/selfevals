@@ -9,7 +9,7 @@ configuration to keep. CLI-first, multi-tenant from day one, and agnostic
 to the agent framework underneath — selfevals never calls your provider;
 your agent does, and selfevals grades the result.
 
-> Status: **v0.2.1 — runtime functional.** The CLI works end-to-end:
+> Status: **v0.2.2 — runtime functional.** The CLI works end-to-end:
 > load an experiment spec → run cases through an adapter → grade traces →
 > persist iterations → render a report. See [`docs/spec/`](docs/spec/) for
 > the canonical and operational specs that drive design, and
