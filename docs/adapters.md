@@ -129,9 +129,11 @@ Rules of the road:
 - Adapters do not assemble traces. Return the response; the recorder
   ingests it into a `Trace` separately.
 
-Custom adapters are wired today via a Python `entrypoint` (see
-`EmbeddedAdapter` below) that constructs and delegates to your adapter.
-Native `agent: {type: …}` wiring from YAML is roadmap work.
+The three bundled adapters are auto-wired from YAML by the `agent:` block
+(see each section below). A *custom* adapter — anything you subclass
+yourself — is wired via a Python `entrypoint` (an embedded callable that
+constructs and delegates to your adapter); there is no `type:` tag for
+user-defined adapters.
 
 ---
 
@@ -163,6 +165,17 @@ agent:
 `evals/experiments/example_pingpong.yaml`). The loader imports the
 module and resolves the callable; the CLI then wraps it in an
 `EmbeddedAdapter` for you.
+
+The explicit, tagged form is equivalent:
+
+```yaml
+agent:
+  type: embedded
+  entrypoint: selfevals.examples.pingpong:run
+```
+
+Both shapes select `EmbeddedAdapter`; the bare-`entrypoint` form is the
+shorthand.
 
 ### Agent code
 
@@ -214,30 +227,22 @@ cases run concurrently without blocking the event loop.
 
 ### YAML
 
-The bundled CLI auto-wires `EmbeddedAdapter`. For `CliCommandAdapter`
-today you construct it explicitly in Python (e.g. inside a custom
-`entrypoint` callable that delegates to a subprocess) — wiring it from
-YAML is roadmap work, not shipped.
-
-A reasonable Python entrypoint that delegates:
-
-```python
-# my_project/cli_proxy.py
-from selfevals.runner.adapters import (
-    AdapterRequest, AdapterResponse, CliCommandAdapter,
-)
-
-_adapter = CliCommandAdapter(["./bin/my-agent"], timeout_seconds=30.0)
-
-
-async def run(req: AdapterRequest) -> AdapterResponse:
-    return await _adapter.invoke(req)
-```
+Wire it natively with `agent: {type: cli, ...}` — no Python entrypoint
+proxy needed:
 
 ```yaml
 agent:
-  entrypoint: my_project.cli_proxy:run
+  type: cli
+  command: ["./bin/my-agent", "--mode", "eval"]   # required, non-empty argv
+  env: { MY_TOKEN: "..." }                          # optional
+  timeout_seconds: 30                               # optional; default 60
 ```
+
+The CLI builds `CliCommandAdapter(command, env=..., timeout_seconds=...)`
+for you. `command` must be a non-empty list of strings; `env`, when
+supplied, replaces the inherited environment (stdlib `subprocess`
+semantics). Omitting `timeout_seconds` falls back to the adapter default
+(60 seconds).
 
 ### Agent code (bash example)
 
@@ -285,30 +290,21 @@ can be hit concurrently. Default timeout 60 seconds.
 
 ### YAML
 
-Same story as `CliCommandAdapter`: wire it via a small Python entrypoint
-today.
-
-```python
-# my_project/http_proxy.py
-from selfevals.runner.adapters import (
-    AdapterRequest, AdapterResponse, HttpEndpointAdapter,
-)
-
-_adapter = HttpEndpointAdapter(
-    "https://agent.example.com/eval",
-    headers={"Authorization": "Bearer ${MY_TOKEN}"},
-    timeout_seconds=30.0,
-)
-
-
-async def run(req: AdapterRequest) -> AdapterResponse:
-    return await _adapter.invoke(req)
-```
+Wire it natively with `agent: {type: http, ...}` — no Python entrypoint
+proxy needed:
 
 ```yaml
 agent:
-  entrypoint: my_project.http_proxy:run
+  type: http
+  url: "https://agent.example.com/eval"          # required
+  headers: { Authorization: "Bearer ..." }        # optional
+  timeout_seconds: 30                              # optional; default 60
 ```
+
+The CLI builds `HttpEndpointAdapter(url, headers=..., timeout_seconds=...)`
+for you. `Content-Type: application/json` is always set; anything in
+`headers` is merged on top. Omitting `timeout_seconds` falls back to the
+adapter default (60 seconds).
 
 ### Agent code (FastAPI example)
 

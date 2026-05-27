@@ -7,6 +7,9 @@ import pytest
 
 from selfevals.repo.loader import (
     AgentEntrypoint,
+    CliAgentSpec,
+    EmbeddedAgentSpec,
+    HttpAgentSpec,
     LoaderError,
     load_experiment_spec,
     resolve_agent_callable,
@@ -78,9 +81,10 @@ def test_load_inline_cases(tmp_path: Path) -> None:
     assert spec.workspace_id == WS
     assert spec.experiment.name == "optimize prompt v2"
     assert len(spec.cases) == 2
-    assert spec.agent.module == "tests.repo.fixtures.fake_agent"
-    assert spec.agent.attribute == "run"
-    assert spec.agent.raw == "tests.repo.fixtures.fake_agent:run"
+    assert isinstance(spec.agent, EmbeddedAgentSpec)
+    assert spec.agent.entrypoint.module == "tests.repo.fixtures.fake_agent"
+    assert spec.agent.entrypoint.attribute == "run"
+    assert spec.agent.entrypoint.raw == "tests.repo.fixtures.fake_agent:run"
 
 
 def test_load_cases_from_jsonl(tmp_path: Path) -> None:
@@ -234,6 +238,110 @@ def test_resolve_agent_callable_unknown_module() -> None:
     ep = AgentEntrypoint(raw="not.a.real.mod:x", module="not.a.real.mod", attribute="x")
     with pytest.raises(LoaderError, match="could not be imported"):
         resolve_agent_callable(ep)
+
+
+def _body_with_agent(agent: dict) -> dict:
+    return {
+        "workspace": WS,
+        "experiment": _experiment_block(),
+        "dataset": {"cases_inline": [_inline_case()]},
+        "agent": agent,
+    }
+
+
+def test_agent_type_embedded(tmp_path: Path) -> None:
+    body = _body_with_agent({"type": "embedded", "entrypoint": "pkg.mod:run"})
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    assert isinstance(spec.agent, EmbeddedAgentSpec)
+    assert spec.agent.entrypoint.raw == "pkg.mod:run"
+
+
+def test_agent_type_cli(tmp_path: Path) -> None:
+    body = _body_with_agent(
+        {
+            "type": "cli",
+            "command": ["./bin/agent", "--flag"],
+            "env": {"TOKEN": "x"},
+            "timeout_seconds": 30,
+        }
+    )
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    assert isinstance(spec.agent, CliAgentSpec)
+    assert spec.agent.command == ["./bin/agent", "--flag"]
+    assert spec.agent.env == {"TOKEN": "x"}
+    assert spec.agent.timeout_seconds == 30.0
+
+
+def test_agent_type_cli_minimal(tmp_path: Path) -> None:
+    body = _body_with_agent({"type": "cli", "command": ["./agent"]})
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    assert isinstance(spec.agent, CliAgentSpec)
+    assert spec.agent.env is None
+    assert spec.agent.timeout_seconds is None
+
+
+def test_agent_type_http(tmp_path: Path) -> None:
+    body = _body_with_agent(
+        {
+            "type": "http",
+            "url": "https://agent.example.com/eval",
+            "headers": {"Authorization": "Bearer x"},
+            "timeout_seconds": 12.5,
+        }
+    )
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    assert isinstance(spec.agent, HttpAgentSpec)
+    assert spec.agent.url == "https://agent.example.com/eval"
+    assert spec.agent.headers == {"Authorization": "Bearer x"}
+    assert spec.agent.timeout_seconds == 12.5
+
+
+def test_agent_unknown_type_rejected(tmp_path: Path) -> None:
+    body = _body_with_agent({"type": "grpc", "url": "x"})
+    with pytest.raises(LoaderError, match=r"agent\.type must be one of"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_agent_cli_missing_command_rejected(tmp_path: Path) -> None:
+    body = _body_with_agent({"type": "cli"})
+    with pytest.raises(LoaderError, match="requires `command:`"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_agent_cli_empty_command_rejected(tmp_path: Path) -> None:
+    body = _body_with_agent({"type": "cli", "command": []})
+    with pytest.raises(LoaderError, match="requires `command:`"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_agent_http_missing_url_rejected(tmp_path: Path) -> None:
+    body = _body_with_agent({"type": "http"})
+    with pytest.raises(LoaderError, match="requires `url:`"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_agent_cli_with_entrypoint_rejected(tmp_path: Path) -> None:
+    body = _body_with_agent({"type": "cli", "command": ["./a"], "entrypoint": "m:f"})
+    with pytest.raises(LoaderError, match="does not take an `entrypoint`"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_agent_http_with_entrypoint_rejected(tmp_path: Path) -> None:
+    body = _body_with_agent({"type": "http", "url": "x", "entrypoint": "m:f"})
+    with pytest.raises(LoaderError, match="does not take an `entrypoint`"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_agent_bad_timeout_rejected(tmp_path: Path) -> None:
+    body = _body_with_agent({"type": "http", "url": "x", "timeout_seconds": -1})
+    with pytest.raises(LoaderError, match="timeout_seconds must be a positive number"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_agent_cli_bad_env_rejected(tmp_path: Path) -> None:
+    body = _body_with_agent({"type": "cli", "command": ["./a"], "env": {"K": 1}})
+    with pytest.raises(LoaderError, match=r"agent\.env must be a mapping"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
 
 
 def test_resolve_agent_callable_unknown_attribute() -> None:
