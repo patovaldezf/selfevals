@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from selfeval.cli.main import _build_parser, app
+from selfevals.cli.main import _build_parser, app
 
 TOP_LEVEL_SUBCOMMANDS = (
     "init",
@@ -31,7 +31,7 @@ TOP_LEVEL_SUBCOMMANDS = (
 
 
 def _help_text(argv: list[str], capsys: pytest.CaptureFixture[str]) -> str:
-    """Run `selfeval <argv> --help` and return captured stdout.
+    """Run `selfevals <argv> --help` and return captured stdout.
 
     argparse exits the process via SystemExit(0) on --help, so we catch it.
     """
@@ -90,4 +90,4 @@ def test_subcommand_help_has_non_trivial_description(
 def test_builder_produces_a_parser() -> None:
     """Sanity check: builder is importable and returns a parser instance."""
     parser = _build_parser()
-    assert parser.prog == "selfeval"
+    assert parser.prog == "selfevals"

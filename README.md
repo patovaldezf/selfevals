@@ -1,8 +1,8 @@
-# selfeval
+# selfevals
 
 Self-improving evals framework for AI agents.
 
-Install the SDK, point it at your agent, and selfeval reads your repo,
+Install the SDK, point it at your agent, and selfevals reads your repo,
 proposes an eval structure, runs experiments, and iterates on parameters
 toward a target metric. CLI-first, multi-tenant from day one, agnostic to
 the agent framework underneath.
@@ -15,19 +15,19 @@ the agent framework underneath.
 ## Install
 
 ```bash
-pip install selfeval
-selfeval examples copy pingpong
-selfeval run evals/experiments/example_pingpong.yaml --no-persist
+pip install selfevals
+selfevals examples copy pingpong
+selfevals run evals/experiments/example_pingpong.yaml --no-persist
 ```
 
-The distribution is `selfeval`; the import name and the CLI command are
-both `selfeval` (`import selfeval`, `selfeval --help`).
+The distribution is `selfevals`; the import name and the CLI command are
+both `selfevals` (`import selfevals`, `selfevals --help`).
 
 ## Quickstart from source
 
 ```bash
 uv sync --extra web --extra telemetry
-uv run selfeval run evals/experiments/example_pingpong.yaml --no-persist
+uv run selfevals run evals/experiments/example_pingpong.yaml --no-persist
 ```
 
 Expected output: a markdown report showing two iterations, the best
@@ -37,14 +37,14 @@ against the bundled `EmbeddedAdapter` echo agent.
 To persist to SQLite and inspect afterwards:
 
 ```bash
-uv run selfeval run evals/experiments/example_pingpong.yaml --db ./selfeval.sqlite
-uv run selfeval experiment list <workspace_id>
-uv run selfeval report <workspace_id> <experiment_id>
+uv run selfevals run evals/experiments/example_pingpong.yaml --db ./selfevals.sqlite
+uv run selfevals experiment list <workspace_id>
+uv run selfevals report <workspace_id> <experiment_id>
 ```
 
 ## Try with a real LLM agent
 
-The `examples/hello_llm/` directory shows selfeval optimizing a real
+The `examples/hello_llm/` directory shows selfevals optimizing a real
 Anthropic agent over three eval cases (sentiment classification,
 structured extraction, and an open-ended customer-support reply) with
 two graders combined: a `DeterministicGrader` for the rule-based cases
@@ -54,7 +54,7 @@ sweeps `temperature ∈ {0.0, 0.5, 1.0}` and the report ranks them.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...   # optional; see below
-uv run selfeval run examples/hello_llm/experiment.yaml --no-persist
+uv run selfevals run examples/hello_llm/experiment.yaml --no-persist
 ```
 
 If `ANTHROPIC_API_KEY` is unset or the `anthropic` SDK is not installed,
@@ -73,27 +73,27 @@ The full setup lives in three files you can copy into your own repo:
 
 ## Adapters
 
-selfeval ships three concrete `AgentAdapter` implementations so you can
+selfevals ships three concrete `AgentAdapter` implementations so you can
 point the loop at any agent:
 
 - `EmbeddedAdapter` — a Python callable in-process. Best for quick tests.
 - `CliCommandAdapter` — invokes a subprocess and reads JSON on stdout.
 - `HttpEndpointAdapter` — POSTs each case to an HTTP endpoint and reads JSON.
 
-See `src/selfeval/runner/adapters.py` for the contract and
+See `src/selfevals/runner/adapters.py` for the contract and
 [`docs/adapters.md`](docs/adapters.md) for usage examples, the per-adapter
 YAML/code snippets, and a comparison table.
 
 ## Docs
 
-- [Adapters](docs/adapters.md) — write agents that selfeval can call.
+- [Adapters](docs/adapters.md) — write agents that selfevals can call.
 - [`docs/spec/`](docs/spec/) — canonical and operational specs (source
   of truth for design decisions).
 
 ## Layout
 
 ```
-src/selfeval/        # the SDK package
+src/selfevals/        # the SDK package
   schemas/            # Pydantic v2 entities + contractual validators
   storage/            # SQLite + filesystem object store (interface abstracted)
   trace/              # native SDK decorators + OTel importer
@@ -105,7 +105,7 @@ src/selfeval/        # the SDK package
   cli/                # argparse entrypoint
 skills/               # markdown skills for Claude Code (propose/run/optimize)
 docs/spec/            # canonical + operational specs (source of truth)
-tests/                # pytest, mirrors src/selfeval layout
+tests/                # pytest, mirrors src/selfevals layout
 ```
 
 ## Dev
@@ -113,7 +113,7 @@ tests/                # pytest, mirrors src/selfeval layout
 ```bash
 uv sync --extra web --extra telemetry
 uv run --extra web --extra telemetry pytest
-uv run --extra web --extra telemetry mypy src/selfeval
+uv run --extra web --extra telemetry mypy src/selfevals
 uv run ruff check .    # lint
 cd web && npm install && npm run check && npm run build
 ```

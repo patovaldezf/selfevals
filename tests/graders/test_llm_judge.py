@@ -5,10 +5,10 @@ from datetime import UTC, datetime
 
 import pytest
 
-from selfeval.graders.base import GradeLabel, GraderContext
-from selfeval.graders.llm_judge import LLMJudgeGrader, RubricTemplate
-from selfeval.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
-from selfeval.schemas.enums import (
+from selfevals.graders.base import GradeLabel, GraderContext
+from selfevals.graders.llm_judge import LLMJudgeGrader, RubricTemplate
+from selfevals.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
+from selfevals.schemas.enums import (
     DatasetSource,
     DatasetType,
     GraderCardState,
@@ -17,7 +17,7 @@ from selfeval.schemas.enums import (
     SandboxMode,
     TraceState,
 )
-from selfeval.schemas.eval_case import (
+from selfevals.schemas.eval_case import (
     CaseTaxonomy,
     EvalCase,
     Expected,
@@ -25,13 +25,13 @@ from selfeval.schemas.eval_case import (
     GroundTruthSpec,
     SourceInfo,
 )
-from selfeval.schemas.grader_card import (
+from selfevals.schemas.grader_card import (
     CalibrationMetrics,
     CalibrationThresholds,
     GraderCard,
     GraderIO,
 )
-from selfeval.schemas.trace import (
+from selfevals.schemas.trace import (
     AgentSnapshotRef,
     AgentTurnSpan,
     EnvironmentInfo,
@@ -69,7 +69,7 @@ def _trace() -> Trace:
         run=RunInfo(run_id="run_01"),
         agent=AgentSnapshotRef(agent_id="ag_x", agent_version=1),
         environment=EnvironmentInfo(
-            framework_version="selfeval/0.0.5",
+            framework_version="selfevals/0.0.5",
             runtime="python-3.12",
             sandbox=SandboxMode.MOCK,
             started_at=T0,

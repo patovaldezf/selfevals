@@ -29,18 +29,18 @@ from pathlib import Path
 
 import pytest
 
-from selfeval.cli.main import app
-from selfeval.decision.matrix import DecisionMatrixEvaluator
-from selfeval.graders.deterministic import DeterministicGrader
-from selfeval.graders.llm_judge import LLMJudgeGrader, RubricTemplate
-from selfeval.optimization.loop import OptimizationLoop
-from selfeval.optimization.proposers import GridProposer
-from selfeval.reporter import render_markdown
-from selfeval.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
-from selfeval.runner.executor import Executor
-from selfeval.runner.sandbox import SandboxPolicy
-from selfeval.schemas._base import EntityRef
-from selfeval.schemas.enums import (
+from selfevals.cli.main import app
+from selfevals.decision.matrix import DecisionMatrixEvaluator
+from selfevals.graders.deterministic import DeterministicGrader
+from selfevals.graders.llm_judge import LLMJudgeGrader, RubricTemplate
+from selfevals.optimization.loop import OptimizationLoop
+from selfevals.optimization.proposers import GridProposer
+from selfevals.reporter import render_markdown
+from selfevals.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
+from selfevals.runner.executor import Executor
+from selfevals.runner.sandbox import SandboxPolicy
+from selfevals.schemas._base import EntityRef
+from selfevals.schemas.enums import (
     AgentType,
     DatasetSource,
     DatasetType,
@@ -52,7 +52,7 @@ from selfeval.schemas.enums import (
     ProposerStrategy,
     SandboxMode,
 )
-from selfeval.schemas.eval_case import (
+from selfevals.schemas.eval_case import (
     CaseTaxonomy,
     EvalCase,
     Expected,
@@ -60,7 +60,7 @@ from selfeval.schemas.eval_case import (
     GroundTruthSpec,
     SourceInfo,
 )
-from selfeval.schemas.experiment import (
+from selfevals.schemas.experiment import (
     ConvergenceSpec,
     DatasetUsage,
     EditableContract,
@@ -74,10 +74,10 @@ from selfeval.schemas.experiment import (
     SearchSpace,
     TargetSpec,
 )
-from selfeval.schemas.fleet import Agent, ModelRef
-from selfeval.schemas.iteration import DecisionRecord, IterationRecord
-from selfeval.schemas.workspace import Workspace
-from selfeval.storage.sqlite import SQLiteStorage
+from selfevals.schemas.fleet import Agent, ModelRef
+from selfevals.schemas.iteration import DecisionRecord, IterationRecord
+from selfevals.schemas.workspace import Workspace
+from selfevals.storage.sqlite import SQLiteStorage
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
@@ -304,7 +304,7 @@ def _write_minimal_yaml(tmp_path: Path, **overrides: object) -> Path:
         dataset:
           DATASET_BLOCK
         agent:
-          entrypoint: selfeval.examples.pingpong:run
+          entrypoint: selfevals.examples.pingpong:run
         """
     ).strip()
     dataset_block = overrides.get(
@@ -386,7 +386,7 @@ def test_error_unknown_grader_lists_available(
               expected: { must_include: [pong] }
               graders: [not_a_real_grader]
         agent:
-          entrypoint: selfeval.examples.pingpong:run
+          entrypoint: selfevals.examples.pingpong:run
         """
     ).strip()
     yaml = tmp_path / "exp.yaml"
@@ -403,7 +403,7 @@ def test_error_http_adapter_unreachable_endpoint(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """`HttpEndpointAdapter` surfaces a clean AdapterError naming the URL."""
-    from selfeval.runner.adapters import AdapterError, HttpEndpointAdapter
+    from selfevals.runner.adapters import AdapterError, HttpEndpointAdapter
 
     # Port 1 is privileged and not in use — instant ECONNREFUSED.
     url = "http://127.0.0.1:1/"
@@ -414,8 +414,8 @@ def test_error_http_adapter_unreachable_endpoint(
     assert url in msg
     assert "could not reach" in msg or "transport" in msg.lower()
     # The friendly wrapper used by the CLI must lift this into a
-    # SelfEvalUserError without losing the URL.
-    from selfeval.cli._friendly import wrap_adapter_error
+    # SelfEvalsUserError without losing the URL.
+    from selfevals.cli._friendly import wrap_adapter_error
 
     user_err = wrap_adapter_error(excinfo.value, url=url)
     user_msg = str(user_err)
@@ -441,10 +441,10 @@ def test_error_sqlite_locked_message_shape() -> None:
     instead we feed the wrapper a synthetic OperationalError whose
     message contains the word `locked`, the same shape libsqlite emits.
     """
-    from selfeval.cli._friendly import wrap_sqlite_error
+    from selfevals.cli._friendly import wrap_sqlite_error
 
     err = wrap_sqlite_error(sqlite3.OperationalError("database is locked"), db_path="/x.db")
     msg = str(err)
     assert "locked" in msg
     assert "/x.db" in msg
-    assert "another selfeval process" in msg
+    assert "another selfevals process" in msg

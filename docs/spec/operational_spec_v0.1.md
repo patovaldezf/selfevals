@@ -1,16 +1,16 @@
 # Operational Specification v0.1
 
-This spec defines how selfeval turns evaluation data into a repeatable optimization
+This spec defines how selfevals turns evaluation data into a repeatable optimization
 loop. The design goal is simple: make agent quality measurable, debuggable, and
 improvable without binding users to a specific agent framework.
 
 ## System Shape
 
-selfeval has two execution modes:
+selfevals has two execution modes:
 
 - `handoff`: headless optimization over declarative parameters such as prompts, model
   parameters, retrieval settings, and memory settings.
-- `agent_loop`: an external coding agent uses selfeval reports, traces, and bundled
+- `agent_loop`: an external coding agent uses selfevals reports, traces, and bundled
   skills to propose source-level changes in the user's repository.
 
 Both modes share the same schemas, storage model, trace model, grader contracts, and

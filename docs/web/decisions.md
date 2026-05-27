@@ -1,6 +1,6 @@
 # Web + API stack decisions
 
-Locked-in choices for the selfeval web surface. Deviations from the
+Locked-in choices for the selfevals web surface. Deviations from the
 recommendation in `docs/prompts/web_session_prompt.md` are explained
 here; everything not mentioned follows the prompt's defaults.
 
@@ -35,7 +35,7 @@ search params via SvelteKit's reactive `$page`.
 
 ## Auth: none for MVP
 
-Per the prompt. A stub `X-SelfEval-User: local` header travels
+Per the prompt. A stub `X-SelfEvals-User: local` header travels
 through every request so we can plug real auth in later without
 touching the screen code.
 
@@ -64,9 +64,9 @@ Loaded via `@fontsource/inter` and `@fontsource/jetbrains-mono` (no
 external font CDN call at runtime). Tabular numerals on by default
 in monospace cells.
 
-## Backend service: FastAPI under `src/selfeval/api/`
+## Backend service: FastAPI under `src/selfevals/api/`
 
-Per recommendation. New console script `selfeval-api`. Reuses the
+Per recommendation. New console script `selfevals-api`. Reuses the
 existing Pydantic models verbatim — never duplicates schema.
 
 ## Out of scope for v0

@@ -1,5 +1,5 @@
 [project]
-name = "selfeval"
+name = "selfevals"
 version = "0.2.0"
 description = "Self-improving evals framework for AI agents."
 readme = "README.md"
@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Web API surface (`python -m selfeval.api`). Optional — the core loop
+# Web API surface (`python -m selfevals.api`). Optional — the core loop
 # never imports these; api/* defers the FastAPI import to call time.
 web = [
     "fastapi>=0.110,<1",
@@ -37,26 +37,26 @@ telemetry = [
     "opentelemetry-exporter-otlp-proto-http>=1.25,<2",
     "opentelemetry-proto>=1.25,<2",
 ]
-anthropic = ["selfeval[telemetry]", "openinference-instrumentation-anthropic>=0.1"]
-openai = ["selfeval[telemetry]", "openinference-instrumentation-openai>=0.1"]
-bedrock = ["selfeval[telemetry]", "openinference-instrumentation-bedrock>=0.1"]
-vertex = ["selfeval[telemetry]", "openinference-instrumentation-vertexai>=0.1"]
+anthropic = ["selfevals[telemetry]", "openinference-instrumentation-anthropic>=0.1"]
+openai = ["selfevals[telemetry]", "openinference-instrumentation-openai>=0.1"]
+bedrock = ["selfevals[telemetry]", "openinference-instrumentation-bedrock>=0.1"]
+vertex = ["selfevals[telemetry]", "openinference-instrumentation-vertexai>=0.1"]
 # LangGraph traces flow through the LangChain instrumentor (it builds on
 # LangChain); there is no standalone openinference-instrumentation-langgraph.
-langchain = ["selfeval[telemetry]", "openinference-instrumentation-langchain>=0.1"]
-crewai = ["selfeval[telemetry]", "openinference-instrumentation-crewai>=0.1"]
+langchain = ["selfevals[telemetry]", "openinference-instrumentation-langchain>=0.1"]
+crewai = ["selfevals[telemetry]", "openinference-instrumentation-crewai>=0.1"]
 all = [
-    "selfeval[web,anthropic,openai,bedrock,vertex,langchain,crewai]",
+    "selfevals[web,anthropic,openai,bedrock,vertex,langchain,crewai]",
 ]
 
 [project.scripts]
-selfeval = "selfeval.cli.main:main"
+selfevals = "selfevals.cli.main:main"
 
 [project.urls]
-Homepage = "https://github.com/patovaldezf-berkeley/selfeval"
-Repository = "https://github.com/patovaldezf-berkeley/selfeval"
-Changelog = "https://github.com/patovaldezf-berkeley/selfeval/blob/main/CHANGELOG.md"
-Issues = "https://github.com/patovaldezf-berkeley/selfeval/issues"
+Homepage = "https://github.com/patovaldezf/selfevals"
+Repository = "https://github.com/patovaldezf/selfevals"
+Changelog = "https://github.com/patovaldezf/selfevals/blob/main/CHANGELOG.md"
+Issues = "https://github.com/patovaldezf/selfevals/issues"
 
 [build-system]
 requires = ["hatchling"]
@@ -68,7 +68,7 @@ build-backend = "hatchling.build"
 # needs the package source plus the material that lets a consumer build,
 # test, and understand it.
 include = [
-    "src/selfeval",
+    "src/selfevals",
     "tests",
     "docs",
     "evals",
@@ -87,15 +87,15 @@ exclude = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/selfeval"]
+packages = ["src/selfevals"]
 # Ship the bundled agent skills (mirrors FastAPI's `.agents/skills/`
-# convention) so `pip install selfeval` makes them discoverable. They live
+# convention) so `pip install selfevals` makes them discoverable. They live
 # under a dot-directory inside the package; `artifacts` overrides hatchling's
 # default exclusion of dotfiles without double-including (a `force-include`
 # here duplicates the entry, since `packages` already globs the tree).
 artifacts = [
-    "src/selfeval/.agents/**",
-    "src/selfeval/examples/evals/**",
+    "src/selfevals/.agents/**",
+    "src/selfevals/examples/evals/**",
 ]
 
 [dependency-groups]
@@ -139,7 +139,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["N802", "N803"]  # test fn names can be permissive
-"src/selfeval/api/**" = ["B008"]  # FastAPI Depends(...) in defaults is idiomatic
+"src/selfevals/api/**" = ["B008"]  # FastAPI Depends(...) in defaults is idiomatic
 
 [tool.mypy]
 python_version = "3.12"
@@ -149,7 +149,7 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 disallow_any_unimported = true
 no_implicit_reexport = true
-files = ["src/selfeval"]
+files = ["src/selfevals"]
 
 [[tool.mypy.overrides]]
 # uvicorn is only present with the [web] extra; api/__main__ imports it under

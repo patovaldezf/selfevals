@@ -1,6 +1,6 @@
 """Anthropic-backed agent used by `experiment.yaml`.
 
-`run` is the selfeval entrypoint. It receives an `AdapterRequest`, calls
+`run` is the selfevals entrypoint. It receives an `AdapterRequest`, calls
 the Anthropic Messages API (or a deterministic fake when no API key is
 present), and returns an `AdapterResponse`.
 
@@ -24,7 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from selfeval.runner.adapters import AdapterRequest, AdapterResponse
+from selfevals.runner.adapters import AdapterRequest, AdapterResponse
 
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 DEFAULT_MAX_TOKENS = 256

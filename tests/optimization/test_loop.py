@@ -5,14 +5,14 @@ from typing import Any
 
 import pytest
 
-from selfeval.graders.deterministic import DeterministicGrader
-from selfeval.optimization.loop import OptimizationLoop
-from selfeval.optimization.proposers import GridProposer, ManualProposer
-from selfeval.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
-from selfeval.runner.executor import Executor
-from selfeval.runner.sandbox import SandboxPolicy
-from selfeval.schemas._base import EntityRef
-from selfeval.schemas.enums import (
+from selfevals.graders.deterministic import DeterministicGrader
+from selfevals.optimization.loop import OptimizationLoop
+from selfevals.optimization.proposers import GridProposer, ManualProposer
+from selfevals.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
+from selfevals.runner.executor import Executor
+from selfevals.runner.sandbox import SandboxPolicy
+from selfevals.schemas._base import EntityRef
+from selfevals.schemas.enums import (
     AgentType,
     DatasetSource,
     DatasetType,
@@ -24,7 +24,7 @@ from selfeval.schemas.enums import (
     ProposerStrategy,
     SandboxMode,
 )
-from selfeval.schemas.eval_case import (
+from selfevals.schemas.eval_case import (
     CaseTaxonomy,
     EvalCase,
     Expected,
@@ -32,7 +32,7 @@ from selfeval.schemas.eval_case import (
     GroundTruthSpec,
     SourceInfo,
 )
-from selfeval.schemas.experiment import (
+from selfevals.schemas.experiment import (
     ConvergenceSpec,
     DatasetUsage,
     EditableContract,
@@ -46,10 +46,10 @@ from selfeval.schemas.experiment import (
     SearchSpace,
     TargetSpec,
 )
-from selfeval.schemas.fleet import Agent, ModelRef
-from selfeval.schemas.iteration import DecisionRecord, IterationRecord
-from selfeval.schemas.workspace import Workspace
-from selfeval.storage.sqlite import SQLiteStorage
+from selfevals.schemas.fleet import Agent, ModelRef
+from selfevals.schemas.iteration import DecisionRecord, IterationRecord
+from selfevals.schemas.workspace import Workspace
+from selfevals.storage.sqlite import SQLiteStorage
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 

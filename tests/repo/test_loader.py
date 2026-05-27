@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from selfeval.repo.loader import (
+from selfevals.repo.loader import (
     AgentEntrypoint,
     LoaderError,
     load_experiment_spec,
@@ -222,8 +222,8 @@ def test_top_level_not_mapping(tmp_path: Path) -> None:
 
 def test_resolve_agent_callable_finds_function() -> None:
     ep = AgentEntrypoint(
-        raw="selfeval.repo.loader:resolve_agent_callable",
-        module="selfeval.repo.loader",
+        raw="selfevals.repo.loader:resolve_agent_callable",
+        module="selfevals.repo.loader",
         attribute="resolve_agent_callable",
     )
     fn = resolve_agent_callable(ep)
@@ -238,8 +238,8 @@ def test_resolve_agent_callable_unknown_module() -> None:
 
 def test_resolve_agent_callable_unknown_attribute() -> None:
     ep = AgentEntrypoint(
-        raw="selfeval.repo.loader:does_not_exist",
-        module="selfeval.repo.loader",
+        raw="selfevals.repo.loader:does_not_exist",
+        module="selfevals.repo.loader",
         attribute="does_not_exist",
     )
     with pytest.raises(LoaderError, match="has no attribute"):

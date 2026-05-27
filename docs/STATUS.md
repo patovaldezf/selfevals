@@ -1,6 +1,6 @@
 # Status — v0.2.0
 
-This file is the honest snapshot of what selfeval can and cannot do
+This file is the honest snapshot of what selfevals can and cannot do
 today. Updated on every release; the CHANGELOG records what *changed*,
 this file records what *is*.
 
@@ -9,7 +9,7 @@ this file records what *is*.
 - **CLI**: `init`, `workspace`, `experiment`, `iteration`, `report`,
   `run`, `compare`, `estimate`. Every subcommand has a one-line
   description and a copy-paste `Example:` epilog.
-- **`selfeval run <spec.yaml>`**: load an experiment spec, resolve
+- **`selfevals run <spec.yaml>`**: load an experiment spec, resolve
   the agent entrypoint, run cases through an adapter, grade each
   trace, persist iterations to SQLite, render a markdown or JSON
   report.
@@ -77,11 +77,11 @@ this file records what *is*.
 
 ### API and web UI
 
-- `src/selfeval/api/` ships endpoints under FastAPI but the write
+- `src/selfevals/api/` ships endpoints under FastAPI but the write
   side is minimal (workspace creation is the only POST). All
   experiment lifecycle goes through the CLI.
 - `web/` (SvelteKit) is scaffolded but not feature-complete.
-  `selfeval serve` is referenced in some prompts but no
+  `selfevals serve` is referenced in some prompts but no
   `cmd_serve` exists in `commands.py` today.
 
 ### Telemetry and OTel
@@ -116,7 +116,7 @@ that the dogfooding will confirm or refute:
 - `breakdown: dict[str, Any]` on `GradeResult` for funnel-style scores.
 - YAML wiring for `HttpEndpointAdapter` (no Python entrypoint
   required).
-- A `selfeval dataset import` CLI command that pulls EvalCases from
+- A `selfevals dataset import` CLI command that pulls EvalCases from
   Supabase or any SQL source.
 - Retries and timeout configuration on `HttpEndpointAdapter`.
 - A `serve` CLI that mounts the FastAPI app and the optimization

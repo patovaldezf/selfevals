@@ -6,8 +6,8 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from selfeval.schemas._base import EntityRef
-from selfeval.schemas.enums import (
+from selfevals.schemas._base import EntityRef
+from selfevals.schemas.enums import (
     DatasetType,
     DecisionOutcome,
     IterationState,
@@ -15,7 +15,7 @@ from selfeval.schemas.enums import (
     ProposerStrategy,
     SandboxMode,
 )
-from selfeval.schemas.experiment import (
+from selfevals.schemas.experiment import (
     DatasetUsage,
     EditableContract,
     Experiment,
@@ -26,7 +26,7 @@ from selfeval.schemas.experiment import (
     RunSpec,
     TargetSpec,
 )
-from selfeval.schemas.iteration import (
+from selfevals.schemas.iteration import (
     CodeDiff,
     DecisionRationale,
     DecisionRecord,

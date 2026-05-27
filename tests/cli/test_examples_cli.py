@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from selfeval.cli.main import app
+from selfevals.cli.main import app
 
 
 def _capture(capsys: pytest.CaptureFixture[str], argv: list[str]) -> tuple[int, str, str]:

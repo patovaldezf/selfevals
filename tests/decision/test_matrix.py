@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import pytest
 
-from selfeval.decision.matrix import DecisionMatrixEvaluator, evaluate_iteration
-from selfeval.optimization.aggregator import IterationAggregate
-from selfeval.schemas._base import EntityRef
-from selfeval.schemas.enums import (
+from selfevals.decision.matrix import DecisionMatrixEvaluator, evaluate_iteration
+from selfevals.optimization.aggregator import IterationAggregate
+from selfevals.schemas._base import EntityRef
+from selfevals.schemas.enums import (
     DatasetType,
     DecisionOutcome,
     Mode,
     ProposerStrategy,
     SandboxMode,
 )
-from selfeval.schemas.experiment import (
+from selfevals.schemas.experiment import (
     DatasetUsage,
     DecisionPolicy,
     Experiment,

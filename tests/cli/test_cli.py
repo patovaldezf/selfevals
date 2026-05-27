@@ -6,16 +6,16 @@ from typing import Any
 
 import pytest
 
-from selfeval.cli.main import app
-from selfeval.decision.matrix import DecisionMatrixEvaluator
-from selfeval.graders.deterministic import DeterministicGrader
-from selfeval.optimization.loop import OptimizationLoop
-from selfeval.optimization.proposers import GridProposer
-from selfeval.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
-from selfeval.runner.executor import Executor
-from selfeval.runner.sandbox import SandboxPolicy
-from selfeval.schemas._base import EntityRef
-from selfeval.schemas.enums import (
+from selfevals.cli.main import app
+from selfevals.decision.matrix import DecisionMatrixEvaluator
+from selfevals.graders.deterministic import DeterministicGrader
+from selfevals.optimization.loop import OptimizationLoop
+from selfevals.optimization.proposers import GridProposer
+from selfevals.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
+from selfevals.runner.executor import Executor
+from selfevals.runner.sandbox import SandboxPolicy
+from selfevals.schemas._base import EntityRef
+from selfevals.schemas.enums import (
     AgentType,
     DatasetSource,
     DatasetType,
@@ -25,7 +25,7 @@ from selfeval.schemas.enums import (
     ProposerStrategy,
     SandboxMode,
 )
-from selfeval.schemas.eval_case import (
+from selfevals.schemas.eval_case import (
     CaseTaxonomy,
     EvalCase,
     Expected,
@@ -33,7 +33,7 @@ from selfeval.schemas.eval_case import (
     GroundTruthSpec,
     SourceInfo,
 )
-from selfeval.schemas.experiment import (
+from selfevals.schemas.experiment import (
     ConvergenceSpec,
     DatasetUsage,
     EditableContract,
@@ -47,8 +47,8 @@ from selfeval.schemas.experiment import (
     SearchSpace,
     TargetSpec,
 )
-from selfeval.schemas.fleet import Agent, ModelRef
-from selfeval.storage.sqlite import SQLiteStorage
+from selfevals.schemas.fleet import Agent, ModelRef
+from selfevals.storage.sqlite import SQLiteStorage
 
 
 def _capture(capsys: pytest.CaptureFixture[str], argv: list[str]) -> tuple[int, str, str]:
@@ -184,7 +184,7 @@ def test_compare_two_iterations(tmp_path: Path, capsys: pytest.CaptureFixture[st
     storage = SQLiteStorage(db)
     try:
         with storage.open(ws_id) as scope:
-            from selfeval.schemas.iteration import IterationRecord
+            from selfevals.schemas.iteration import IterationRecord
 
             iterations = sorted(
                 (it for it in scope.list_entities(IterationRecord)),

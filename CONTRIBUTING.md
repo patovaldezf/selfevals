@@ -5,7 +5,7 @@
 ```bash
 uv sync --all-extras --dev
 uv run ruff check .
-uv run mypy src/selfeval
+uv run mypy src/selfevals
 uv run pytest
 cd web
 npm ci

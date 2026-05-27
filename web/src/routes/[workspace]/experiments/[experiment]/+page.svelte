@@ -55,7 +55,7 @@
 </script>
 
 <svelte:head>
-  <title>{summary.name} · selfeval</title>
+  <title>{summary.name} · selfevals</title>
 </svelte:head>
 
 <div class="px-12 py-10 max-w-6xl mx-auto">

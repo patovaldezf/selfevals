@@ -2,25 +2,25 @@ from __future__ import annotations
 
 import json
 
-from selfeval.decision.matrix import DecisionMatrixEvaluator
-from selfeval.graders.deterministic import DeterministicGrader
-from selfeval.optimization.aggregator import (
+from selfevals.decision.matrix import DecisionMatrixEvaluator
+from selfevals.graders.deterministic import DeterministicGrader
+from selfevals.optimization.aggregator import (
     CaseOutcome,
     IterationAggregate,
 )
-from selfeval.optimization.loop import (
+from selfevals.optimization.loop import (
     IterationOutcome,
     OptimizationLoop,
     OptimizationResult,
 )
-from selfeval.optimization.proposers import GridProposer
-from selfeval.reporter import render_json, render_markdown
-from selfeval.reporter.json_report import to_dict
-from selfeval.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
-from selfeval.runner.executor import Executor
-from selfeval.runner.sandbox import SandboxPolicy
-from selfeval.schemas._base import EntityRef
-from selfeval.schemas.enums import (
+from selfevals.optimization.proposers import GridProposer
+from selfevals.reporter import render_json, render_markdown
+from selfevals.reporter.json_report import to_dict
+from selfevals.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
+from selfevals.runner.executor import Executor
+from selfevals.runner.sandbox import SandboxPolicy
+from selfevals.schemas._base import EntityRef
+from selfevals.schemas.enums import (
     AgentType,
     DatasetSource,
     DatasetType,
@@ -32,7 +32,7 @@ from selfeval.schemas.enums import (
     ProposerStrategy,
     SandboxMode,
 )
-from selfeval.schemas.eval_case import (
+from selfevals.schemas.eval_case import (
     CaseTaxonomy,
     EvalCase,
     Expected,
@@ -40,7 +40,7 @@ from selfeval.schemas.eval_case import (
     GroundTruthSpec,
     SourceInfo,
 )
-from selfeval.schemas.experiment import (
+from selfevals.schemas.experiment import (
     ConvergenceSpec,
     DatasetUsage,
     EditableContract,
@@ -54,8 +54,8 @@ from selfeval.schemas.experiment import (
     SearchSpace,
     TargetSpec,
 )
-from selfeval.schemas.fleet import Agent, ModelRef
-from selfeval.schemas.iteration import (
+from selfevals.schemas.fleet import Agent, ModelRef
+from selfevals.schemas.iteration import (
     DecisionRationale,
     DecisionRecord,
     ExecutionInfo,
@@ -288,10 +288,10 @@ def test_markdown_includes_next_steps_section() -> None:
     result = _run_real()
     md = render_markdown(result)
     assert "## Next steps" in md
-    assert "selfeval iteration list" in md
-    assert "selfeval report" in md
+    assert "selfevals iteration list" in md
+    assert "selfevals report" in md
     # With 2+ iterations, a compare command is suggested too.
-    assert "selfeval compare" in md
+    assert "selfevals compare" in md
 
 
 def test_markdown_idempotent_under_repeat_renders() -> None:
