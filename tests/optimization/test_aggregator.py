@@ -119,6 +119,23 @@ def test_guardrails_emitted_when_cost_or_duration_observed() -> None:
     agg = aggregate_iteration(case_outcomes=outcomes)
     assert agg.guardrails["cost_usd_per_case"] == pytest.approx(0.075)
     assert agg.guardrails["latency_ms_per_case_avg"] == pytest.approx(1500.0)
+    # Sorted latencies [1000, 2000]; type-7 interpolation.
+    assert agg.guardrails["latency_ms_p50"] == pytest.approx(1500.0)
+    assert agg.guardrails["latency_ms_p95"] == pytest.approx(1950.0)
+    assert agg.guardrails["latency_ms_p99"] == pytest.approx(1990.0)
+
+
+def test_latency_percentiles_single_case_is_that_value() -> None:
+    agg = aggregate_iteration(case_outcomes=[_outcome([GradeLabel.PASS], duration=1234)])
+    assert agg.guardrails["latency_ms_p50"] == pytest.approx(1234.0)
+    assert agg.guardrails["latency_ms_p95"] == pytest.approx(1234.0)
+    assert agg.guardrails["latency_ms_p99"] == pytest.approx(1234.0)
+
+
+def test_latency_percentiles_absent_when_no_duration() -> None:
+    agg = aggregate_iteration(case_outcomes=[_outcome([GradeLabel.PASS])])
+    assert "latency_ms_p95" not in agg.guardrails
+    assert "latency_ms_per_case_avg" not in agg.guardrails
 
 
 def test_unsupported_metric_raises() -> None:
