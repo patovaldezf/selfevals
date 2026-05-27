@@ -7,9 +7,83 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-26
+
+First release prepared for PyPI (distribution name `selfeval`; import and
+CLI remain `selfeval`). Adds the error-analysis closed loop, thread
+grouping, and trace message-content capture on top of the 0.1.0 runtime.
+
+### Added
+
+- **Error analysis + failure-mode taxonomy** — a closed loop, not a dashboard:
+  it grows a per-workspace failure-mode taxonomy and drives the next experiment.
+  selfeval owns the data, contract, persistence, and verification; the
+  intelligence (open/axial coding) lives in an external coding agent. selfeval
+  never calls an LLM. Design: `docs/spec/error_analysis_design.md`.
+  - **Persistence fix** — `IterationMetrics.failure_mode_counts` now persists
+    and survives a round-trip, so "top modes of experiment X" / "trend of mode
+    Y across iterations" are answerable. Closes the v0.1.0 known gap; the
+    markdown report and `compare` start showing real failure-mode data.
+  - **`FailureMode` entity** + per-workspace taxonomy seeded by `init` (9
+    canonical modes). Lifecycle CANDIDATE → OFFICIAL → RETIRED with a **human
+    promotion gate**; `superseded_by` back-pointer on merge.
+  - **Handshake** — `selfeval analyze pull <ws> <exp>` emits an
+    `AnalysisBundle` (failed traces + live taxonomy) as JSON; `analyze push`
+    ingests an `AnalysisResult` from stdin, validating-before-writing and
+    enforcing the assignment XOR (`mode_id` *or* `new_mode_slug`) and
+    classify-don't-rename invariants. Re-proposing an existing slug doesn't
+    duplicate it (discover-once, classify-thereafter).
+  - **`failuremode` CLI** — `list / promote / retire / merge / edit` for
+    taxonomy management and the human gate.
+  - **Closing the loop** — `ProposerInputs.failure_modes_consulted` carries the
+    prior iteration's dominant modes so a hypothesis can target a named mode;
+    `IterationAggregate.fail_rate` is the trigger signal; verification reuses
+    the existing `compare.py` before/after on stable mode ids.
+  - **Trace persistence** — `RunSpec.persist_traces` (`none` / `all` / `failed`,
+    default `failed`) controls which per-repetition traces the loop writes,
+    stamped with their grader results. A plain `selfeval run` now leaves the
+    failed traces in storage so `analyze pull` works without the SDK/OTLP path;
+    `--persist-traces` overrides it on the CLI. Traces also carry their
+    `iteration` so `analyze pull --iteration N` scopes correctly.
+  - **YAML opt-in** — a declarative, governable `error_analysis:` block on an
+    experiment (`enabled`, `taxonomy`, `trigger.fail_rate_above + threshold`,
+    `scope`). Default off. When the trigger fires, selfeval persists an
+    advisory `AnalysisStagingRecord` ("this run is worth coding") — it never
+    invokes an agent. The pingpong example opts in.
+  - **Bundled `error-analysis` skill** — ships inside the package
+    (`selfeval/.agents/skills/`, FastAPI convention) so `pip install selfeval`
+    makes it discoverable. It encodes the *method* (open → axial coding,
+    saturation, the handshake, the human gate), not intelligence. New
+    `selfeval.skills` locator + `selfeval skills list / path` CLI.
+  - 60+ new tests across schema round-trips, the push invariants, the
+    second-round stability property, loop staging + mode carryover, the YAML
+    loader, the skills locator, and the CLI cycle. mypy --strict + ruff clean.
+- **Thread grouping** — traces can now be assembled into the conversation
+  thread they belong to. `RunInfo` gains `thread_id` + `thread_position`; the
+  OTel importer auto-detects the thread from `session.id` (OpenInference) or
+  `gen_ai.conversation.id` (OTel GenAI), without overwriting an explicit
+  caller-set `thread_id`. New read query `load_thread` + `GET
+  /workspaces/{ws}/threads/{thread_id}` return every trace sharing a thread,
+  ordered by `thread_position` (falling back to `started_at`), each turn
+  projected with its grader results so the per-turn grade is visible.
+  `TraceResponse` now surfaces `thread_id` / `thread_position`. This closes the
+  last trace-grouping gap versus LangSmith sessions; the run→experiment→
+  iteration→decision→grade chain already existed. Eight new tests.
+- OTel importer now extracts prompt/completion **message content** into
+  traces. `_build_llm_span` reconstructs ordered message lists from both
+  attribute families — OpenInference native (`llm.input_messages.{i}.message.*`,
+  `llm.output_messages.{i}.message.*`) and the OTel GenAI alias
+  (`gen_ai.prompt.{i}.*`, `gen_ai.completion.{i}.*`). When both are present the
+  native family wins. Each side gets a stable `content_hash` (on
+  `messages_hash` / `output.content_hash`) for dedup and drift detection, and
+  the structured messages are kept inline under `provider_metadata`
+  (`selfeval.messages_in` / `selfeval.messages_out`). Closes the last gap
+  versus LangSmith trace capture: the actual prompt and response text are now
+  in the trace, not just tokens/model/stop_reason. Five new importer tests.
+
 ## [0.1.0] - 2026-05-25
 
-First version where the README no longer lies. `bootstrap run` works
+First version where the README no longer lies. `selfeval run` works
 end-to-end against a real LLM agent, error paths are actionable, and
 the markdown/JSON reports answer the obvious follow-up questions.
 Schema-wise compatible with `0.0.9`.
@@ -31,22 +105,22 @@ CLI UX (Day 2):
 - Every subcommand (`init`, `workspace`, `experiment`, `iteration`,
   `report`, `run`, `compare`, `estimate`) now has a user-facing
   one-line description and a copy-paste `Example:` epilog. Helper
-  `src/bootstrap/cli/_help.py` centralizes the pattern.
+  `src/selfeval/cli/_help.py` centralizes the pattern.
 - `tests/cli/test_help_texts.py` enforces the contract.
 - `docs/adapters.md` documents the three adapters with YAML config,
   per-adapter agent code, contracts, limitations, and a comparison
   table.
 
 Errors and hardening (Day 3):
-- `BootstrapError` / `BootstrapUserError` hierarchy. User-correctable
+- `SelfEvalError` / `SelfEvalUserError` hierarchy. User-correctable
   failures exit with code 2 and a clean one-line message; internal
   errors keep their traceback.
-- `src/bootstrap/cli/_friendly.py` is the single translation
+- `src/selfeval/cli/_friendly.py` is the single translation
   chokepoint for YAML parse errors, dataset paths (with fuzzy-match
   suggestions via stdlib `difflib`), missing graders, HTTP adapter
   transport errors (URL + actionable suffix), and SQLite locked /
   corrupted cases.
-- `src/bootstrap/graders/registry.py` — name→factory registry.
+- `src/selfeval/graders/registry.py` — name→factory registry.
   `deterministic` is pre-registered; `llm_judge` is registered
   on-demand by the CLI. YAML can declare top-level `graders:` and
   per-case `EvalCase.graders` filters which graders run.
@@ -57,7 +131,7 @@ Errors and hardening (Day 3):
   fixes.
 
 Reporter (Day 4):
-- `src/bootstrap/reporter/_metrics.py` — pure helpers
+- `src/selfeval/reporter/_metrics.py` — pure helpers
   (`compute_total_cost`, `compute_total_time_seconds`, etc.) that
   return `None` when data is absent instead of misleading zeros.
 - Markdown report gains a "Cost & Time" section (omitted gracefully
@@ -65,18 +139,18 @@ Reporter (Day 4):
   copy-paste inspection commands.
 - JSON report exposes a stable `cost_time` block (`None` when
   missing).
-- `src/bootstrap/reporter/compare.py` powers `bootstrap compare`:
+- `src/selfeval/reporter/compare.py` powers `selfeval compare`:
   proposal diff table, metrics diff table, failure-mode diff, and a
   "B is better: primary +X; no new failure modes" recommendation.
 
 ### Fixed
 
-- Console script `bootstrap` was pointing at `cli.main:app`, which
+- Console script `selfeval` was pointing at `cli.main:app`, which
   returns an int but never raised `SystemExit`, so user errors
   silently exited 0. Now points at `cli.main:main`, which wraps `app`
   in `SystemExit(...)`.
 - `pyproject.toml` ruff `per-file-ignores` had no entry for
-  `src/bootstrap/api/**`, so legitimate FastAPI `Depends(...)`
+  `src/selfeval/api/**`, so legitimate FastAPI `Depends(...)`
   defaults were flagged as B008. Added the ignore.
 - `pyproject.toml` `pytest.ini_options` was missing the `asyncio`
   marker registration; `--strict-markers` was rejecting async tests.
@@ -94,16 +168,17 @@ Reporter (Day 4):
   (`uv sync --extra web`) to install FastAPI.
 - Failure modes do not yet survive persistence to SQLite — the
   compare and report tooling already handles their presence gracefully
-  for when the schema is extended.
+  for when the schema is extended. *(Resolved in [Unreleased]: error
+  analysis persists `failure_mode_counts`.)*
 - `CliCommandAdapter` and `HttpEndpointAdapter` are not yet
   auto-wired from YAML; users instantiate them via a Python
   entrypoint. `docs/adapters.md` documents the workaround.
 
 ## [0.0.9] - 2026-05-16
 
-### Added — MVP Bloque A reducido: YAML loader + `bootstrap run` end-to-end
+### Added — MVP Block A: YAML loader + `selfeval run` end-to-end
 
-Repo loader (`src/bootstrap/repo/`):
+Repo loader (`src/selfeval/repo/`):
 - `load_experiment_spec(path)` parses `evals/experiments/<name>.yaml` →
   `(workspace_id, Experiment, [EvalCase], AgentEntrypoint)`. YAML keys
   are 1:1 with the Pydantic field names — no DSL translation; the
@@ -112,12 +187,12 @@ Repo loader (`src/bootstrap/repo/`):
   (`dataset.cases_path:`). Mutually exclusive; both empty rejected.
 - Agent entrypoint declared as `module.path:callable_name`.
   `resolve_agent_callable` defers import until the runner needs it
-  (lets `bootstrap inspect` validate a spec without booting user code).
+  (lets `selfeval inspect` validate a spec without booting user code).
 - 14 tests covering inline/external loading, workspace override,
   missing fields, malformed YAML, invalid payloads, entrypoint
   resolution.
 
-CLI `bootstrap run <yaml>`:
+CLI `selfeval run <yaml>`:
 - Loads spec → resolves agent callable → wraps as `EmbeddedAdapter`
   (str returns auto-coerced to `AdapterResponse`) → builds the
   proposer per `experiment.proposer.strategy` (grid / random /
@@ -132,8 +207,8 @@ CLI `bootstrap run <yaml>`:
 
 Example experiment:
 - `evals/experiments/example_pingpong.yaml` + `evals/datasets/pingpong.jsonl` +
-  `bootstrap.examples.pingpong` reference agent. Serves as smoke test
-  and onboarding artifact. `uv run bootstrap run evals/experiments/example_pingpong.yaml --no-persist`
+  `selfeval.examples.pingpong` reference agent. Serves as smoke test
+  and onboarding artifact. `uv run selfeval run evals/experiments/example_pingpong.yaml --no-persist`
   produces a clean report out of the box.
 
 Refactor:
@@ -147,7 +222,7 @@ dep: `pyyaml>=6,<7`.
 ### Added — Design docs for next implementation surfaces
 
 - `docs/spec/sdk_otlp_design.md`: locked blueprint for the user-side
-  SDK façade (`bootstrap.init()`) + embedded OTLP HTTP receiver +
+  SDK façade (`selfeval.init()`) + embedded OTLP HTTP receiver +
   OpenInference auto-instrumentation. Sections 1-11 cover the
   decisions already made (no re-litigation), package layout, exact
   signatures, span translation table, dependency tree (optional
@@ -163,7 +238,7 @@ dep: `pyyaml>=6,<7`.
 
 ### Added — PR 8 + PR 9: Reporter + CLI
 
-Reporter (`bootstrap.reporter`):
+Reporter (`selfeval.reporter`):
 - `render_markdown(result)` produces a PR-comment-style summary:
   experiment header (name, goal, state, mode, proposer, iterations
   run, termination reason), target + guardrail spec line, best-
@@ -179,23 +254,23 @@ Reporter (`bootstrap.reporter`):
 - Pure: no I/O, no global state — callers decide where the strings
   end up (stdout, a file, a GitHub PR comment).
 
-CLI (`bootstrap` console script, argparse-only, zero new deps):
-- `bootstrap init <slug>` — idempotent workspace seed via
+CLI (`selfeval` console script, argparse-only, zero new deps):
+- `selfeval init <slug>` — idempotent workspace seed via
   `seed_workspace`; prints workspace id + member count.
-- `bootstrap workspace show <ws_id>` — workspace metadata +
+- `selfeval workspace show <ws_id>` — workspace metadata +
   experiment count.
-- `bootstrap experiment list <ws_id>` / `show <ws_id> <exp_id>` —
+- `selfeval experiment list <ws_id>` / `show <ws_id> <exp_id>` —
   inspect experiments in storage with target + iteration progress.
-- `bootstrap iteration list <ws_id> <exp_id>` — per-iteration
+- `selfeval iteration list <ws_id> <exp_id>` — per-iteration
   primary metric + decision outcome.
-- `bootstrap report <ws_id> <exp_id> [--format markdown|json]` —
+- `selfeval report <ws_id> <exp_id> [--format markdown|json]` —
   reconstructs an OptimizationResult from stored IterationRecords +
   DecisionRecords (lossy on per-case GradeResults, lossless on
   aggregates) and pipes it through the reporter.
-- `bootstrap compare <ws_id> <iter_a_id> <iter_b_id>` — side-by-
+- `selfeval compare <ws_id> <iter_a_id> <iter_b_id>` — side-by-
   side primary metric diff between two iterations of the same
   experiment.
-- `bootstrap estimate --cases N --space-size M --reps K
+- `selfeval estimate --cases N --space-size M --reps K
   --cost-per-call X` — dry-run upper-bound on agent calls and
   total USD cost before paying for a run.
 - All user-facing errors (missing entity, primary-metric mismatch,
@@ -245,7 +320,7 @@ OptimizationLoop:
 
 Decision matrix (PR 7):
 - `evaluate_iteration` (pure) + `DecisionMatrixEvaluator` (object).
-  Applies the §10 canónico subset that powers MVP optimization:
+  Applies the §10 canonical subset that powers MVP optimization:
   guardrail check → first-iteration target check → improvement vs
   baseline → regression handling per `Experiment.decision` policy
   (reject / investigate / spawn_subexperiment) or guardrail policy
@@ -292,7 +367,7 @@ Decision matrix (PR 7):
 ### Added — PR 4: Runner (agent adapters + sandbox + executor)
 
 - `AgentAdapter` ABC + `AdapterRequest`/`AdapterResponse` dataclasses;
-  the narrow contract between bootstrap and the agent under test.
+  the narrow contract between selfeval and the agent under test.
 - `EmbeddedAdapter`: wraps a Python callable. Used for tests and
   in-repo agents.
 - `CliCommandAdapter`: subprocess + JSON-over-stdio. Configurable
@@ -331,7 +406,7 @@ Decision matrix (PR 7):
   the span ERROR with type+message. Exiting the context with an
   uncaught exception marks the trace ERRORED.
 - `import_otel_spans` — adapter from a flat list of OTel-style span
-  dicts (gen_ai.*, openinference.*) to a bootstrap Trace. Classifies
+  dicts (gen_ai.*, openinference.*) to a selfeval Trace. Classifies
   spans by `openinference.span.kind` / `gen_ai.*` presence,
   normalizes finish reasons, preserves parent/child links, retains
   unknown attributes in `provider_metadata` or CustomSpan.payload.
@@ -339,7 +414,7 @@ Decision matrix (PR 7):
   importer synthesizes ToolUseRequest entries on the nearest LLM
   span so the schema invariant holds; if no LLM span exists the
   call_id is dropped silently.
-- Public surface: `bootstrap.trace` re-exports `PayloadRouter`,
+- Public surface: `selfeval.trace` re-exports `PayloadRouter`,
   `TraceRecorder`, `import_otel_spans`.
 
 26 new tests; 256 total. mypy strict + ruff clean. Zero new deps.
@@ -358,7 +433,7 @@ Decision matrix (PR 7):
   WAL journal mode + foreign keys on.
 - Homemade migration runner (no alembic dep): forward-only,
   `mNNNN_<slug>.py` modules with `up(conn)`, tracked in
-  `_bootstrap_migrations`. Initial migration creates the tables.
+  `_selfeval_migrations`. Initial migration creates the tables.
 - `FilesystemObjectStore`: content-addressed blobs at
   `{root}/{workspace_id}/{prefix2}/{sha256}.bin`; pointer URI
   `oss://{workspace_id}/sha256:...` encodes its workspace.

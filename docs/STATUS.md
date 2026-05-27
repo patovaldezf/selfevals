@@ -1,6 +1,6 @@
-# Status — v0.1.0
+# Status — v0.2.0
 
-This file is the honest snapshot of what bootstrap can and cannot do
+This file is the honest snapshot of what selfeval can and cannot do
 today. Updated on every release; the CHANGELOG records what *changed*,
 this file records what *is*.
 
@@ -9,7 +9,7 @@ this file records what *is*.
 - **CLI**: `init`, `workspace`, `experiment`, `iteration`, `report`,
   `run`, `compare`, `estimate`. Every subcommand has a one-line
   description and a copy-paste `Example:` epilog.
-- **`bootstrap run <spec.yaml>`**: load an experiment spec, resolve
+- **`selfeval run <spec.yaml>`**: load an experiment spec, resolve
   the agent entrypoint, run cases through an adapter, grade each
   trace, persist iterations to SQLite, render a markdown or JSON
   report.
@@ -51,10 +51,10 @@ this file records what *is*.
 - `GradeResult` is flat: `label + score + reason + failure_modes`.
   No `breakdown` for funnel-style multi-level scoring (planned for
   v0.2 once seals dogfooding identifies the exact shape).
-- Failure-mode counts do not survive persistence — they exist on
-  fresh `OptimizationResult` objects but `IterationMetrics` does
-  not carry them. The compare and report tooling already handles
-  their presence gracefully for when this is fixed.
+- Failure-mode counts now persist on
+  `IterationMetrics.failure_mode_counts` (keyed by stable mode
+  identity), so the compare/report tooling shows real data and
+  per-mode trends are queryable across iterations.
 - `Annotation` exists as a schema but there is no UI workflow for
   collecting human labels. The CLI ingests them via direct API.
 
@@ -77,11 +77,11 @@ this file records what *is*.
 
 ### API and web UI
 
-- `src/bootstrap/api/` ships endpoints under FastAPI but the write
+- `src/selfeval/api/` ships endpoints under FastAPI but the write
   side is minimal (workspace creation is the only POST). All
   experiment lifecycle goes through the CLI.
 - `web/` (SvelteKit) is scaffolded but not feature-complete.
-  `bootstrap serve` is referenced in some prompts but no
+  `selfeval serve` is referenced in some prompts but no
   `cmd_serve` exists in `commands.py` today.
 
 ### Telemetry and OTel
@@ -116,7 +116,7 @@ that the dogfooding will confirm or refute:
 - `breakdown: dict[str, Any]` on `GradeResult` for funnel-style scores.
 - YAML wiring for `HttpEndpointAdapter` (no Python entrypoint
   required).
-- A `bootstrap dataset import` CLI command that pulls EvalCases from
+- A `selfeval dataset import` CLI command that pulls EvalCases from
   Supabase or any SQL source.
 - Retries and timeout configuration on `HttpEndpointAdapter`.
 - A `serve` CLI that mounts the FastAPI app and the optimization

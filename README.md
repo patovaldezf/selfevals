@@ -1,22 +1,33 @@
-# bootstrap
+# selfeval
 
 Self-improving evals framework for AI agents.
 
-Install the SDK, point it at your agent, and bootstrap reads your repo,
+Install the SDK, point it at your agent, and selfeval reads your repo,
 proposes an eval structure, runs experiments, and iterates on parameters
 toward a target metric. CLI-first, multi-tenant from day one, agnostic to
 the agent framework underneath.
 
-> Status: **v0.1.0 — runtime functional.** CLI end-to-end works: load
+> Status: **v0.2.0 — runtime functional.** CLI end-to-end works: load
 > an experiment spec → run cases through an adapter → grade traces →
 > persist iterations → render report. See `docs/spec/` for the
 > canonical and operational specs that drive design.
 
-## Quickstart
+## Install
 
 ```bash
-uv sync
-uv run bootstrap run evals/experiments/example_pingpong.yaml --no-persist
+pip install selfeval
+selfeval examples copy pingpong
+selfeval run evals/experiments/example_pingpong.yaml --no-persist
+```
+
+The distribution is `selfeval`; the import name and the CLI command are
+both `selfeval` (`import selfeval`, `selfeval --help`).
+
+## Quickstart from source
+
+```bash
+uv sync --extra web --extra telemetry
+uv run selfeval run evals/experiments/example_pingpong.yaml --no-persist
 ```
 
 Expected output: a markdown report showing two iterations, the best
@@ -26,14 +37,14 @@ against the bundled `EmbeddedAdapter` echo agent.
 To persist to SQLite and inspect afterwards:
 
 ```bash
-uv run bootstrap run evals/experiments/example_pingpong.yaml --db ./bootstrap.sqlite
-uv run bootstrap experiment list <workspace_id>
-uv run bootstrap report <workspace_id> <experiment_id>
+uv run selfeval run evals/experiments/example_pingpong.yaml --db ./selfeval.sqlite
+uv run selfeval experiment list <workspace_id>
+uv run selfeval report <workspace_id> <experiment_id>
 ```
 
 ## Try with a real LLM agent
 
-The `examples/hello_llm/` directory shows boostrap optimizing a real
+The `examples/hello_llm/` directory shows selfeval optimizing a real
 Anthropic agent over three eval cases (sentiment classification,
 structured extraction, and an open-ended customer-support reply) with
 two graders combined: a `DeterministicGrader` for the rule-based cases
@@ -43,7 +54,7 @@ sweeps `temperature ∈ {0.0, 0.5, 1.0}` and the report ranks them.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...   # optional; see below
-uv run bootstrap run examples/hello_llm/experiment.yaml --no-persist
+uv run selfeval run examples/hello_llm/experiment.yaml --no-persist
 ```
 
 If `ANTHROPIC_API_KEY` is unset or the `anthropic` SDK is not installed,
@@ -62,27 +73,27 @@ The full setup lives in three files you can copy into your own repo:
 
 ## Adapters
 
-bootstrap ships three concrete `AgentAdapter` implementations so you can
+selfeval ships three concrete `AgentAdapter` implementations so you can
 point the loop at any agent:
 
 - `EmbeddedAdapter` — a Python callable in-process. Best for quick tests.
 - `CliCommandAdapter` — invokes a subprocess and reads JSON on stdout.
 - `HttpEndpointAdapter` — POSTs each case to an HTTP endpoint and reads JSON.
 
-See `src/bootstrap/runner/adapters.py` for the contract and
+See `src/selfeval/runner/adapters.py` for the contract and
 [`docs/adapters.md`](docs/adapters.md) for usage examples, the per-adapter
 YAML/code snippets, and a comparison table.
 
 ## Docs
 
-- [Adapters](docs/adapters.md) — write agents that bootstrap can call.
+- [Adapters](docs/adapters.md) — write agents that selfeval can call.
 - [`docs/spec/`](docs/spec/) — canonical and operational specs (source
   of truth for design decisions).
 
 ## Layout
 
 ```
-src/bootstrap/        # the SDK package
+src/selfeval/        # the SDK package
   schemas/            # Pydantic v2 entities + contractual validators
   storage/            # SQLite + filesystem object store (interface abstracted)
   trace/              # native SDK decorators + OTel importer
@@ -91,19 +102,20 @@ src/bootstrap/        # the SDK package
   optimization/       # OptimizationLoop + proposers (manual/grid/random)
   decision/           # decision matrix → DecisionRecord
   reporter/           # markdown + JSON reports
-  cli/                # Typer entrypoint
+  cli/                # argparse entrypoint
 skills/               # markdown skills for Claude Code (propose/run/optimize)
 docs/spec/            # canonical + operational specs (source of truth)
-tests/                # pytest, mirrors src/bootstrap layout
+tests/                # pytest, mirrors src/selfeval layout
 ```
 
 ## Dev
 
 ```bash
-uv sync                # create venv + install deps
-uv run pytest          # tests
-uv run mypy src        # types
+uv sync --extra web --extra telemetry
+uv run --extra web --extra telemetry pytest
+uv run --extra web --extra telemetry mypy src/selfeval
 uv run ruff check .    # lint
+cd web && npm install && npm run check && npm run build
 ```
 
 ## License

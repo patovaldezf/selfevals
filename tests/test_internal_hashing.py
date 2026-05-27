@@ -1,4 +1,4 @@
-from bootstrap._internal.hashing import bytes_hash, content_hash
+from selfeval._internal.hashing import bytes_hash, content_hash
 
 
 def test_content_hash_is_order_independent() -> None:

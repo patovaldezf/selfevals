@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from bootstrap.storage.migrations import (
+from selfeval.storage.migrations import (
     apply_migrations,
     current_version,
     discover_migrations,
@@ -28,7 +28,7 @@ def test_apply_migrations_creates_tables_and_tracks_version() -> None:
         row[0]
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     }
-    assert "_bootstrap_migrations" in tables
+    assert "_selfeval_migrations" in tables
     assert "entities" in tables
     assert "objects" in tables
     assert current_version(conn) >= 1

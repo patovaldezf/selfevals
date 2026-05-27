@@ -32,7 +32,7 @@
 </script>
 
 <svelte:head>
-  <title>{data.workspace.name} · bootstrap</title>
+  <title>{data.workspace.name} · selfeval</title>
 </svelte:head>
 
 <div class="px-12 py-10 max-w-6xl mx-auto">
@@ -86,7 +86,7 @@
       <div class="rounded-lg border border-border bg-surface px-6 py-12 text-center text-text-2">
         <p class="mb-3">No experiments yet.</p>
         <code class="font-mono text-xs px-2 py-1 rounded bg-surface-2"
-          >uv run bootstrap run evals/experiments/your-spec.yaml</code
+          >uv run selfeval run evals/experiments/your-spec.yaml</code
         >
       </div>
     {:else}

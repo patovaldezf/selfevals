@@ -1,4 +1,4 @@
-from bootstrap import __version__
+from selfeval import __version__
 
 
 def test_version_is_string() -> None:

@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from bootstrap.schemas.enums import SpanKind, StopReason, ToolCallStatus
-from bootstrap.schemas.trace import (
+from selfeval.schemas.enums import SpanKind, StopReason, ToolCallStatus
+from selfeval.schemas.trace import (
     AgentSnapshotRef,
     AgentTurnSpan,
     CustomSpan,
@@ -14,7 +14,7 @@ from bootstrap.schemas.trace import (
     RunInfo,
     ToolCallSpan,
 )
-from bootstrap.trace.otel_importer import import_otel_spans
+from selfeval.trace.otel_importer import import_otel_spans
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 T0 = datetime(2026, 5, 16, 12, 0, 0, tzinfo=UTC).isoformat()
@@ -190,6 +190,204 @@ def test_parent_child_preserved() -> None:
     spans = trace.spans  # type: ignore[attr-defined]
     by_id = {s.id: s for s in spans}
     assert by_id["sp_b"].parent_id == "sp_a"
+
+
+def test_messages_extracted_via_openinference_native_attrs() -> None:
+    trace = _imp(
+        [
+            {
+                "span_id": "sp_1",
+                "name": "model",
+                "start_time": T0,
+                "end_time": T1,
+                "attributes": {
+                    "gen_ai.system": "anthropic",
+                    "gen_ai.request.model": "claude-sonnet-4-6",
+                    "llm.input_messages.0.message.role": "system",
+                    "llm.input_messages.0.message.content": "You are helpful.",
+                    "llm.input_messages.1.message.role": "user",
+                    "llm.input_messages.1.message.content": "Hola",
+                    "llm.output_messages.0.message.role": "assistant",
+                    "llm.output_messages.0.message.content": "¡Hola! ¿Cómo ayudo?",
+                },
+            }
+        ]
+    )
+    s = trace.spans[0]  # type: ignore[attr-defined]
+    assert isinstance(s, LLMCallSpan)
+    msgs_in = s.provider_metadata["selfeval.messages_in"]
+    assert msgs_in == [
+        {"role": "system", "content": "You are helpful."},
+        {"role": "user", "content": "Hola"},
+    ]
+    msgs_out = s.provider_metadata["selfeval.messages_out"]
+    assert msgs_out == [{"role": "assistant", "content": "¡Hola! ¿Cómo ayudo?"}]
+    # Hashes are always set when messages exist, for dedup / drift detection.
+    assert s.messages_hash is not None and s.messages_hash.startswith("sha256:")
+    assert s.output.content_hash is not None and s.output.content_hash.startswith("sha256:")
+    # Raw flattened keys must not leak into metadata alongside the structured form.
+    assert not any(k.startswith("llm.input_messages.") for k in s.provider_metadata)
+    assert not any(k.startswith("llm.output_messages.") for k in s.provider_metadata)
+
+
+def test_messages_extracted_via_gen_ai_alias_attrs() -> None:
+    trace = _imp(
+        [
+            {
+                "span_id": "sp_1",
+                "name": "model",
+                "start_time": T0,
+                "end_time": T1,
+                "attributes": {
+                    "gen_ai.system": "openai",
+                    "gen_ai.request.model": "gpt-4o",
+                    "gen_ai.prompt.0.role": "user",
+                    "gen_ai.prompt.0.content": "What is 2+2?",
+                    "gen_ai.completion.0.role": "assistant",
+                    "gen_ai.completion.0.content": "4",
+                },
+            }
+        ]
+    )
+    s = trace.spans[0]  # type: ignore[attr-defined]
+    assert isinstance(s, LLMCallSpan)
+    assert s.provider_metadata["selfeval.messages_in"] == [
+        {"role": "user", "content": "What is 2+2?"}
+    ]
+    assert s.provider_metadata["selfeval.messages_out"] == [
+        {"role": "assistant", "content": "4"}
+    ]
+
+
+def test_message_index_order_is_numeric_not_lexical() -> None:
+    # Indices 0,1,...,10,11 must sort numerically (10 after 9), not as strings.
+    attrs = {"gen_ai.system": "anthropic", "gen_ai.request.model": "x"}
+    for i in range(12):
+        attrs[f"gen_ai.prompt.{i}.role"] = "user"
+        attrs[f"gen_ai.prompt.{i}.content"] = f"msg{i}"
+    trace = _imp(
+        [{"span_id": "sp_1", "name": "model", "start_time": T0, "end_time": T1, "attributes": attrs}]
+    )
+    s = trace.spans[0]  # type: ignore[attr-defined]
+    contents = [m["content"] for m in s.provider_metadata["selfeval.messages_in"]]
+    assert contents == [f"msg{i}" for i in range(12)]
+
+
+def test_openinference_native_wins_when_both_families_present() -> None:
+    trace = _imp(
+        [
+            {
+                "span_id": "sp_1",
+                "name": "model",
+                "start_time": T0,
+                "end_time": T1,
+                "attributes": {
+                    "gen_ai.system": "anthropic",
+                    "gen_ai.request.model": "x",
+                    "llm.input_messages.0.message.role": "user",
+                    "llm.input_messages.0.message.content": "native",
+                    "gen_ai.prompt.0.role": "user",
+                    "gen_ai.prompt.0.content": "alias",
+                },
+            }
+        ]
+    )
+    s = trace.spans[0]  # type: ignore[attr-defined]
+    assert s.provider_metadata["selfeval.messages_in"] == [{"role": "user", "content": "native"}]
+
+
+def test_no_messages_leaves_hashes_none() -> None:
+    trace = _imp(
+        [
+            {
+                "span_id": "sp_1",
+                "name": "model",
+                "start_time": T0,
+                "end_time": T1,
+                "attributes": {"gen_ai.system": "anthropic", "gen_ai.request.model": "x"},
+            }
+        ]
+    )
+    s = trace.spans[0]  # type: ignore[attr-defined]
+    assert s.messages_hash is None
+    assert s.output.content_hash is None
+    assert "selfeval.messages_in" not in s.provider_metadata
+    assert "selfeval.messages_out" not in s.provider_metadata
+
+
+def test_thread_id_detected_from_openinference_session_id() -> None:
+    trace = _imp(
+        [
+            {
+                "span_id": "sp_1",
+                "name": "model",
+                "start_time": T0,
+                "end_time": T1,
+                "attributes": {
+                    "gen_ai.system": "anthropic",
+                    "gen_ai.request.model": "x",
+                    "session.id": "sess_abc",
+                },
+            }
+        ]
+    )
+    assert trace.run.thread_id == "sess_abc"  # type: ignore[attr-defined]
+
+
+def test_thread_id_detected_from_gen_ai_conversation_id() -> None:
+    trace = _imp(
+        [
+            {
+                "span_id": "sp_1",
+                "name": "model",
+                "start_time": T0,
+                "end_time": T1,
+                "attributes": {
+                    "gen_ai.system": "openai",
+                    "gen_ai.request.model": "x",
+                    "gen_ai.conversation.id": "conv_42",
+                },
+            }
+        ]
+    )
+    assert trace.run.thread_id == "conv_42"  # type: ignore[attr-defined]
+
+
+def test_explicit_thread_id_on_run_is_not_overwritten() -> None:
+    trace = import_otel_spans(
+        [
+            {
+                "span_id": "sp_1",
+                "name": "model",
+                "start_time": T0,
+                "end_time": T1,
+                "attributes": {
+                    "gen_ai.system": "anthropic",
+                    "gen_ai.request.model": "x",
+                    "session.id": "from_span",
+                },
+            }
+        ],
+        workspace_id=WS,
+        run=RunInfo(run_id="run_01", thread_id="from_caller"),
+        agent=AgentSnapshotRef(agent_id="ag_x", agent_version=1),
+    )
+    assert trace.run.thread_id == "from_caller"
+
+
+def test_no_session_attr_leaves_thread_id_none() -> None:
+    trace = _imp(
+        [
+            {
+                "span_id": "sp_1",
+                "name": "model",
+                "start_time": T0,
+                "end_time": T1,
+                "attributes": {"gen_ai.system": "anthropic", "gen_ai.request.model": "x"},
+            }
+        ]
+    )
+    assert trace.run.thread_id is None  # type: ignore[attr-defined]
 
 
 def test_unrecognized_finish_reason_returns_none() -> None:

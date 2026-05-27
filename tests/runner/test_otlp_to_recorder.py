@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from bootstrap._internal.time import utc_now
-from bootstrap.runner.otlp_to_recorder import DecodedSpan, feed_to_recorder
-from bootstrap.schemas.enums import SandboxMode
-from bootstrap.schemas.trace import (
+from selfeval._internal.time import utc_now
+from selfeval.runner.otlp_to_recorder import DecodedSpan, feed_to_recorder
+from selfeval.schemas.enums import SandboxMode
+from selfeval.schemas.trace import (
     AgentSnapshotRef,
     LLMCallSpan,
     RunInfo,
     ToolCallSpan,
 )
-from bootstrap.trace.recorder import TraceRecorder
+from selfeval.trace.recorder import TraceRecorder
 
 
 def _fresh_recorder() -> TraceRecorder:

@@ -4,16 +4,16 @@ from pathlib import Path
 
 import pytest
 
-from bootstrap.schemas.enums import FeatureKind
-from bootstrap.schemas.registry import FeatureRegistry, RiskProfile
-from bootstrap.schemas.workspace import Workspace
-from bootstrap.storage.errors import (
+from selfeval.schemas.enums import FeatureKind
+from selfeval.schemas.registry import FeatureRegistry, RiskProfile
+from selfeval.schemas.workspace import Workspace
+from selfeval.storage.errors import (
     EntityNotFoundError,
     OptimisticConcurrencyError,
     WorkspaceMismatchError,
 )
-from bootstrap.storage.interface import ListFilter
-from bootstrap.storage.sqlite import SQLiteStorage
+from selfeval.storage.interface import ListFilter
+from selfeval.storage.sqlite import SQLiteStorage
 
 
 def _ws(slug: str = "pato") -> Workspace:
@@ -147,6 +147,16 @@ def test_list_filter_by_payload_field(tmp_path: Path) -> None:
         )
         assert len(items) == 1
         assert items[0].primary_feature == "support.y"
+    store.close()
+
+
+def test_list_rejects_untrusted_order_by(tmp_path: Path) -> None:
+    store = SQLiteStorage(tmp_path / "test.db")
+    ws = _ws()
+    with store.open(ws.id) as scope:
+        scope.put_entity(ws)
+        with pytest.raises(ValueError, match="unsupported order_by"):
+            scope.list_entities(FeatureRegistry, ListFilter(order_by="created_at; DROP TABLE entities"))
     store.close()
 
 

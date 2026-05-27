@@ -7,9 +7,9 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from bootstrap.api.app import build_app
-from bootstrap.api.broker import get_broker, reset_for_tests
-from bootstrap.api.broker_bridge import BrokerPublisher
+from selfeval.api.app import build_app
+from selfeval.api.broker import get_broker, reset_for_tests
+from selfeval.api.broker_bridge import BrokerPublisher
 
 
 @pytest.fixture(autouse=True)

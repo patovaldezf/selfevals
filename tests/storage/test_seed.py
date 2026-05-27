@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from bootstrap.schemas.enums import Role
-from bootstrap.storage.seed import seed_workspace
-from bootstrap.storage.sqlite import SQLiteStorage
+from selfeval.schemas.enums import Role
+from selfeval.storage.seed import seed_workspace
+from selfeval.storage.sqlite import SQLiteStorage
 
 
 def test_seed_creates_workspace_and_all_roles(tmp_path: Path) -> None:
@@ -59,7 +59,7 @@ def test_seed_writes_through_workspace_scope(tmp_path: Path) -> None:
     result = seed_workspace(storage, slug="pato", name="x", user_id="p@example.com")
     # Re-open scope and verify we can list members.
     with storage.open(result.workspace.id) as scope:
-        from bootstrap.schemas.workspace import Member, Workspace
+        from selfeval.schemas.workspace import Member, Workspace
 
         ws = scope.get_entity(Workspace, result.workspace.id)
         assert isinstance(ws, Workspace)
