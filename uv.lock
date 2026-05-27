@@ -3888,9 +3888,10 @@ wheels = [
 
 [[package]]
 name = "selfevals"
-version = "0.2.2"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
+    { name = "httpx" },
     { name = "pydantic" },
     { name = "pyyaml" },
 ]
@@ -3992,6 +3993,7 @@ requires-dist = [
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=0.40" },
     { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.110,<1" },
     { name = "google-cloud-aiplatform", marker = "extra == 'vertex'", specifier = ">=1.60" },
+    { name = "httpx", specifier = ">=0.27,<1" },
     { name = "langchain", marker = "extra == 'langchain'", specifier = ">=0.2" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.40" },
     { name = "openinference-instrumentation-anthropic", marker = "extra == 'anthropic'", specifier = ">=0.1" },

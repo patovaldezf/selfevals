@@ -130,7 +130,7 @@ class LLMJudgeGrader(Grader):
         self._card = card
         self._force = force
 
-    def grade(self, context: GraderContext) -> GradeResult:
+    async def grade(self, context: GraderContext) -> GradeResult:
         if not self._force and not _is_card_calibrated(self._card):
             return GradeResult(
                 grader=self.name,
@@ -146,7 +146,7 @@ class LLMJudgeGrader(Grader):
         )
         request = _build_judge_request(context, prompt, self.name)
         try:
-            response = self._judge.invoke(request)
+            response = await self._judge.invoke(request)
         except Exception as exc:
             return GradeResult(
                 grader=self.name,
