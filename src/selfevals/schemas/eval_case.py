@@ -23,7 +23,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, ClassVar
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from selfevals.schemas._base import BaseEntity, NonEmptyStr, SelfEvalsModel
 from selfevals.schemas.enums import (
@@ -31,6 +31,7 @@ from selfevals.schemas.enums import (
     DatasetType,
     GroundTruthMethod,
     Level,
+    MessageRole,
     Modality,
     PIIStatus,
     RuntimeLocation,
@@ -122,6 +123,50 @@ class CaseMetadata(SelfEvalsModel):
     notes: str | None = None
 
 
+class ContentBlock(SelfEvalsModel):
+    """One block of message content. Text blocks use {"text": ...}, matching
+    the de-facto chunk shape agents already read. Non-text blocks (image/audio)
+    carry provider-specific keys, so extra keys are allowed."""
+
+    model_config = ConfigDict(extra="allow")
+    type: Modality = Modality.TEXT
+    text: str | None = None
+
+
+class Message(SelfEvalsModel):
+    """A single conversation turn. Content is a plain string or a list of
+    content blocks (multimodal)."""
+
+    role: MessageRole
+    content: str | list[ContentBlock]
+    name: str | None = None
+
+    @field_validator("content")
+    @classmethod
+    def _content_non_empty_list(cls, value: str | list[ContentBlock]) -> str | list[ContentBlock]:
+        if isinstance(value, list) and len(value) == 0:
+            raise ValueError("message content list must be non-empty")
+        return value
+
+
+class ConversationInput(SelfEvalsModel):
+    """Typed view of a multi-turn EvalCase.input. Constructed on demand by
+    EvalCase.conversation(); never stored on the field (input stays a plain
+    JSON dict so adapters keep receiving it opaquely)."""
+
+    model_config = ConfigDict(extra="allow")
+    messages: list[Message] = Field(min_length=1)
+
+    @field_validator("messages")
+    @classmethod
+    def _at_least_one_non_assistant(cls, value: list[Message]) -> list[Message]:
+        if all(m.role == MessageRole.ASSISTANT for m in value):
+            raise ValueError(
+                "conversation must contain at least one user/system/tool message"
+            )
+        return value
+
+
 class EvalCase(BaseEntity):
     _id_prefix: ClassVar[str] = "ec"
 
@@ -129,8 +174,11 @@ class EvalCase(BaseEntity):
     task_type: NonEmptyStr
     modalities: list[Modality] = Field(default_factory=lambda: [Modality.TEXT], min_length=1)
     input: dict[str, Any]
-    """Multimodal message format. Canon §20. Validated at runtime by the
-    adapter; treated as opaque payload at schema layer to keep MVP shippable."""
+    """The payload fed to the agent. Canon §20. When it carries a `messages`
+    key it is validated as a typed multi-turn conversation (see
+    ConversationInput); otherwise it is an opaque payload passed to the adapter
+    verbatim. The field always stays a plain JSON dict so adapters receive it
+    unchanged."""
 
     context: dict[str, Any] | None = None
     expected: Expected = Field(default_factory=Expected)
@@ -151,6 +199,29 @@ class EvalCase(BaseEntity):
         if len(set(value)) != len(value):
             raise ValueError("entries must be unique")
         return value
+
+    @field_validator("input")
+    @classmethod
+    def _validate_conversation_shape(cls, value: dict[str, Any]) -> dict[str, Any]:
+        # Opaque inputs (no `messages` key) pass through untouched. When
+        # `messages` is present it must be a valid multi-turn shape; validate by
+        # round-tripping through ConversationInput, then return the ORIGINAL dict
+        # (the field stays a plain JSON dict so adapters are unaffected).
+        if "messages" not in value:
+            return value
+        try:
+            ConversationInput.model_validate(value)
+        except ValidationError as exc:
+            raise ValueError(f"invalid conversation input: {exc}") from exc
+        return value
+
+    def is_conversation(self) -> bool:
+        return "messages" in self.input
+
+    def conversation(self) -> ConversationInput:
+        if "messages" not in self.input:
+            raise ValueError("EvalCase.input has no `messages` key; not a conversation")
+        return ConversationInput.model_validate(self.input)
 
     @field_validator("failure_weights")
     @classmethod
