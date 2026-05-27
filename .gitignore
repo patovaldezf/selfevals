@@ -51,6 +51,9 @@ Thumbs.db
 .bootstrap/
 data/
 
+# Agent worktrees
+.claude/
+
 # Secrets
 .env
 .env.*
