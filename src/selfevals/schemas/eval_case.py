@@ -14,8 +14,8 @@ Key contracts enforced here:
    explicit `metadata.approved_raw_by` + `approved_raw_at`. Canon §15.
 3. `taxonomy.feature.primary` is required; `secondary` may be empty.
 4. `holdout=True` cases are intended to be immutable — see Dataset for the
-   regression-class immutability contract; per-case mutation is left to the
-   storage layer in PR 2.
+   regression-class immutability contract; per-case mutation is enforced by
+   the storage layer.
 """
 
 from __future__ import annotations

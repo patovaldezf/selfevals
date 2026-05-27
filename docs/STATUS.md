@@ -1,4 +1,4 @@
-# Status — v0.2.2
+# Status — v0.3.0
 
 This file is the honest snapshot of what selfevals can and cannot do
 today. Updated on every release; the CHANGELOG records what *changed*,
@@ -13,10 +13,23 @@ this file records what *is*.
   the agent entrypoint, run cases through an adapter, grade each
   trace, persist iterations to SQLite, render a markdown or JSON
   report.
-- **Adapters**: `EmbeddedAdapter` (Python callable), `CliCommandAdapter`
-  (subprocess JSON), `HttpEndpointAdapter` (POST JSON). All three
-  callable from Python; only `EmbeddedAdapter` is auto-wired from
-  YAML today.
+- **Conversation input**: `EvalCase.input` carries a validated
+  multi-turn conversation when it has a `messages` key — roles
+  (system/user/assistant/tool), content as a string or a list of
+  content blocks, multimodal-aware via the `Modality` enum. Typed
+  access through `EvalCase.conversation()`; inputs without a
+  `messages` key remain opaque payloads passed to the adapter
+  verbatim.
+- **Async-first evaluators**: `AgentAdapter.invoke` and
+  `Grader.grade` are async. The executor runs repetitions
+  concurrently and the optimization loop grades concurrently, both
+  bounded by configurable semaphores (`concurrency` /
+  `grade_concurrency`, default 8). `asyncio.run` lives only at the
+  CLI edge.
+- **Adapters**: `EmbeddedAdapter` (sync or async Python callable),
+  `CliCommandAdapter` (async subprocess JSON), `HttpEndpointAdapter`
+  (native async on httpx). All three callable from Python; only
+  `EmbeddedAdapter` is auto-wired from YAML today.
 - **Graders**: `DeterministicGrader` (`must_include`,
   `must_not_include`, `required_tools`, `forbidden_tools`,
   `regex_match`, `structured_output` equality, `output_schema` JSON
@@ -46,12 +59,9 @@ this file records what *is*.
 
 ### Schema and runtime
 
-- `EvalCase.input` is `dict[str, Any]` — opaque. Conversation
-  multi-turn evals will fit but the schema does not enforce shape.
 - `GradeResult` is flat: `label + score + reason + failure_modes`.
-  No `breakdown` for funnel-style multi-level scoring — deferred
-  until seals dogfooding pins down the exact shape (see the roadmap
-  section below).
+  No `breakdown` for funnel-style multi-level scoring yet (see the
+  roadmap section below).
 - Failure-mode counts now persist on
   `IterationMetrics.failure_mode_counts` (keyed by stable mode
   identity), so the compare/report tooling shows real data and
@@ -65,7 +75,8 @@ this file records what *is*.
   auto-wired from YAML. Users instantiate them via a Python
   entrypoint; `docs/adapters.md` documents the pattern.
 - `HttpEndpointAdapter` has no retries, no streaming, no per-request
-  headers.
+  headers (it is native async on httpx, but the convenience knobs
+  are not exposed yet).
 
 ### Optimization
 
@@ -98,21 +109,29 @@ this file records what *is*.
 ## How to run the test suite cleanly
 
 ```bash
-# Default surface — 528 passed.
+# Default surface — 559 passed.
 uv sync && uv run pytest --ignore=tests/api --ignore=tests/sdk \
   --ignore=tests/runner/test_otlp_receiver.py
 
-# Full surface — install optional extras first. 566 passed.
+# Full surface — install optional extras first. 597 passed.
 uv sync --extra telemetry --extra web && uv run pytest
 ```
 
 ## Roadmap
 
-The roadmap is driven by dogfooding against
-[seals](../../../seals%20ideas/chat-repo/seals) — concretely,
-optimizing the system prompt of Valentina (the sales agent) against
-real scenarios from Supabase. As dogfooding reveals which gaps
-actually hurt, they graduate from backlog to release.
+The roadmap is driven by evaluating real conversational agents. Each
+release closes the gaps that block the next scenario; the rest stays
+on the backlog until it earns its place.
+
+### Shipped in 0.3.0
+
+- **Validated multi-turn conversation input** — `EvalCase.input` now
+  enforces a typed conversation shape when it carries `messages`,
+  with multimodal-aware content blocks and typed access via
+  `EvalCase.conversation()`.
+- **Async-first evaluators** — one async contract for adapters and
+  graders, concurrent repetitions and grading bounded by
+  configurable semaphores, native-async HTTP adapter on httpx.
 
 ### Shipped in 0.2.x
 
@@ -127,12 +146,11 @@ actually hurt, they graduate from backlog to release.
 
 ### Still on the backlog
 
-- Conversation multi-turn shape on `EvalCase.input`.
 - `breakdown: dict[str, Any]` on `GradeResult` for funnel-style scores.
 - YAML wiring for `HttpEndpointAdapter` (no Python entrypoint
   required).
 - A `selfevals dataset import` CLI command that pulls EvalCases from
-  Supabase or any SQL source.
+  a SQL source.
 - Retries and timeout configuration on `HttpEndpointAdapter`.
 - A `serve` CLI that mounts the FastAPI app and the optimization
   loop concurrently.
