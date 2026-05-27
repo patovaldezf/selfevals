@@ -54,7 +54,7 @@ from selfevals.storage.sqlite import SQLiteStorage
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
 
-def _case(content_target: str = "pong") -> EvalCase:
+def _case(content_target: str = "pong", *, holdout: bool = False) -> EvalCase:
     return EvalCase(
         id=EvalCase.make_id(),
         workspace_id=WS,
@@ -69,6 +69,7 @@ def _case(content_target: str = "pong") -> EvalCase:
             dataset_type=DatasetType.CAPABILITY,
         ),
         expected=Expected(must_include=[content_target]),
+        holdout=holdout,
     )
 
 
@@ -285,6 +286,49 @@ def test_loop_requires_cases_and_graders() -> None:
             proposer=ManualProposer([{"prompt": "x", "hypothesis": "y"}]),
             graders=[DeterministicGrader()],
             cases=[],
+        )
+
+
+@pytest.mark.asyncio
+async def test_loop_excludes_holdout_from_optimization_set() -> None:
+    opt_cases = [_case("pong") for _ in range(3)]
+    held = [_case("pong", holdout=True) for _ in range(2)]
+    exp = _experiment(max_iterations=1, search_space={"level": [1.0]})
+    executor = Executor(
+        adapter=_adapter_for("pong", level=1.0),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    loop = OptimizationLoop(
+        experiment=exp,
+        executor=executor,
+        proposer=GridProposer(),
+        graders=[DeterministicGrader()],
+        cases=[*opt_cases, *held],
+    )
+    assert {c.id for c in loop.optimization_cases} == {c.id for c in opt_cases}
+    assert {c.id for c in loop.holdout_cases} == {c.id for c in held}
+    result = await loop.run()
+    # Only the 3 non-holdout cases were evaluated.
+    assert result.iterations[0].iteration_record.execution.ran_against == {"case_count": 3}
+    assert all(len(run.repetitions) >= 1 for run in result.iterations[0].case_runs)
+    assert {run.case_id for run in result.iterations[0].case_runs} == {c.id for c in opt_cases}
+
+
+def test_loop_rejects_all_holdout_cases() -> None:
+    exp = _experiment(max_iterations=1, search_space={"level": [1.0]})
+    executor = Executor(
+        adapter=_adapter_for("pong", level=1.0),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    with pytest.raises(ValueError, match="empty optimization set"):
+        OptimizationLoop(
+            experiment=exp,
+            executor=executor,
+            proposer=GridProposer(),
+            graders=[DeterministicGrader()],
+            cases=[_case("pong", holdout=True)],
         )
 
 
