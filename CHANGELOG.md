@@ -7,6 +7,23 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-05-27
+
+### Documentation
+
+- Onboarding pass after the `bootstrap` -> `selfevals` rename. Fixed the
+  CI mypy target (`src/bootstrap` -> `src/selfevals`) and 13 stale
+  `bootstrap` CLI/prose references in the bundled error-analysis skill.
+- README rewritten for a new user: provider-extras install guidance, a
+  Concepts table, both LLM examples (Anthropic + OpenAI), a full CLI
+  reference, and the global `--db` placement note. Status banners bumped
+  to the current release.
+- New `examples/README.md` (walk-through + how to adapt to your own agent)
+  and an expanded `CONTRIBUTING.md` (test layout, extras some tests need,
+  where to add a grader/adapter/proposer).
+
+No runtime or API changes — docs and packaging metadata only.
+
 ## [0.2.1] - 2026-05-27
 
 ### Changed
