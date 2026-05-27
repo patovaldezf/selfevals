@@ -17,7 +17,7 @@ jobs:
           python-version: "3.12"
       - run: uv sync --all-extras --dev
       - run: uv run ruff check .
-      - run: uv run mypy src/bootstrap
+      - run: uv run mypy src/selfevals
       - run: uv run pytest
       - run: uv run python -m build
       - run: uv run twine check dist/*

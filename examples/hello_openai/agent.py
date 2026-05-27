@@ -260,9 +260,7 @@ def _openai_available() -> bool:
     except ImportError:
         _warn_sdk_missing()
         return False
-    if not os.environ.get("OPENAI_API_KEY"):
-        return False
-    return True
+    return bool(os.environ.get("OPENAI_API_KEY"))
 
 
 _warned_sdk_missing = False
