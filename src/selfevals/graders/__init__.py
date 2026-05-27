@@ -1,12 +1,15 @@
 """Graders: score traces against expectations.
 
 A `Grader` reads a Trace + EvalCase and returns a `GradeResult` (label
-+ optional score + reason). Two concrete graders ship in MVP:
++ optional score + reason). Concrete graders that ship:
 
 - `DeterministicGrader` evaluates rule-based expectations declared on
   `EvalCase.expected` (must_include / forbidden_tools / regex / schema).
+- `GuardrailGrader` enforces deterministic content guardrails
+  (forbidden/required regex, basic PII, double-value) and folds in
+  failed `GuardrailCheckSpan` entries from the trace. FAIL is blocking.
 - `LLMJudgeGrader` invokes an `AgentAdapter` as a judge against a rubric
-  prompt; single-judge in MVP, panel infrastructure-ready for post-MVP.
+  prompt; single-judge today, panel infrastructure-ready.
 
 Calibration helpers turn observed predictions + human annotations into
 the metrics tracked on a `GraderCard`.
@@ -23,6 +26,7 @@ from selfevals.graders.deterministic import (
     DeterministicGrader,
     DeterministicRuleViolationError,
 )
+from selfevals.graders.guardrail import GuardrailGrader
 from selfevals.graders.llm_judge import (
     JudgeDecision,
     LLMJudgeGrader,
@@ -37,6 +41,7 @@ __all__ = [
     "GradeResult",
     "Grader",
     "GraderContext",
+    "GuardrailGrader",
     "HumanLabel",
     "JudgeDecision",
     "LLMJudgeGrader",
