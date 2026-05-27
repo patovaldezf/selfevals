@@ -6,8 +6,8 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from bootstrap.schemas._base import EntityRef
-from bootstrap.schemas.enums import (
+from selfeval.schemas._base import EntityRef
+from selfeval.schemas.enums import (
     DatasetType,
     DecisionOutcome,
     IterationState,
@@ -15,7 +15,7 @@ from bootstrap.schemas.enums import (
     ProposerStrategy,
     SandboxMode,
 )
-from bootstrap.schemas.experiment import (
+from selfeval.schemas.experiment import (
     DatasetUsage,
     EditableContract,
     Experiment,
@@ -26,7 +26,7 @@ from bootstrap.schemas.experiment import (
     RunSpec,
     TargetSpec,
 )
-from bootstrap.schemas.iteration import (
+from selfeval.schemas.iteration import (
     CodeDiff,
     DecisionRationale,
     DecisionRecord,
@@ -68,9 +68,6 @@ def _experiment(
         proposer=ProposerSpec(strategy=ProposerStrategy.GRID),
         run=RunSpec(sandbox=SandboxMode.DRY_RUN),
     )
-
-
-# --- Proposal contract ---
 
 
 def test_proposal_clean_passes() -> None:
@@ -132,9 +129,6 @@ def test_proposal_violations_against_returns_empty_when_clean() -> None:
     exp = _experiment()
     p = Proposal(parameters={"prompt": "x"}, hypothesis="x")
     assert p.violations_against(exp.editable) == []
-
-
-# --- IterationRecord ---
 
 
 def _execution(variant: str = "v1") -> ExecutionInfo:
@@ -216,9 +210,6 @@ def test_iteration_parent_must_be_strictly_earlier() -> None:
 def test_iteration_parent_earlier_ok() -> None:
     itr = _iteration(iteration=3, parent_iteration=1)
     assert itr.parent_iteration == 1
-
-
-# --- DecisionRecord ---
 
 
 def test_decision_record_minimal() -> None:

@@ -4,21 +4,21 @@ from typing import Any
 
 import pytest
 
-from bootstrap.optimization.proposers import (
+from selfeval.optimization.proposers import (
     GridProposer,
     ManualProposer,
     ProposerContext,
     RandomProposer,
     SearchSpaceExhaustedError,
 )
-from bootstrap.schemas._base import EntityRef
-from bootstrap.schemas.enums import (
+from selfeval.schemas._base import EntityRef
+from selfeval.schemas.enums import (
     DatasetType,
     Mode,
     ProposerStrategy,
     SandboxMode,
 )
-from bootstrap.schemas.experiment import (
+from selfeval.schemas.experiment import (
     DatasetUsage,
     EditableContract,
     Experiment,
@@ -30,7 +30,7 @@ from bootstrap.schemas.experiment import (
     SearchSpace,
     TargetSpec,
 )
-from bootstrap.schemas.iteration import Proposal, ProposalRejectedError
+from selfeval.schemas.iteration import Proposal, ProposalRejectedError
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
@@ -58,9 +58,6 @@ def _experiment(*, search_space: dict[str, Any] | None = None) -> Experiment:
         run=RunSpec(sandbox=SandboxMode.DRY_RUN),
         search_space=SearchSpace(model_params=search_space or {}),
     )
-
-
-# --- manual ---
 
 
 def test_manual_walks_through_list() -> None:
@@ -110,9 +107,6 @@ def test_manual_rejects_invalid_entry_type() -> None:
         ManualProposer(["not a proposal"])  # type: ignore[list-item]
 
 
-# --- grid ---
-
-
 def test_grid_cartesian_product() -> None:
     exp = _experiment(search_space={"temperature": [0.0, 0.5], "top_p": [0.9, 1.0]})
     grid = GridProposer()
@@ -140,9 +134,6 @@ def test_grid_empty_space_rejected() -> None:
     grid = GridProposer()
     with pytest.raises(ValueError):
         grid.propose(exp, ProposerContext(iteration_index=0))
-
-
-# --- random ---
 
 
 def test_random_is_reproducible_with_seed() -> None:

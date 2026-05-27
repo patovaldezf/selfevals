@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from bootstrap.storage.filesystem import FilesystemObjectStore
-from bootstrap.trace.payload_router import (
+from selfeval.storage.filesystem import FilesystemObjectStore
+from selfeval.trace.payload_router import (
     DEFAULT_INLINE_THRESHOLD_BYTES,
     PayloadDecision,
     PayloadRouter,

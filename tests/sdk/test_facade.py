@@ -1,10 +1,10 @@
-"""Unit tests for bootstrap.sdk.facade."""
+"""Unit tests for selfeval.sdk.facade."""
 
 from __future__ import annotations
 
 import pytest
 
-from bootstrap.sdk import facade
+from selfeval.sdk import facade
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +29,7 @@ def test_init_idempotent_same_project() -> None:
 
 def test_init_raises_on_different_project() -> None:
     facade.init(project="proj1", instrument=[])
-    with pytest.raises(facade.BootstrapAlreadyInitialized):
+    with pytest.raises(facade.SelfEvalAlreadyInitialized):
         facade.init(project="proj2", instrument=[])
 
 
@@ -44,30 +44,30 @@ def test_invalid_sample_rate_rejected() -> None:
 
 
 def test_endpoint_resolution_explicit_wins(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("BOOTSTRAP_OTLP_ENDPOINT", "http://from-env:1234")
+    monkeypatch.setenv("SELFEVAL_OTLP_ENDPOINT", "http://from-env:1234")
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-env:9999")
     result = facade.init(project="p", endpoint="http://explicit:4318", instrument=[])
     assert result.endpoint == "http://explicit:4318"
 
 
-def test_endpoint_resolution_bootstrap_env_wins_over_otel(
+def test_endpoint_resolution_selfeval_env_wins_over_otel(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("BOOTSTRAP_OTLP_ENDPOINT", "http://from-env:1234")
+    monkeypatch.setenv("SELFEVAL_OTLP_ENDPOINT", "http://from-env:1234")
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-env:9999")
     result = facade.init(project="p", instrument=[])
     assert result.endpoint == "http://from-env:1234"
 
 
 def test_endpoint_resolution_otel_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("BOOTSTRAP_OTLP_ENDPOINT", raising=False)
+    monkeypatch.delenv("SELFEVAL_OTLP_ENDPOINT", raising=False)
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-env:9999")
     result = facade.init(project="p", instrument=[])
     assert result.endpoint == "http://otel-env:9999"
 
 
 def test_no_endpoint_emits_warning(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("BOOTSTRAP_OTLP_ENDPOINT", raising=False)
+    monkeypatch.delenv("SELFEVAL_OTLP_ENDPOINT", raising=False)
     monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
     result = facade.init(project="p", instrument=[])
     assert result.endpoint is None
@@ -88,10 +88,10 @@ def test_shutdown_resets_state() -> None:
 
 
 def test_top_level_init_and_shutdown_proxies() -> None:
-    import bootstrap
+    import selfeval
 
-    result = bootstrap.init(project="proj1", instrument=[])
+    result = selfeval.init(project="proj1", instrument=[])
     assert result.project == "proj1"
-    assert bootstrap.is_initialized()
-    bootstrap.shutdown()
-    assert not bootstrap.is_initialized()
+    assert selfeval.is_initialized()
+    selfeval.shutdown()
+    assert not selfeval.is_initialized()

@@ -1,7 +1,7 @@
 # Example experiment spec (canon §22).
 #
 # Run it with:
-#   bootstrap run evals/experiments/example_pingpong.yaml \
+#   selfeval run evals/experiments/example_pingpong.yaml \
 #       --workspace ws_01HZZZZZZZZZZZZZZZZZZZZZZZ --no-persist
 #
 # The agent entrypoint below ships in this repo for the test suite; in
@@ -46,7 +46,7 @@ experiment:
     metrics:
       - pass@1
   # Opt into the continuous error-analysis loop (design §9). When an iteration's
-  # fail rate clears the threshold, bootstrap stages a bundle and the bundled
+  # fail rate clears the threshold, selfeval stages a bundle and the bundled
   # `error-analysis` skill can run `analyze pull` → code → `analyze push`.
   error_analysis:
     enabled: true
@@ -60,4 +60,4 @@ dataset:
   cases_path: ../datasets/pingpong.jsonl
 
 agent:
-  entrypoint: bootstrap.examples.pingpong:run
+  entrypoint: selfeval.examples.pingpong:run

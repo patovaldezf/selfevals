@@ -4,13 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from bootstrap._internal.hashing import bytes_hash
-from bootstrap.storage.errors import (
+from selfeval._internal.hashing import bytes_hash
+from selfeval.storage.errors import (
     IntegrityViolationError,
     ObjectNotFoundError,
     PointerHashMismatchError,
 )
-from bootstrap.storage.filesystem import (
+from selfeval.storage.filesystem import (
     FilesystemObjectStore,
     make_pointer,
     parse_pointer,
@@ -103,6 +103,18 @@ def test_clear_workspace(tmp_path: Path) -> None:
     store.clear_workspace("ws_a")
     assert not store.exists(p_a)
     assert store.exists(p_b)
+
+
+@pytest.mark.parametrize("bad_workspace", ["../escape", "ws/escape", "ws\\escape", "ws:escape"])
+def test_workspace_id_cannot_escape_store_root(tmp_path: Path, bad_workspace: str) -> None:
+    store = FilesystemObjectStore(tmp_path)
+    with pytest.raises(ValueError):
+        store.put(bad_workspace, "k", b"data")
+    with pytest.raises(ValueError):
+        make_pointer(bad_workspace, bytes_hash(b"data"))
+    with pytest.raises(ValueError):
+        store.clear_workspace(bad_workspace)
+    assert not (tmp_path.parent / "escape").exists()
 
 
 @pytest.mark.parametrize(

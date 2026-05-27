@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Web API surface (`python -m bootstrap.api`). Optional — the core loop
+# Web API surface (`python -m selfeval.api`). Optional — the core loop
 # never imports these; api/* defers the FastAPI import to call time.
 web = [
     "fastapi>=0.110,<1",
@@ -50,13 +50,13 @@ all = [
 ]
 
 [project.scripts]
-bootstrap = "bootstrap.cli.main:main"
+selfeval = "selfeval.cli.main:main"
 
 [project.urls]
-Homepage = "https://github.com/patovaldezf-berkeley/boostrap"
-Repository = "https://github.com/patovaldezf-berkeley/boostrap"
-Changelog = "https://github.com/patovaldezf-berkeley/boostrap/blob/main/CHANGELOG.md"
-Issues = "https://github.com/patovaldezf-berkeley/boostrap/issues"
+Homepage = "https://github.com/patovaldezf-berkeley/selfeval"
+Repository = "https://github.com/patovaldezf-berkeley/selfeval"
+Changelog = "https://github.com/patovaldezf-berkeley/selfeval/blob/main/CHANGELOG.md"
+Issues = "https://github.com/patovaldezf-berkeley/selfeval/issues"
 
 [build-system]
 requires = ["hatchling"]
@@ -68,7 +68,7 @@ build-backend = "hatchling.build"
 # needs the package source plus the material that lets a consumer build,
 # test, and understand it.
 include = [
-    "src/bootstrap",
+    "src/selfeval",
     "tests",
     "docs",
     "evals",
@@ -87,13 +87,16 @@ exclude = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/bootstrap"]
+packages = ["src/selfeval"]
 # Ship the bundled agent skills (mirrors FastAPI's `.agents/skills/`
-# convention) so `pip install bootstrap` makes them discoverable. They live
+# convention) so `pip install selfeval` makes them discoverable. They live
 # under a dot-directory inside the package; `artifacts` overrides hatchling's
 # default exclusion of dotfiles without double-including (a `force-include`
 # here duplicates the entry, since `packages` already globs the tree).
-artifacts = ["src/bootstrap/.agents/**"]
+artifacts = [
+    "src/selfeval/.agents/**",
+    "src/selfeval/examples/evals/**",
+]
 
 [dependency-groups]
 dev = [
@@ -102,6 +105,11 @@ dev = [
     "ruff>=0.5,<1",
     "mypy>=1.10,<2",
     "types-pyyaml>=6,<7",
+    "fastapi>=0.110,<1",
+    "uvicorn>=0.29,<1",
+    "opentelemetry-sdk>=1.25,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.25,<2",
+    "opentelemetry-proto>=1.25,<2",
     "httpx>=0.27,<1",  # fastapi.testclient.TestClient backend, used by tests/api
     "pytest-asyncio>=0.23,<1",  # runs @pytest.mark.asyncio tests (tests/api/test_broker)
     "build>=1.2,<2",  # PEP 517 frontend for `python -m build` (sdist + wheel)
@@ -131,7 +139,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["N802", "N803"]  # test fn names can be permissive
-"src/bootstrap/api/**" = ["B008"]  # FastAPI Depends(...) in defaults is idiomatic
+"src/selfeval/api/**" = ["B008"]  # FastAPI Depends(...) in defaults is idiomatic
 
 [tool.mypy]
 python_version = "3.12"
@@ -141,7 +149,7 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 disallow_any_unimported = true
 no_implicit_reexport = true
-files = ["src/bootstrap"]
+files = ["src/selfeval"]
 
 [[tool.mypy.overrides]]
 # uvicorn is only present with the [web] extra; api/__main__ imports it under

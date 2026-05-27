@@ -5,8 +5,8 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from bootstrap.schemas.enums import GraderCardState, GroundTruthMethod
-from bootstrap.schemas.grader_card import (
+from selfeval.schemas.enums import GraderCardState, GroundTruthMethod
+from selfeval.schemas.grader_card import (
     CalibrationMetrics,
     CalibrationThresholds,
     GraderCard,

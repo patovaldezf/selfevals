@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from bootstrap.runner.adapters import (
+from selfeval.runner.adapters import (
     AdapterError,
     AdapterRequest,
     AdapterResponse,
@@ -57,9 +57,6 @@ def test_embedded_rejects_wrong_return_type() -> None:
     with pytest.raises(AdapterError, match="expected AdapterResponse"):
         EmbeddedAdapter(fn).invoke(_req())
 
-
-# --- CliCommandAdapter ---
-
 _ECHO_SCRIPT = """
 import json, sys
 req = json.loads(sys.stdin.read())
@@ -104,9 +101,6 @@ def test_cli_adapter_rejects_invalid_json(tmp_path: Path) -> None:
 def test_cli_adapter_requires_command() -> None:
     with pytest.raises(ValueError):
         CliCommandAdapter([])
-
-
-# --- HttpEndpointAdapter (use a stdlib loopback HTTPServer) ---
 
 
 def test_http_adapter_roundtrip(tmp_path: Path) -> None:

@@ -12,17 +12,17 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from bootstrap.analysis import build_bundle, ingest_result
-from bootstrap.analysis.ingest import AnalysisIngestError
-from bootstrap.analysis.schemas import (
+from selfeval.analysis import build_bundle, ingest_result
+from selfeval.analysis.ingest import AnalysisIngestError
+from selfeval.analysis.schemas import (
     AnalysisResult,
     Assignment,
     Hypothesis,
     ProposedMode,
 )
-from bootstrap.schemas.enums import FailureModeStatus, SandboxMode, TraceState
-from bootstrap.schemas.failure_mode import FailureMode
-from bootstrap.schemas.trace import (
+from selfeval.schemas.enums import FailureModeStatus, SandboxMode, TraceState
+from selfeval.schemas.failure_mode import FailureMode
+from selfeval.schemas.trace import (
     AgentSnapshotRef,
     EnvironmentInfo,
     FinalState,
@@ -31,8 +31,8 @@ from bootstrap.schemas.trace import (
     RunInfo,
     Trace,
 )
-from bootstrap.storage.seed import seed_workspace
-from bootstrap.storage.sqlite import SQLiteStorage
+from selfeval.storage.seed import seed_workspace
+from selfeval.storage.sqlite import SQLiteStorage
 
 T0 = datetime(2026, 5, 25, 12, 0, 0, tzinfo=UTC)
 EXP = "exp_1"
@@ -49,8 +49,8 @@ def _failed_trace(ws: str, *, run_id: str, with_message: bool = True) -> Trace:
                 provider="anthropic",
                 model="claude-sonnet-4-6",
                 provider_metadata={
-                    "bootstrap.messages_in": [{"role": "user", "content": "precio del X?"}],
-                    "bootstrap.messages_out": [{"role": "assistant", "content": "cuesta $499"}],
+                    "selfeval.messages_in": [{"role": "user", "content": "what is X?"}],
+                    "selfeval.messages_out": [{"role": "assistant", "content": "X costs $499"}],
                 },
             )
         )
@@ -86,9 +86,6 @@ def _ws(st: SQLiteStorage) -> str:
     return str(row[0])
 
 
-# --- pull -------------------------------------------------------------------
-
-
 def test_bundle_includes_failed_traces_with_transcript(storage: SQLiteStorage) -> None:
     ws = _ws(storage)
     with storage.open(ws) as scope:
@@ -97,7 +94,7 @@ def test_bundle_includes_failed_traces_with_transcript(storage: SQLiteStorage) -
     assert len(bundle.traces) == 1
     bt = bundle.traces[0]
     assert bt.grade.label == "fail"
-    assert [m.content for m in bt.transcript] == ["precio del X?", "cuesta $499"]
+    assert [m.content for m in bt.transcript] == ["what is X?", "X costs $499"]
 
 
 def test_bundle_excludes_passed_traces(storage: SQLiteStorage) -> None:
@@ -108,9 +105,6 @@ def test_bundle_excludes_passed_traces(storage: SQLiteStorage) -> None:
         scope.put_entity(passed)
     bundle = build_bundle(storage, workspace_id=ws, experiment_id=EXP)
     assert bundle.traces == []
-
-
-# --- push: invariants -------------------------------------------------------
 
 
 def test_assignment_xor_enforced_on_wire_model() -> None:
@@ -149,7 +143,7 @@ def test_ingest_creates_candidate_and_stamps_trace(storage: SQLiteStorage) -> No
                 trace_id=trace.id,
                 new_mode_slug="invented_price",
                 open_note="quoted $499 with no catalog",
-                quote="cuesta $499",
+                quote="X costs $499",
             )
         ],
         hypotheses=[

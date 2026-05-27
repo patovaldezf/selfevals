@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from bootstrap.cli.main import app
-from bootstrap.schemas.enums import SandboxMode, TraceState
-from bootstrap.schemas.trace import (
+from selfeval.cli.main import app
+from selfeval.schemas.enums import SandboxMode, TraceState
+from selfeval.schemas.trace import (
     AgentSnapshotRef,
     EnvironmentInfo,
     FinalState,
@@ -19,7 +19,7 @@ from bootstrap.schemas.trace import (
     RunInfo,
     Trace,
 )
-from bootstrap.storage.sqlite import SQLiteStorage
+from selfeval.storage.sqlite import SQLiteStorage
 
 EXP = "exp_cli"
 
@@ -120,4 +120,4 @@ def test_push_rejects_empty_stdin(tmp_path: Path, capsys: pytest.CaptureFixture[
     rc, out = _capture(capsys, ["--db", str(db), "init", "w", "--name", "W"])
     ws = out.split("workspace id=")[1].split()[0]
     rc, _ = _capture(capsys, ["--db", str(db), "analyze", "push", ws, EXP], stdin="   ")
-    assert rc == 2  # BootstrapUserError → exit 2
+    assert rc == 2  # SelfEvalUserError → exit 2

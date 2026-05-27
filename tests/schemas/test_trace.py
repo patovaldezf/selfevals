@@ -6,8 +6,8 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from bootstrap.schemas.enums import SandboxMode, StopReason, ToolCallStatus, TraceState
-from bootstrap.schemas.trace import (
+from selfeval.schemas.enums import SandboxMode, StopReason, ToolCallStatus, TraceState
+from selfeval.schemas.trace import (
     TRACE_SCHEMA_VERSION,
     AgentSnapshotRef,
     AgentTurnSpan,
@@ -35,7 +35,7 @@ T0 = datetime(2026, 5, 16, 12, 0, 0, tzinfo=UTC)
 
 def _env(**overrides: Any) -> EnvironmentInfo:
     base: dict[str, Any] = {
-        "framework_version": "bootstrap/0.0.1",
+        "framework_version": "selfeval/0.0.1",
         "runtime": "python-3.12",
         "sandbox": SandboxMode.MOCK,
         "started_at": T0,
@@ -81,7 +81,7 @@ def test_token_total_must_cover_components() -> None:
 
 
 def test_token_total_can_exceed_sum_for_provider_quirks() -> None:
-    # Provider may add headers or sum differently — bootstrap accepts >=.
+    # Provider may add headers or sum differently — selfeval accepts >=.
     tb = TokenBreakdown(input=10, output=5, reasoning=3, total=20)
     assert tb.total == 20
 

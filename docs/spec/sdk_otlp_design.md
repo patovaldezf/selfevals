@@ -12,11 +12,11 @@ This doc translates §F.2.1 of `operational_spec_v0.1.md` ("plug-and-play SDK") 
 
 Two halves that talk to each other:
 
-**(a) The user-side SDK** — installed via `pip install bootstrap` in the user's agent repo. One call activates everything:
+**(a) The user-side SDK** — installed via `pip install selfeval` in the user's agent repo. One call activates everything:
 
 ```python
-import bootstrap
-bootstrap.init(project="support_bot")
+import selfeval
+selfeval.init(project="support_bot")
 
 from anthropic import Anthropic
 client = Anthropic()
@@ -27,13 +27,13 @@ That single `init()` call must:
 - Configure an OpenTelemetry `TracerProvider`.
 - Auto-detect which provider SDKs the user has installed (`anthropic`, `openai`, `boto3`, `google.cloud.aiplatform`, `cohere`, `langchain`, `langgraph`, `crewai`, `llama_index`, `dspy`).
 - For each detected SDK, call the matching `openinference-instrumentation-*` `Instrumentor().instrument(tracer_provider=...)`.
-- Pick the OTLP exporter target: env var `BOOTSTRAP_OTLP_ENDPOINT` (set by `bootstrap run` for the current process) → fall back to `OTEL_EXPORTER_OTLP_ENDPOINT` → fall back to disabled-with-warning.
+- Pick the OTLP exporter target: env var `SELFEVAL_OTLP_ENDPOINT` (set by `selfeval run` for the current process) → fall back to `OTEL_EXPORTER_OTLP_ENDPOINT` → fall back to disabled-with-warning.
 - Be idempotent (calling `init()` twice is a no-op the second time).
 
-**(b) The framework-side OTLP receiver** — embedded in `bootstrap run`. Owns the lifecycle:
+**(b) The framework-side OTLP receiver** — embedded in `selfeval run`. Owns the lifecycle:
 - Picks a free localhost port at startup.
 - Binds an OTLP/HTTP receiver at `POST /v1/traces` (protobuf body).
-- Exports `BOOTSTRAP_OTLP_ENDPOINT=http://127.0.0.1:<port>` into the child-process env before invoking the user's agent.
+- Exports `SELFEVAL_OTLP_ENDPOINT=http://127.0.0.1:<port>` into the child-process env before invoking the user's agent.
 - Receives OTLP `ResourceSpans`, decodes them, and bridges each span into the active `TraceRecorder`.
 - Drains pending spans on iteration completion (flush window) before letting the `OptimizationLoop` close the `Trace`.
 - Shuts down cleanly when the run finishes.
@@ -48,15 +48,15 @@ That single `init()` call must:
 |---|---|---|
 | Instrumentation source | **OpenInference** (Arize) | OpenLLMetry, custom wrappers, LiteLLM, vLLM, Helicone |
 | Wire format | **OTLP/HTTP + protobuf** | OTLP/gRPC (heavier dep), JSON OTLP (no SDK exporter ships it well) |
-| Receiver host | **Embedded in `bootstrap run`** | External collector (more moving parts), file-tail (loses real-time) |
-| User DX | **`bootstrap.init()`** (one line, monkey-patches at install time) | `wrap_anthropic()` per-client (breaks plug-and-play), env-var only (only LangChain) |
-| Deps | **Optional extras** (`pip install bootstrap[telemetry]`) | All-in (50MB), nothing (forces manual config) |
+| Receiver host | **Embedded in `selfeval run`** | External collector (more moving parts), file-tail (loses real-time) |
+| User DX | **`selfeval.init()`** (one line, monkey-patches at install time) | `wrap_anthropic()` per-client (breaks plug-and-play), env-var only (only LangChain) |
+| Deps | **Optional extras** (`pip install selfeval[telemetry]`) | All-in (50MB), nothing (forces manual config) |
 
 Rationale: see the research turn in the chat — Traceloop, Weave and AgentOps all use this exact pattern (`init()` + import-time monkey-patch via `wrapt`). OpenInference is preferred over OpenLLMetry because Arize keeps the Claude Agent SDK / LangGraph / CrewAI Instrumentors current and the semconv is closer to the official OTel GenAI conventions.
 
 ### Failure modes we're consciously absorbing
 
-- **SDK upgrades break monkey-patches.** Mitigation: pin OpenInference upgrades in CI, run a daily smoke against the latest `anthropic`/`openai` SDKs, ship a `bootstrap doctor` command that detects "instrumented version != SDK version" mismatch.
+- **SDK upgrades break monkey-patches.** Mitigation: pin OpenInference upgrades in CI, run a daily smoke against the latest `anthropic`/`openai` SDKs, ship a `selfeval doctor` command that detects "instrumented version != SDK version" mismatch.
 - **Double instrumentation** if the user also runs Langfuse/LangSmith. Mitigation: detect their TracerProvider, log a clear warning, **do not** install our Instrumentors on top.
 - **Streaming spans** get the wrong duration with naive patches. OpenInference handles this; we trust it.
 - **Bedrock SigV4** isn't patchable like a normal HTTP client. OpenInference patches `boto3.client('bedrock-runtime').invoke_model` directly. Works.
@@ -66,10 +66,10 @@ Rationale: see the research turn in the chat — Traceloop, Weave and AgentOps a
 ## 3. New top-level package layout
 
 ```
-src/bootstrap/
+src/selfeval/
 ├── sdk/                              # NEW — user-installed package surface
 │   ├── __init__.py                   # re-exports init, shutdown, current_span
-│   ├── facade.py                     # bootstrap.init() — the one-liner
+│   ├── facade.py                     # selfeval.init() — the one-liner
 │   ├── auto_instrument.py            # detect+install OpenInference Instrumentors
 │   ├── exporter.py                   # OTLP HTTP exporter wired to our endpoint
 │   └── context.py                    # ContextVar for iteration_id / project
@@ -80,7 +80,7 @@ src/bootstrap/
 
 ---
 
-## 4. `bootstrap.init()` — exact signature & semantics
+## 4. `selfeval.init()` — exact signature & semantics
 
 ```python
 def init(
@@ -104,11 +104,11 @@ Auto-detection (`instrument=None`): introspect `sys.modules`. If `anthropic` is 
 
 Endpoint resolution order:
 1. Explicit `endpoint=` arg.
-2. `BOOTSTRAP_OTLP_ENDPOINT` env var (set by `bootstrap run`).
+2. `SELFEVAL_OTLP_ENDPOINT` env var (set by `selfeval run`).
 3. `OTEL_EXPORTER_OTLP_ENDPOINT` env var (standard OTel).
 4. None → SDK initializes the TracerProvider with a no-op exporter and logs a warning.
 
-Idempotency: keep a module-level `_initialized` flag. Second call with same `project` returns the first `InitResult`. Second call with different `project` raises `BootstrapAlreadyInitialized`.
+Idempotency: keep a module-level `_initialized` flag. Second call with same `project` returns the first `InitResult`. Second call with different `project` raises `SelfEvalAlreadyInitialized`.
 
 ---
 
@@ -137,11 +137,11 @@ class RunContext:
 
 **Why not gRPC**: stdlib doesn't ship a gRPC server, and we don't want a hard `grpcio` dep. The OTel HTTP exporter is officially supported and ~10kB.
 
-**Concurrency model**: one OTLP receiver instance per `bootstrap run` process. Multiple iterations share the receiver — `RunContext` is what isolates per-iteration spans. The SDK side tags every span with `bootstrap.iteration_id` (a resource attribute set from `BOOTSTRAP_ITERATION_ID` env or our SDK context var).
+**Concurrency model**: one OTLP receiver instance per `selfeval run` process. Multiple iterations share the receiver — `RunContext` is what isolates per-iteration spans. The SDK side tags every span with `selfeval.iteration_id` (a resource attribute set from `SELFEVAL_ITERATION_ID` env or our SDK context var).
 
 ---
 
-## 6. Span translation — OpenInference → bootstrap schema
+## 6. Span translation — OpenInference → selfeval schema
 
 OpenInference uses the OpenTelemetry GenAI semconv (`gen_ai.*`) plus their own `openinference.*` extensions. Map them to our existing builders in `trace/recorder.py`:
 
@@ -174,14 +174,14 @@ def cmd_run(args):
     callable_obj = resolve_agent_callable(spec.agent)
     
     with start_receiver(recorder_factory=...) as handle:
-        os.environ["BOOTSTRAP_OTLP_ENDPOINT"] = handle.endpoint
-        os.environ["BOOTSTRAP_PROJECT"] = spec.experiment.name
+        os.environ["SELFEVAL_OTLP_ENDPOINT"] = handle.endpoint
+        os.environ["SELFEVAL_PROJECT"] = spec.experiment.name
         # ... existing OptimizationLoop wiring ...
         # For each iteration, the loop opens a RunContext from `handle`
         # and the wrapped adapter calls user code under that context.
 ```
 
-For `EmbeddedAdapter` (in-process): the env var alone is enough; the user's `bootstrap.init()` picks it up the first time their code runs. Spans flow over HTTP to our localhost endpoint even though everything's in one process — that's fine, latency is microseconds.
+For `EmbeddedAdapter` (in-process): the env var alone is enough; the user's `selfeval.init()` picks it up the first time their code runs. Spans flow over HTTP to our localhost endpoint even though everything's in one process — that's fine, latency is microseconds.
 
 For `CliCommandAdapter` (out-of-process): the env vars propagate through `subprocess.run(env=...)`.
 
@@ -213,11 +213,11 @@ langchain = ["telemetry", "openinference-instrumentation-langchain>=0.1"]
 langgraph = ["telemetry", "openinference-instrumentation-langgraph>=0.1"]
 crewai = ["telemetry", "openinference-instrumentation-crewai>=0.1"]
 all = [
-    "bootstrap[anthropic,openai,bedrock,vertex,langchain,langgraph,crewai]",
+    "selfeval[anthropic,openai,bedrock,vertex,langchain,langgraph,crewai]",
 ]
 ```
 
-Default install (`pip install bootstrap`) stays ~2MB. `pip install bootstrap[anthropic]` adds ~5MB. `pip install bootstrap[all]` ~30MB.
+Default install (`pip install selfeval`) stays ~2MB. `pip install selfeval[anthropic]` adds ~5MB. `pip install selfeval[all]` ~30MB.
 
 ---
 
@@ -230,20 +230,20 @@ Default install (`pip install bootstrap`) stays ~2MB. `pip install bootstrap[ant
 - `runner/otlp_to_recorder.py`: golden test for each Instrumentor's span shape (Anthropic messages, OpenAI chat, Bedrock invoke, LangChain chain).
 
 **Integration**:
-- E2E `bootstrap run example_anthropic.yaml` with a real (mocked) Anthropic call. Assert: TraceRecorder captured 1 LLMCallSpan with the right provider/model/tokens.
-- Out-of-process (`CliCommandAdapter` invoking `python -c "import bootstrap; bootstrap.init(...); ..."`): assert spans land in the receiver.
-- Double-init detection: call `bootstrap.init(project='a')` then `bootstrap.init(project='b')` → assert raise.
+- E2E `selfeval run example_anthropic.yaml` with a real (mocked) Anthropic call. Assert: TraceRecorder captured 1 LLMCallSpan with the right provider/model/tokens.
+- Out-of-process (`CliCommandAdapter` invoking `python -c "import selfeval; selfeval.init(...); ..."`): assert spans land in the receiver.
+- Double-init detection: call `selfeval.init(project='a')` then `selfeval.init(project='b')` → assert raise.
 
 **Smoke / dogfood**:
-- Wire OpenInference against the real `anthropic` SDK with a sandboxed API key, verify the agent's `messages.create` call produces a span we can read back via `bootstrap report`.
+- Wire OpenInference against the real `anthropic` SDK with a sandboxed API key, verify the agent's `messages.create` call produces a span we can read back via `selfeval report`.
 
 ---
 
 ## 10. Out of scope (for this design)
 
 - **Sampling strategies** beyond a global `sample_rate`. Tail-based sampling lives in a later iteration.
-- **Persistent OTel collector** (Tempo, Jaeger, etc.). Users who want that point OpenInference at their own collector and use bootstrap purely for the loop side.
-- **Multi-process span correlation** beyond `BOOTSTRAP_ITERATION_ID` env propagation. Trace stitching across actual distributed systems is post-MVP.
+- **Persistent OTel collector** (Tempo, Jaeger, etc.). Users who want that point OpenInference at their own collector and use selfeval purely for the loop side.
+- **Multi-process span correlation** beyond `SELFEVAL_ITERATION_ID` env propagation. Trace stitching across actual distributed systems is post-MVP.
 - **Web UI rendering of these spans.** That belongs in the web session (see web prompt). This doc only delivers the capture pipe and the bridge to `TraceRecorder` — what the web does with them is its own scope.
 - **PII redaction at the SDK side** before spans leave the user's process. Pending per user feedback.
 
@@ -253,16 +253,16 @@ Default install (`pip install bootstrap`) stays ~2MB. `pip install bootstrap[ant
 
 Done when, on a clean machine:
 
-1. `pip install bootstrap[anthropic]` succeeds and adds <10MB.
+1. `pip install selfeval[anthropic]` succeeds and adds <10MB.
 2. Following snippet works without any other config:
    ```python
-   import bootstrap
-   bootstrap.init(project="demo")
+   import selfeval
+   selfeval.init(project="demo")
    from anthropic import Anthropic
    r = Anthropic().messages.create(model="claude-sonnet-4-6", max_tokens=50, messages=[{"role":"user","content":"hi"}])
    ```
-   …and produces no errors when `BOOTSTRAP_OTLP_ENDPOINT` is unset (warning only).
-3. `bootstrap run evals/experiments/example_anthropic.yaml` captures one LLMCallSpan per agent call, persisted into the existing Trace schema, queryable via `bootstrap report`.
+   …and produces no errors when `SELFEVAL_OTLP_ENDPOINT` is unset (warning only).
+3. `selfeval run evals/experiments/example_anthropic.yaml` captures one LLMCallSpan per agent call, persisted into the existing Trace schema, queryable via `selfeval report`.
 4. All 390 existing tests still pass. New tests bring total to >430.
 5. `mypy --strict` clean, `ruff` clean.
 6. No new co-author trailers on commits.

@@ -1322,14 +1322,19 @@ web = [
 [package.dev-dependencies]
 dev = [
     { name = "build" },
+    { name = "fastapi" },
     { name = "httpx" },
     { name = "mypy" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-proto" },
+    { name = "opentelemetry-sdk" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "ruff" },
     { name = "twine" },
     { name = "types-pyyaml" },
+    { name = "uvicorn" },
 ]
 
 [package.metadata]
@@ -1360,14 +1365,19 @@ provides-extras = ["web", "telemetry", "anthropic", "openai", "bedrock", "vertex
 [package.metadata.requires-dev]
 dev = [
     { name = "build", specifier = ">=1.2,<2" },
+    { name = "fastapi", specifier = ">=0.110,<1" },
     { name = "httpx", specifier = ">=0.27,<1" },
     { name = "mypy", specifier = ">=1.10,<2" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.25,<2" },
+    { name = "opentelemetry-proto", specifier = ">=1.25,<2" },
+    { name = "opentelemetry-sdk", specifier = ">=1.25,<2" },
     { name = "pytest", specifier = ">=8,<9" },
     { name = "pytest-asyncio", specifier = ">=0.23,<1" },
     { name = "pytest-cov", specifier = ">=5,<6" },
     { name = "ruff", specifier = ">=0.5,<1" },
     { name = "twine", specifier = ">=5,<7" },
     { name = "types-pyyaml", specifier = ">=6,<7" },
+    { name = "uvicorn", specifier = ">=0.29,<1" },
 ]
 
 [[package]]

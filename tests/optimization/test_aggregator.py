@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from bootstrap.graders.base import GradeLabel
-from bootstrap.optimization.aggregator import CaseOutcome, aggregate_iteration
+from selfeval.graders.base import GradeLabel
+from selfeval.optimization.aggregator import CaseOutcome, aggregate_iteration
 
 
 def _outcome(
