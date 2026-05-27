@@ -9,9 +9,10 @@ configuration to keep. CLI-first, multi-tenant from day one, and agnostic
 to the agent framework underneath — selfevals never calls your provider;
 your agent does, and selfevals grades the result.
 
-> Status: **v0.2.1 — runtime functional.** The CLI works end-to-end:
+> Status: **v0.3.0 — runtime functional.** The CLI works end-to-end:
 > load an experiment spec → run cases through an adapter → grade traces →
-> persist iterations → render a report. See [`docs/spec/`](docs/spec/) for
+> persist iterations → render a report. Adapters and graders are async,
+> with concurrent repetitions and grading. See [`docs/spec/`](docs/spec/) for
 > the canonical and operational specs that drive design, and
 > [`docs/STATUS.md`](docs/STATUS.md) for an honest what-works / what-doesn't
 > snapshot.
@@ -68,7 +69,7 @@ The five nouns you'll meet everywhere:
 
 | Term | What it is |
 |------|------------|
-| **EvalCase** | One test: an input, the expected outcome, and which graders apply. |
+| **EvalCase** | One test: an input (a validated multi-turn `messages` conversation, or any opaque payload), the expected outcome, and which graders apply. |
 | **Adapter** | The bridge to your agent — embedded callable, CLI subprocess, or HTTP endpoint. selfevals calls *it*, never the provider directly. |
 | **Grader** | Scores a trace. `DeterministicGrader` (rules: substrings, tools, JSON schema) or `LLMJudgeGrader` (a rubric-driven judge). |
 | **Proposer** | Picks the next parameter configuration to try — `manual`, `grid`, or `random`. |

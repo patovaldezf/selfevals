@@ -7,7 +7,49 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-27
+
+### Added
+
+- **Validated multi-turn conversation input.** When `EvalCase.input`
+  carries a `messages` key it is validated as a typed conversation:
+  non-empty message list, roles from a new `MessageRole` enum
+  (system/user/assistant/tool), content as a string or a list of
+  content blocks, multimodal-aware via the `Modality` enum. New
+  `Message`, `ContentBlock`, and `ConversationInput` models, plus
+  `EvalCase.conversation()` / `EvalCase.is_conversation()` accessors.
+  Inputs without a `messages` key remain opaque payloads, so the
+  field stays a plain JSON dict that adapters receive verbatim.
+- **Async-first evaluators.** `AgentAdapter.invoke` and `Grader.grade`
+  are now async. The executor runs repetitions concurrently and the
+  optimization loop grades concurrently, each bounded by a
+  configurable semaphore (`concurrency` / `grade_concurrency`,
+  default 8). `EmbeddedAdapter` accepts sync or async callables,
+  `CliCommandAdapter` uses an asyncio subprocess, and
+  `HttpEndpointAdapter` is native async on httpx. `asyncio.run` is
+  confined to the CLI edge.
+
+### Changed
+
+- `httpx` is now a runtime dependency (the default HTTP adapter
+  transport), not just a dev dependency.
+
+### Documentation
+
+- STATUS.md and README banners read v0.3.0; multi-turn input and async
+  evaluators moved into "What works"; test counts refreshed (default
+  surface 559, full 597); roadmap records both as shipped in 0.3.0.
+
 ## [0.2.2] - 2026-05-27
+
+### Documentation
+
+- STATUS.md and README banners now read v0.2.2 (they had lagged at
+  v0.2.1 despite the 0.2.2 release). Refreshed the STATUS body against
+  the current tree: test counts (default surface 481 -> 528, full
+  surface 566, extras-gated 9 -> 24), and the forward-looking
+  "What v0.2 will probably contain" section became a "Roadmap" that
+  separates what shipped in 0.2.x from what remains on the backlog.
 
 ### Documentation
 

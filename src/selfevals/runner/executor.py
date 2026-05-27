@@ -6,11 +6,13 @@ The Executor's job is small and load-bearing:
 - Mock tool calls per SandboxPolicy.
 - Return per-repetition results plus the assembled Traces.
 
-Graders are NOT run here — they read the Traces later (PR 5).
+Repetitions run concurrently (bounded by a semaphore); graders run
+afterward over the assembled Traces, not here.
 """
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -74,22 +76,26 @@ class Executor:
         framework_version: str = "selfevals/0.0.4",
         runtime: str = "python-3.12",
         payload_router: PayloadRouter | None = None,
+        concurrency: int = 8,
     ) -> None:
         if not workspace_id:
             raise ValueError("workspace_id must be non-empty")
+        if concurrency < 1:
+            raise ValueError("concurrency must be >= 1")
         self._adapter = adapter
         self._sandbox = sandbox
         self._workspace_id = workspace_id
         self._framework_version = framework_version
         self._runtime = runtime
         self._payload_router = payload_router
+        self._concurrency = concurrency
         sandbox.ensure_runnable()
 
     @property
     def sandbox(self) -> SandboxPolicy:
         return self._sandbox
 
-    def run_case(
+    async def run_case(
         self,
         case: EvalCase,
         *,
@@ -101,28 +107,34 @@ class Executor:
     ) -> CaseRun:
         if repetitions < 1:
             raise ValueError("repetitions must be >= 1")
-        results: list[RepetitionResult] = []
         agent_ref = self._agent_ref()
-        for rep in range(repetitions):
-            run_id = new_prefixed_id("run")
+        overrides = parameter_overrides or {}
+        sem = asyncio.Semaphore(self._concurrency)
+
+        async def _bounded(rep: int) -> RepetitionResult:
             run_info = RunInfo(
-                run_id=run_id,
+                run_id=new_prefixed_id("run"),
                 experiment_id=experiment_id,
                 iteration=iteration,
                 variant_id=variant_id,
                 eval_case_id=case.id,
                 repetition=rep,
             )
-            result = self._run_single(
-                case=case,
-                run_info=run_info,
-                agent_ref=agent_ref,
-                parameter_overrides=parameter_overrides or {},
-            )
-            results.append(result)
-        return CaseRun(case_id=case.id, repetitions=results)
+            async with sem:
+                return await self._run_single(
+                    case=case,
+                    run_info=run_info,
+                    agent_ref=agent_ref,
+                    parameter_overrides=overrides,
+                )
 
-    def _run_single(
+        # gather preserves input order, so results stay ordered by rep index.
+        # No return_exceptions: a non-AdapterError propagates (AdapterError is
+        # caught inside _run_single and recorded as RepetitionResult.error).
+        results = await asyncio.gather(*(_bounded(rep) for rep in range(repetitions)))
+        return CaseRun(case_id=case.id, repetitions=list(results))
+
+    async def _run_single(
         self,
         *,
         case: EvalCase,
@@ -156,7 +168,7 @@ class Executor:
         response: AdapterResponse | None = None
         with recorder, recorder.agent_turn(f"case:{case.name}"):
             try:
-                response = self._adapter.invoke(adapter_request)
+                response = await self._adapter.invoke(adapter_request)
             except AdapterError as exc:
                 error = str(exc)
                 recorder.add_error(
@@ -204,7 +216,9 @@ class Executor:
             )
             llm.provider_metadata = dict(response.provider_metadata)
         for tu in response.tool_uses:
-            side_effects = False  # placeholder until Tool registry is wired in PR 5/6
+            # The Tool registry does not yet annotate side-effects, so we treat
+            # every tool as side-effect-free for sandbox-mocking decisions.
+            side_effects = False
             sandboxed = self._sandbox.should_mock_tool(side_effects=side_effects)
             with recorder.tool_call(
                 tu.tool,
@@ -226,8 +240,8 @@ class Executor:
         )
 
     def _tools_allowed(self, case: EvalCase) -> list[str]:
-        # MVP: the case may declare required + forbidden tools. Pass the
-        # required set through. Tool registry intersection lands later.
+        # The case may declare required + forbidden tools; pass the required
+        # set through. Intersecting against a Tool registry is not wired yet.
         required = list(case.expected.required_tools)
         if self._sandbox.mode == self._sandbox.mode.MOCK:
             return required
