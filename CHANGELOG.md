@@ -7,6 +7,15 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Documentation
+
+- STATUS.md and README banners now read v0.2.2 (they had lagged at
+  v0.2.1 despite the 0.2.2 release). Refreshed the STATUS body against
+  the current tree: test counts (default surface 481 -> 528, full
+  surface 566, extras-gated 9 -> 24), and the forward-looking
+  "What v0.2 will probably contain" section is now a "Roadmap" that
+  separates what shipped in 0.2.x from what remains on the backlog.
+
 ## [0.2.2] - 2026-05-27
 
 ### Documentation

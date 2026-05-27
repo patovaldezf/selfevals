@@ -1,4 +1,4 @@
-# Status — v0.2.1
+# Status — v0.2.2
 
 This file is the honest snapshot of what selfevals can and cannot do
 today. Updated on every release; the CHANGELOG records what *changed*,
@@ -49,8 +49,9 @@ this file records what *is*.
 - `EvalCase.input` is `dict[str, Any]` — opaque. Conversation
   multi-turn evals will fit but the schema does not enforce shape.
 - `GradeResult` is flat: `label + score + reason + failure_modes`.
-  No `breakdown` for funnel-style multi-level scoring (planned for
-  v0.2 once seals dogfooding identifies the exact shape).
+  No `breakdown` for funnel-style multi-level scoring — deferred
+  until seals dogfooding pins down the exact shape (see the roadmap
+  section below).
 - Failure-mode counts now persist on
   `IterationMetrics.failure_mode_counts` (keyed by stable mode
   identity), so the compare/report tooling shows real data and
@@ -90,27 +91,41 @@ this file records what *is*.
   OpenAI, Bedrock) when their OTel adapters are installed via the
   `telemetry` extra. Without the extra, the SDK initializes as a
   no-op.
-- 9 tests under `tests/sdk/` and `tests/runner/test_otlp_receiver.py`
-  require `uv sync --extra telemetry` to pass.
+- 24 tests under `tests/sdk/` (18) and
+  `tests/runner/test_otlp_receiver.py` (6) require
+  `uv sync --extra telemetry` to pass.
 
 ## How to run the test suite cleanly
 
 ```bash
-# Default surface — 481 passed.
+# Default surface — 528 passed.
 uv sync && uv run pytest --ignore=tests/api --ignore=tests/sdk \
   --ignore=tests/runner/test_otlp_receiver.py
 
-# Full surface — install optional extras first.
+# Full surface — install optional extras first. 566 passed.
 uv sync --extra telemetry --extra web && uv run pytest
 ```
 
-## What v0.2 will probably contain
+## Roadmap
 
-The roadmap for v0.2 is driven by dogfooding against
+The roadmap is driven by dogfooding against
 [seals](../../../seals%20ideas/chat-repo/seals) — concretely,
 optimizing the system prompt of Valentina (the sales agent) against
-real scenarios from Supabase. The following items are predicted gaps
-that the dogfooding will confirm or refute:
+real scenarios from Supabase. As dogfooding reveals which gaps
+actually hurt, they graduate from backlog to release.
+
+### Shipped in 0.2.x
+
+- **Provider extras bundle the provider SDK** (0.2.1) — a single
+  `pip install selfevals[anthropic]` (or `[openai]`, etc.) pulls the
+  SDK *and* the tracing integration.
+- **OpenAI example** (`examples/hello_openai/`, 0.2.1) — an OpenAI
+  twin of the Anthropic example, with a deterministic fake fallback.
+- **Onboarding docs** (0.2.2) — rewritten README, `examples/README.md`
+  walk-through, expanded `CONTRIBUTING.md`, and the `bootstrap` ->
+  `selfevals` rename swept through the CLI, CI, and bundled skill.
+
+### Still on the backlog
 
 - Conversation multi-turn shape on `EvalCase.input`.
 - `breakdown: dict[str, Any]` on `GradeResult` for funnel-style scores.
@@ -121,6 +136,3 @@ that the dogfooding will confirm or refute:
 - Retries and timeout configuration on `HttpEndpointAdapter`.
 - A `serve` CLI that mounts the FastAPI app and the optimization
   loop concurrently.
-
-When dogfooding reveals which of these actually hurt, they become
-v0.2 features. The rest stays on the backlog.
