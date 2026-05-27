@@ -41,7 +41,11 @@ from selfevals.optimization.proposers import (
 )
 from selfevals.repo.loader import (
     AgentEntrypoint,
+    AgentSpec,
+    CliAgentSpec,
+    EmbeddedAgentSpec,
     ExperimentSpec,
+    HttpAgentSpec,
     LoaderError,
     resolve_agent_callable,
 )
@@ -51,7 +55,9 @@ from selfevals.runner.adapters import (
     AdapterRequest,
     AdapterResponse,
     AgentAdapter,
+    CliCommandAdapter,
     EmbeddedAdapter,
+    HttpEndpointAdapter,
 )
 from selfevals.runner.executor import Executor
 from selfevals.runner.sandbox import SandboxPolicy
@@ -283,7 +289,9 @@ def cmd_examples_copy(args: argparse.Namespace) -> int:
         print(f"  {path}")
     print("")
     print("Run:")
-    print(f"  selfevals run {target_root / 'evals' / 'experiments' / 'example_pingpong.yaml'} --no-persist")
+    print(
+        f"  selfevals run {target_root / 'evals' / 'experiments' / 'example_pingpong.yaml'} --no-persist"
+    )
     return 0
 
 
@@ -407,11 +415,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.persist_traces is not None:
         spec.experiment.run.persist_traces = args.persist_traces
 
-    try:
-        callable_obj = resolve_agent_callable(spec.agent)
-    except LoaderError as exc:
-        raise CommandError(str(exc)) from exc
-    adapter = _wrap_user_callable(callable_obj, spec.agent)
+    adapter = _build_adapter(spec.agent)
     proposer = _build_proposer(spec.experiment)
     registered_specs = _register_grader_specs(spec)
     try:
@@ -496,7 +500,7 @@ def _register_grader_specs(spec: ExperimentSpec) -> list[str]:
             registered.append(g_spec.name)
             continue
         if g_spec.type == "llm_judge":
-            entry = g_spec.judge_entrypoint or spec.agent
+            entry = g_spec.judge_entrypoint or _agent_entrypoint_for_judge(g_spec.name, spec.agent)
             try:
                 judge_callable = resolve_agent_callable(entry)
             except LoaderError as exc:
@@ -549,6 +553,50 @@ def _resolve_case_graders(cases: Sequence[object]) -> list[Grader]:
     # listing the registry contents — the user-facing error path for (c).
     _ = available_graders()  # cheap, also guarantees registry import side effects.
     return list(resolve_graders(referenced))
+
+
+def _build_adapter(agent: AgentSpec) -> AgentAdapter:
+    """Dispatch the transport-tagged agent spec to a concrete adapter.
+
+    This is the wiring point the loader defers to: importlib and adapter
+    construction happen here, not in the (side-effect-free) loader.
+
+    - embedded → resolve the callable and wrap it in `EmbeddedAdapter`.
+    - cli      → `CliCommandAdapter(command, env, timeout_seconds)`.
+    - http     → `HttpEndpointAdapter(url, headers, timeout_seconds)`.
+    """
+    if isinstance(agent, EmbeddedAgentSpec):
+        try:
+            callable_obj = resolve_agent_callable(agent.entrypoint)
+        except LoaderError as exc:
+            raise CommandError(str(exc)) from exc
+        return _wrap_user_callable(callable_obj, agent.entrypoint)
+    if isinstance(agent, CliAgentSpec):
+        kwargs: dict[str, object] = {"env": agent.env}
+        if agent.timeout_seconds is not None:
+            kwargs["timeout_seconds"] = agent.timeout_seconds
+        return CliCommandAdapter(agent.command, **kwargs)  # type: ignore[arg-type]
+    if isinstance(agent, HttpAgentSpec):
+        http_kwargs: dict[str, object] = {"headers": agent.headers}
+        if agent.timeout_seconds is not None:
+            http_kwargs["timeout_seconds"] = agent.timeout_seconds
+        return HttpEndpointAdapter(agent.url, **http_kwargs)  # type: ignore[arg-type]
+    raise CommandError(f"unsupported agent spec: {type(agent).__name__}")  # defensive
+
+
+def _agent_entrypoint_for_judge(grader_name: str, agent: AgentSpec) -> AgentEntrypoint:
+    """Resolve the judge fallback to the agent's entrypoint.
+
+    The `judge_entrypoint`-omitted fallback only makes sense for an
+    embedded agent — a cli/http agent has no in-process callable to reuse
+    as a judge. Surface a friendly error pointing the user at the fix.
+    """
+    if isinstance(agent, EmbeddedAgentSpec):
+        return agent.entrypoint
+    raise CommandError(
+        f"grader {grader_name!r} (llm_judge) has no `judge_entrypoint` and the agent is not "
+        f"embedded ({type(agent).__name__}); add an explicit `judge_entrypoint: 'mod:fn'`"
+    )
 
 
 def _wrap_user_callable(callable_obj: object, entrypoint: AgentEntrypoint) -> AgentAdapter:

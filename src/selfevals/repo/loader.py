@@ -8,7 +8,21 @@ shape checking. The loader's only jobs:
 
 1. Read YAML (and optional JSONL of cases).
 2. Hydrate `workspace_id` / generate `id` where missing.
-3. Resolve the agent entrypoint string into a callable on demand.
+3. Parse the `agent:` block into a typed, transport-tagged spec.
+
+The `agent:` block selects which adapter the CLI wires up. Two YAML
+shapes are accepted:
+
+- Legacy: `agent: {entrypoint: "mod:fn"}` → embedded callable.
+- Tagged: `agent: {type: embedded|cli|http, ...}`:
+    - `embedded` carries `entrypoint: "mod:fn"`.
+    - `cli` carries `command: [...]`, optional `env:`, `timeout_seconds:`.
+    - `http` carries `url: "..."`, optional `headers:`, `timeout_seconds:`.
+
+The loader stays import-side-effect-free: it only parses and validates
+shape. The real adapter construction (importlib, instantiating
+`CliCommandAdapter` / `HttpEndpointAdapter`) happens at the wiring point
+in `selfevals.cli.commands`.
 """
 
 from __future__ import annotations
@@ -46,6 +60,48 @@ class AgentEntrypoint:
 
 
 @dataclass(frozen=True)
+class EmbeddedAgentSpec:
+    """`agent: {type: embedded, entrypoint: "mod:fn"}` (or legacy shape).
+
+    Carries the parsed `entrypoint`; the callable is resolved at wiring
+    time via `resolve_agent_callable` and wrapped in an `EmbeddedAdapter`.
+    """
+
+    entrypoint: AgentEntrypoint
+
+
+@dataclass(frozen=True)
+class CliAgentSpec:
+    """`agent: {type: cli, command: [...], env?, timeout_seconds?}`.
+
+    The CLI wires this into a `CliCommandAdapter` — no Python entrypoint
+    proxy needed. `command` is the argv list spawned per case.
+    """
+
+    command: list[str]
+    env: dict[str, str] | None = None
+    timeout_seconds: float | None = None
+
+
+@dataclass(frozen=True)
+class HttpAgentSpec:
+    """`agent: {type: http, url: "...", headers?, timeout_seconds?}`.
+
+    The CLI wires this into an `HttpEndpointAdapter` — no Python
+    entrypoint proxy needed.
+    """
+
+    url: str
+    headers: dict[str, str] | None = None
+    timeout_seconds: float | None = None
+
+
+AgentSpec = EmbeddedAgentSpec | CliAgentSpec | HttpAgentSpec
+"""Transport-tagged agent declaration. The CLI dispatches on the concrete
+variant to pick `EmbeddedAdapter` / `CliCommandAdapter` / `HttpEndpointAdapter`."""
+
+
+@dataclass(frozen=True)
 class GraderSpec:
     """Declarative grader configuration.
 
@@ -55,11 +111,14 @@ class GraderSpec:
         - type: llm_judge
           name: rubric_judge
           rubric: "Was the agent empathetic and accurate?"
-          judge_entrypoint: pkg.mod:fn      # optional; defaults to agent.entrypoint
+          judge_entrypoint: pkg.mod:fn      # optional; falls back to an
+                                            # embedded agent's entrypoint
 
     The instantiator lives in `selfevals.cli.commands` because building an
     `LLMJudgeGrader` requires the same callable-resolution path as the
-    main adapter — and the loader stays import-side-effect-free.
+    main adapter — and the loader stays import-side-effect-free. The
+    fallback only works when the agent is `embedded`; cli/http agents must
+    name a `judge_entrypoint` explicitly.
     """
 
     type: str
@@ -73,7 +132,7 @@ class ExperimentSpec:
     workspace_id: str
     experiment: Experiment
     cases: list[EvalCase]
-    agent: AgentEntrypoint
+    agent: AgentSpec
     graders: list[GraderSpec] = field(default_factory=list)
 
 
@@ -103,7 +162,7 @@ def load_experiment_spec(
 
     experiment = _build_experiment(spec_path, raw, ws_id)
     cases = _build_cases(spec_path, raw, ws_id)
-    agent = _build_agent_entrypoint(spec_path, raw)
+    agent = _build_agent_spec(spec_path, raw)
     graders = _build_grader_specs(spec_path, raw)
 
     return ExperimentSpec(
@@ -258,10 +317,40 @@ def _build_grader_specs(spec_path: Path, raw: dict[str, Any]) -> list[GraderSpec
     return specs
 
 
-def _build_agent_entrypoint(spec_path: Path, raw: dict[str, Any]) -> AgentEntrypoint:
+_SUPPORTED_AGENT_TYPES = {"embedded", "cli", "http"}
+
+
+def _build_agent_spec(spec_path: Path, raw: dict[str, Any]) -> AgentSpec:
+    """Parse the `agent:` block into a transport-tagged spec.
+
+    Accepts the legacy `{entrypoint: ...}` shape (embedded) and the tagged
+    `{type: embedded|cli|http, ...}` shape. The type tag selects which
+    adapter the CLI wires up; required fields are validated per type so a
+    typo surfaces here instead of at adapter-construction time.
+    """
     agent_section = raw.get("agent", {})
     if not isinstance(agent_section, dict):
         raise LoaderError(f"{spec_path}: `agent:` must be a mapping")
+
+    type_ = agent_section.get("type")
+    if type_ is None:
+        # Legacy shape: `agent: {entrypoint: "mod:fn"}` → embedded.
+        return EmbeddedAgentSpec(entrypoint=_parse_entrypoint(spec_path, agent_section))
+
+    if not isinstance(type_, str) or type_ not in _SUPPORTED_AGENT_TYPES:
+        raise LoaderError(
+            f"{spec_path}: agent.type must be one of "
+            f"{sorted(_SUPPORTED_AGENT_TYPES)}; got {type_!r}"
+        )
+
+    if type_ == "embedded":
+        return EmbeddedAgentSpec(entrypoint=_parse_entrypoint(spec_path, agent_section))
+    if type_ == "cli":
+        return _build_cli_agent_spec(spec_path, agent_section)
+    return _build_http_agent_spec(spec_path, agent_section)
+
+
+def _parse_entrypoint(spec_path: Path, agent_section: dict[str, Any]) -> AgentEntrypoint:
     entrypoint = agent_section.get("entrypoint")
     if not isinstance(entrypoint, str) or ":" not in entrypoint:
         raise LoaderError(
@@ -274,3 +363,54 @@ def _build_agent_entrypoint(spec_path: Path, raw: dict[str, Any]) -> AgentEntryp
             f"{spec_path}: agent.entrypoint {entrypoint!r} is missing module or callable name"
         )
     return AgentEntrypoint(raw=entrypoint, module=module, attribute=attribute)
+
+
+def _build_cli_agent_spec(spec_path: Path, agent_section: dict[str, Any]) -> CliAgentSpec:
+    if "entrypoint" in agent_section:
+        raise LoaderError(
+            f"{spec_path}: agent.type 'cli' does not take an `entrypoint`; use `command:` instead"
+        )
+    command = agent_section.get("command")
+    if not isinstance(command, list) or not command or not all(isinstance(c, str) for c in command):
+        raise LoaderError(
+            f"{spec_path}: agent.type 'cli' requires `command:` as a non-empty list of strings; "
+            f"got {command!r}"
+        )
+    env = _parse_str_map(spec_path, agent_section.get("env"), field_name="agent.env")
+    timeout = _parse_timeout(spec_path, agent_section.get("timeout_seconds"))
+    return CliAgentSpec(command=[str(c) for c in command], env=env, timeout_seconds=timeout)
+
+
+def _build_http_agent_spec(spec_path: Path, agent_section: dict[str, Any]) -> HttpAgentSpec:
+    if "entrypoint" in agent_section:
+        raise LoaderError(
+            f"{spec_path}: agent.type 'http' does not take an `entrypoint`; use `url:` instead"
+        )
+    url = agent_section.get("url")
+    if not isinstance(url, str) or not url.strip():
+        raise LoaderError(
+            f"{spec_path}: agent.type 'http' requires `url:` as a non-empty string; got {url!r}"
+        )
+    headers = _parse_str_map(spec_path, agent_section.get("headers"), field_name="agent.headers")
+    timeout = _parse_timeout(spec_path, agent_section.get("timeout_seconds"))
+    return HttpAgentSpec(url=url, headers=headers, timeout_seconds=timeout)
+
+
+def _parse_str_map(spec_path: Path, value: Any, *, field_name: str) -> dict[str, str] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in value.items()
+    ):
+        raise LoaderError(f"{spec_path}: {field_name} must be a mapping of string→string")
+    return {k: v for k, v in value.items()}
+
+
+def _parse_timeout(spec_path: Path, value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        raise LoaderError(
+            f"{spec_path}: agent.timeout_seconds must be a positive number; got {value!r}"
+        )
+    return float(value)

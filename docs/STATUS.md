@@ -28,8 +28,9 @@ this file records what *is*.
   CLI edge.
 - **Adapters**: `EmbeddedAdapter` (sync or async Python callable),
   `CliCommandAdapter` (async subprocess JSON), `HttpEndpointAdapter`
-  (native async on httpx). All three callable from Python; only
-  `EmbeddedAdapter` is auto-wired from YAML today.
+  (native async on httpx). All three are auto-wired from YAML via the
+  `agent:` block — `agent: {type: embedded|cli|http, ...}` (the bare
+  `entrypoint:` form stays as the embedded shorthand).
 - **Graders**: `DeterministicGrader` (`must_include`,
   `must_not_include`, `required_tools`, `forbidden_tools`,
   `regex_match`, `structured_output` equality, `output_schema` JSON
@@ -71,12 +72,15 @@ this file records what *is*.
 
 ### Adapters
 
-- `CliCommandAdapter` and `HttpEndpointAdapter` are not yet
-  auto-wired from YAML. Users instantiate them via a Python
-  entrypoint; `docs/adapters.md` documents the pattern.
-- `HttpEndpointAdapter` has no retries, no streaming, no per-request
-  headers (it is native async on httpx, but the convenience knobs
-  are not exposed yet).
+- All three adapters auto-wire from YAML via `agent: {type: ...}`.
+  Custom (user-subclassed) adapters still wire via a Python
+  `entrypoint`; `docs/adapters.md` documents the pattern.
+- The `llm_judge` `judge_entrypoint` fallback only applies when the
+  agent is `embedded`; cli/http agents must name a `judge_entrypoint`
+  explicitly.
+- `HttpEndpointAdapter` has no retries and no streaming (it is native
+  async on httpx; `headers` and `timeout_seconds` are configurable from
+  YAML, but retry/backoff is not exposed yet).
 
 ### Optimization
 
@@ -147,8 +151,6 @@ on the backlog until it earns its place.
 ### Still on the backlog
 
 - `breakdown: dict[str, Any]` on `GradeResult` for funnel-style scores.
-- YAML wiring for `HttpEndpointAdapter` (no Python entrypoint
-  required).
 - A `selfevals dataset import` CLI command that pulls EvalCases from
   a SQL source.
 - Retries and timeout configuration on `HttpEndpointAdapter`.
