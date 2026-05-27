@@ -3,10 +3,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from selfevals.schemas.enums import SandboxMode, StopReason, ToolCallStatus, TraceState
 from selfevals.schemas.trace import (
     AgentSnapshotRef,
     AgentTurnSpan,
+    CostBreakdown,
     LLMCallSpan,
     RunInfo,
     ToolCallSpan,
@@ -89,8 +92,6 @@ def test_recorder_accumulates_metrics(tmp_path: Path) -> None:
 
 def test_tool_call_exception_marks_span_errored(tmp_path: Path) -> None:
     rec = _recorder(tmp_path)
-    import pytest
-
     with rec, pytest.raises(RuntimeError), rec.tool_call("t", tool_name="boom"):
         raise RuntimeError("kaboom")
     trace = rec.build()
@@ -100,8 +101,6 @@ def test_tool_call_exception_marks_span_errored(tmp_path: Path) -> None:
 
 
 def test_recorder_complete_after_exception_marks_errored(tmp_path: Path) -> None:
-    import pytest
-
     rec = _recorder(tmp_path)
     with pytest.raises(ValueError), rec:
         raise ValueError("upstream failed")
@@ -121,7 +120,6 @@ def test_recorder_explicit_abort(tmp_path: Path) -> None:
 
 def test_orphan_tool_call_without_llm_request_rejected(tmp_path: Path) -> None:
     rec = _recorder(tmp_path)
-    import pytest
     from pydantic import ValidationError
 
     with rec, rec.tool_call("orphan", tool_name="x", tool_use_id="toolu_lone"):
@@ -179,3 +177,33 @@ def test_no_throughput_without_output_tokens(tmp_path: Path) -> None:
         # Zero output tokens → nothing to derive throughput from.
     span = _only_llm_span(rec.build())
     assert span.tokens_per_second is None
+
+
+def test_set_cost_populates_span_and_accumulates(tmp_path: Path) -> None:
+    rec = _recorder(tmp_path)
+    with (
+        rec,
+        rec.agent_turn("turn"),
+        rec.llm_call("call", provider="anthropic", model="claude-sonnet-4-6") as llm,
+    ):
+        llm.add_tokens(input=100, output=50, total=150)
+        llm.set_cost(CostBreakdown(input=0.0003, output=0.00075, total=0.00105))
+    trace = rec.build()
+    span = _only_llm_span(trace)
+    assert span.cost_usd.total == pytest.approx(0.00105)
+    # The accumulator that used to be stuck at 0 now reflects the call cost.
+    assert trace.metrics.total_cost_usd == pytest.approx(0.00105)
+
+
+def test_cost_defaults_to_zero_when_unset(tmp_path: Path) -> None:
+    rec = _recorder(tmp_path)
+    with (
+        rec,
+        rec.agent_turn("turn"),
+        rec.llm_call("call", provider="anthropic", model="claude-sonnet-4-6") as llm,
+    ):
+        llm.add_tokens(input=100, output=50, total=150)
+        # No set_cost → cost stays zero, never fabricated.
+    trace = rec.build()
+    assert _only_llm_span(trace).cost_usd.total == pytest.approx(0.0)
+    assert trace.metrics.total_cost_usd == pytest.approx(0.0)
