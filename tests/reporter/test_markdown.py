@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
 from selfevals.decision.matrix import DecisionMatrixEvaluator
@@ -157,7 +158,7 @@ def _run_real() -> OptimizationResult:
         cases=cases,
         decision_evaluator=DecisionMatrixEvaluator(),
     )
-    return loop.run()
+    return asyncio.run(loop.run())
 
 
 def test_render_markdown_includes_header_and_table() -> None:

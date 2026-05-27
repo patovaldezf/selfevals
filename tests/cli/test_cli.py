@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
@@ -318,7 +319,7 @@ def _seed_experiment_into_db(db_path: Path, ws_id: str) -> Experiment:
             scope=scope,
             decision_evaluator=DecisionMatrixEvaluator(),
         )
-        loop.run()
+        asyncio.run(loop.run())
     finally:
         storage.close()
     return exp

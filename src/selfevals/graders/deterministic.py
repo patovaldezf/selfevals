@@ -74,7 +74,7 @@ class DeterministicGrader(Grader):
         else:
             self._regex = regex_match
 
-    def grade(self, context: GraderContext) -> GradeResult:
+    async def grade(self, context: GraderContext) -> GradeResult:
         expected: Expected = context.case.expected
         violations: list[_Violation] = []
 

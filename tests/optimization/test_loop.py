@@ -129,7 +129,8 @@ def _adapter_for(target: str, *, level: float) -> EmbeddedAdapter:
     return EmbeddedAdapter(fn, agent=_agent())
 
 
-def test_loop_runs_max_iterations_when_no_convergence(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_loop_runs_max_iterations_when_no_convergence(tmp_path: Path) -> None:
     cases = [_case("pong")]
     exp = _experiment(
         max_iterations=3,
@@ -154,7 +155,7 @@ def test_loop_runs_max_iterations_when_no_convergence(tmp_path: Path) -> None:
         cases=cases,
         scope=scope,
     )
-    result = loop.run()
+    result = await loop.run()
     assert exp.state == ExperimentState.COMPLETED
     assert len(result.iterations) == 3
     # Storage persisted IterationRecord + DecisionRecord per iteration.
@@ -166,7 +167,8 @@ def test_loop_runs_max_iterations_when_no_convergence(tmp_path: Path) -> None:
     storage.close()
 
 
-def test_loop_terminates_on_search_space_exhausted() -> None:
+@pytest.mark.asyncio
+async def test_loop_terminates_on_search_space_exhausted() -> None:
     cases = [_case("pong")]
     exp = _experiment(
         max_iterations=10,
@@ -184,12 +186,13 @@ def test_loop_terminates_on_search_space_exhausted() -> None:
         graders=[DeterministicGrader()],
         cases=cases,
     )
-    result = loop.run()
+    result = await loop.run()
     assert len(result.iterations) == 2
     assert result.terminated_reason.startswith("search_space_exhausted")
 
 
-def test_loop_converges_when_no_improvement_for_patience() -> None:
+@pytest.mark.asyncio
+async def test_loop_converges_when_no_improvement_for_patience() -> None:
     cases = [_case("pong")]
     # All proposals score the same (level=1.0 always → all pass).
     exp = _experiment(
@@ -209,13 +212,14 @@ def test_loop_converges_when_no_improvement_for_patience() -> None:
         graders=[DeterministicGrader()],
         cases=cases,
     )
-    result = loop.run()
+    result = await loop.run()
     assert result.terminated_reason == "converged"
     # patience=2 means we need >= 3 iters to detect convergence.
     assert len(result.iterations) >= 3
 
 
-def test_loop_best_iteration_tracks_highest_primary() -> None:
+@pytest.mark.asyncio
+async def test_loop_best_iteration_tracks_highest_primary() -> None:
     cases = [_case("pong")]
     # Build proposals manually so we can stage scores.
     exp = _experiment(max_iterations=3, search_space={"level": [0.0, 0.5, 1.0]})
@@ -232,13 +236,14 @@ def test_loop_best_iteration_tracks_highest_primary() -> None:
         graders=[DeterministicGrader()],
         cases=cases,
     )
-    result = loop.run()
+    result = await loop.run()
     best = result.best_iteration
     assert best is not None
     assert best.aggregate.primary_value == 1.0  # the level>=0.5 iters all pass
 
 
-def test_loop_persists_decision_record_with_outcome() -> None:
+@pytest.mark.asyncio
+async def test_loop_persists_decision_record_with_outcome() -> None:
     cases = [_case("pong")]
     exp = _experiment(max_iterations=1, search_space={"level": [1.0]})
     executor = Executor(
@@ -253,7 +258,7 @@ def test_loop_persists_decision_record_with_outcome() -> None:
         graders=[DeterministicGrader()],
         cases=cases,
     )
-    result = loop.run()
+    result = await loop.run()
     outcome = result.iterations[0]
     assert outcome.decision_record.outcome == DecisionOutcome.KEEP_CANDIDATE
 
@@ -281,3 +286,69 @@ def test_loop_requires_cases_and_graders() -> None:
             graders=[DeterministicGrader()],
             cases=[],
         )
+
+
+def test_loop_rejects_invalid_grade_concurrency() -> None:
+    exp = _experiment()
+    executor = Executor(
+        adapter=_adapter_for("pong", level=1.0),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    with pytest.raises(ValueError):
+        OptimizationLoop(
+            experiment=exp,
+            executor=executor,
+            proposer=GridProposer(),
+            graders=[DeterministicGrader()],
+            cases=[_case()],
+            grade_concurrency=0,
+        )
+
+
+@pytest.mark.asyncio
+async def test_loop_grades_concurrently_and_preserves_order() -> None:
+    import asyncio
+
+    from selfevals.graders.base import GradeLabel, Grader, GraderContext, GradeResult
+    from selfevals.optimization.proposers import ProposerContext
+
+    barrier = {"count": 0, "max": 0}
+
+    class _SlowGrader(Grader):
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        async def grade(self, context: GraderContext) -> GradeResult:
+            barrier["count"] += 1
+            barrier["max"] = max(barrier["max"], barrier["count"])
+            await asyncio.sleep(0.05)
+            barrier["count"] -= 1
+            return GradeResult(grader=self.name, label=GradeLabel.PASS, reason="ok", score=1.0)
+
+    graders = [_SlowGrader(f"g{i}") for i in range(3)]
+    # 2 reps * 3 graders = 6 grade tasks; with concurrency 8 they should overlap.
+    exp = _experiment(max_iterations=1, search_space={"level": [1.0]})
+    executor = Executor(
+        adapter=_adapter_for("pong", level=1.0),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    loop = OptimizationLoop(
+        experiment=exp,
+        executor=executor,
+        proposer=GridProposer(),
+        graders=graders,  # type: ignore[arg-type]
+        cases=[_case("pong")],
+        repetitions_per_case=2,
+        grade_concurrency=8,
+    )
+    proposal = loop._proposer.propose(exp, ProposerContext(iteration_index=0, history=()))
+    _, _, per_case = await loop._run_iteration(proposal, iteration=0)
+    # More than one grade task ran at the same time → concurrency is real.
+    assert barrier["max"] > 1
+    # Order preserved: grades within each rep are in grader order g0,g1,g2.
+    grades_per_rep = next(iter(per_case.values()))
+    assert len(grades_per_rep) == 2
+    for grades in grades_per_rep:
+        assert [g.grader for g in grades] == ["g0", "g1", "g2"]

@@ -6,14 +6,15 @@ The loop:
 3. Runs the proposal across the optimization dataset via the Executor,
    accumulating per-case GradeResults from the configured graders.
 4. Aggregates results into IterationMetrics.
-5. Hands the IterationAggregate to a DecisionEvaluator (PR 7) to compute
-   a DecisionOutcome; persists an IterationRecord + DecisionRecord.
+5. Hands the IterationAggregate to a DecisionEvaluator to compute a
+   DecisionOutcome; persists an IterationRecord + DecisionRecord.
 6. Terminates on convergence, max_iterations, exhausted search space,
    or unrecoverable error.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -77,9 +78,9 @@ class OptimizationResult:
 
 
 class DecisionEvaluatorProtocol:
-    """Forward-declared shape for PR 7's evaluator. The default ignores
-    everything and returns KEEP_CANDIDATE — the loop is decoupled from
-    the matrix until PR 7 wires the real one in."""
+    """Shape of a decision evaluator. The loop is decoupled from any
+    concrete matrix; callers inject one (the CLI wires DecisionMatrixEvaluator),
+    and the default below simply keeps every candidate."""
 
     def evaluate(
         self,
@@ -99,7 +100,7 @@ class _DefaultEvaluator(DecisionEvaluatorProtocol):
         aggregate: IterationAggregate,
         baseline: IterationAggregate | None,
     ) -> tuple[DecisionOutcome, str]:
-        return DecisionOutcome.KEEP_CANDIDATE, "default evaluator (overridden in PR 7)"
+        return DecisionOutcome.KEEP_CANDIDATE, "default evaluator (keep candidate)"
 
 
 class OptimizationLoop:
@@ -114,6 +115,7 @@ class OptimizationLoop:
         scope: WorkspaceScope | None = None,
         decision_evaluator: DecisionEvaluatorProtocol | None = None,
         repetitions_per_case: int = 1,
+        grade_concurrency: int = 8,
     ) -> None:
         if not graders:
             raise ValueError("at least one grader is required")
@@ -121,6 +123,8 @@ class OptimizationLoop:
             raise ValueError("at least one case is required")
         if repetitions_per_case < 1:
             raise ValueError("repetitions_per_case must be >= 1")
+        if grade_concurrency < 1:
+            raise ValueError("grade_concurrency must be >= 1")
         self._experiment = experiment
         self._executor = executor
         self._proposer = proposer
@@ -129,12 +133,13 @@ class OptimizationLoop:
         self._scope = scope
         self._evaluator = decision_evaluator or _DefaultEvaluator()
         self._reps = repetitions_per_case
+        self._grade_concurrency = grade_concurrency
 
     @property
     def experiment(self) -> Experiment:
         return self._experiment
 
-    def run(self) -> OptimizationResult:
+    async def run(self) -> OptimizationResult:
         if self._experiment.state == ExperimentState.DRAFT:
             self._experiment.transition_to(ExperimentState.QUEUED)
         if self._experiment.state == ExperimentState.QUEUED:
@@ -165,7 +170,7 @@ class OptimizationLoop:
                 result.terminated_reason = f"search_space_exhausted: {exc}"
                 break
 
-            aggregate, case_runs, _per_case_grades = self._run_iteration(
+            aggregate, case_runs, _per_case_grades = await self._run_iteration(
                 proposal, iteration=index
             )
             decision_outcome, rationale = self._evaluator.evaluate(
@@ -230,14 +235,20 @@ class OptimizationLoop:
         self._experiment.transition_to(ExperimentState.COMPLETED)
         return result
 
-    def _run_iteration(
+    async def _run_iteration(
         self, proposal: Proposal, *, iteration: int
     ) -> tuple[IterationAggregate, list[CaseRun], dict[str, list[list[GradeResult]]]]:
         case_runs: list[CaseRun] = []
         per_case_grades: dict[str, list[list[GradeResult]]] = {}
         case_outcomes: list[CaseOutcome] = []
+        sem = asyncio.Semaphore(self._grade_concurrency)
+
+        async def _graded(grader: Grader, ctx: GraderContext) -> GradeResult:
+            async with sem:
+                return await grader.grade(ctx)
+
         for case in self._cases:
-            case_run = self._executor.run_case(
+            case_run = await self._executor.run_case(
                 case,
                 repetitions=self._reps,
                 experiment_id=self._experiment.id,
@@ -246,13 +257,22 @@ class OptimizationLoop:
             )
             case_runs.append(case_run)
             active_graders = _graders_for_case(self._graders, case)
-            grades_per_rep: list[list[GradeResult]] = []
-            for rep in case_run.repetitions:
-                grades = [
-                    g.grade(GraderContext(case=case, trace=rep.trace, response=rep.response))
-                    for g in active_graders
-                ]
-                grades_per_rep.append(grades)
+            # Grade every (rep, grader) pair concurrently, bounded by the
+            # semaphore. gather preserves order, so the flat result splits back
+            # into grades_per_rep with reps in order and grades in
+            # active_graders order.
+            grade_tasks = [
+                _graded(g, GraderContext(case=case, trace=rep.trace, response=rep.response))
+                for rep in case_run.repetitions
+                for g in active_graders
+            ]
+            flat_grades = await asyncio.gather(*grade_tasks)
+            width = len(active_graders)
+            grades_per_rep: list[list[GradeResult]] = [
+                list(flat_grades[i * width : (i + 1) * width])
+                for i in range(len(case_run.repetitions))
+            ]
+            for rep, grades in zip(case_run.repetitions, grades_per_rep, strict=True):
                 self._maybe_persist_trace(rep, grades)
             per_case_grades[case.id] = grades_per_rep
             case_outcomes.append(Aggregator.case_outcome(case, case_run, grades_per_rep))

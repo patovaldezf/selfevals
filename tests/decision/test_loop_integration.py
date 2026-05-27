@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from selfevals.decision.matrix import DecisionMatrixEvaluator
 from selfevals.graders.deterministic import DeterministicGrader
 from selfevals.optimization.loop import OptimizationLoop
@@ -116,7 +118,8 @@ def _staged_adapter() -> EmbeddedAdapter:
     return EmbeddedAdapter(fn, agent=_agent())
 
 
-def test_decision_record_outcome_reflects_improvement_or_reject() -> None:
+@pytest.mark.asyncio
+async def test_decision_record_outcome_reflects_improvement_or_reject() -> None:
     exp = _experiment(max_iter=3, search_space={"level": [0, 1, 0]})
     executor = Executor(
         adapter=_staged_adapter(),
@@ -131,7 +134,7 @@ def test_decision_record_outcome_reflects_improvement_or_reject() -> None:
         cases=[_case()],
         decision_evaluator=DecisionMatrixEvaluator(),
     )
-    result = loop.run()
+    result = await loop.run()
     outcomes = [it.decision_record.outcome for it in result.iterations]
     # iter 0: level=0 → primary=0 → below target → INVESTIGATE (first iter).
     # iter 1: level=1 → primary=1 → improvement → KEEP_CANDIDATE.
