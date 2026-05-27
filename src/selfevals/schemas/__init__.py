@@ -8,14 +8,18 @@ from selfevals.schemas.dataset import (
     DatasetStatistics,
     SplitAllocation,
 )
+from selfevals.schemas.enums import MessageRole
 from selfevals.schemas.eval_case import (
     Blocking,
     CaseMetadata,
     CaseTaxonomy,
+    ContentBlock,
+    ConversationInput,
     EvalCase,
     Expected,
     FeatureTag,
     GroundTruthSpec,
+    Message,
     SourceInfo,
 )
 from selfevals.schemas.experiment import (
@@ -125,7 +129,9 @@ __all__ = [
     "CaseMetadata",
     "CaseTaxonomy",
     "CodeDiff",
+    "ContentBlock",
     "ConvergenceSpec",
+    "ConversationInput",
     "CostBreakdown",
     "CounterfactualSpec",
     "CustomSpan",
@@ -174,6 +180,8 @@ __all__ = [
     "Member",
     "MemoryReadSpan",
     "MemoryWriteSpan",
+    "Message",
+    "MessageRole",
     "MetricObservation",
     "MetricTarget",
     "ModelRef",
