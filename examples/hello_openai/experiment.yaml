@@ -1,0 +1,74 @@
+# Realistic example: optimize an OpenAI-backed agent over three EvalCases.
+#
+# Run from the repo root:
+#
+#   export OPENAI_API_KEY=...         # optional; falls back to a fake otherwise
+#   uv run selfevals run examples/hello_openai/experiment.yaml --no-persist
+#
+# The agent (examples/hello_openai/agent.py) calls OpenAI's Chat
+# Completions API with the temperature value the GridProposer hands in.
+# Two graders score each case:
+#
+#   - `rules`        — DeterministicGrader; runs on sentiment + extraction.
+#   - `rubric_judge` — LLMJudgeGrader; runs on the open-ended support case.
+#
+# The judge is the same agent module's `judge` callable, which also has a
+# deterministic fake fallback so the example works offline.
+
+workspace: ws_01HZZZZZZZZZZZZZZZZZZZZZZZ
+
+experiment:
+  name: hello_openai temperature sweep
+  goal: optimize answer quality across sentiment, extraction, and support tasks
+  mode: handoff
+  taxonomy:
+    target_features:
+      - support.empathetic_reply
+    dataset_types:
+      - capability
+  datasets:
+    optimization: { id: ds_hello_openai, version: 1 }
+  target:
+    primary: { name: pass@1, operator: ">=", value: 0.7 }
+    guardrails:
+      - { name: cost_usd, operator: "<=", value: 0.05 }
+  editable:
+    prompt: false
+    model_params: true
+  frozen:
+    fleet: { id: flt_hello_openai }
+    agents:
+      - { id: ag_hello_openai }
+    datasets:
+      - { id: ds_hello_openai }
+  proposer:
+    strategy: grid
+  search_space:
+    model_params:
+      temperature: [0.0, 0.5, 1.0]
+  run:
+    sandbox: mock
+    max_iterations: 5
+    convergence:
+      min_delta: 1.0e-6
+      patience: 10
+  reliability:
+    metrics:
+      - pass@1
+
+dataset:
+  cases_path: ./cases.jsonl
+
+agent:
+  entrypoint: examples.hello_openai.agent:run
+
+graders:
+  - type: deterministic
+    name: rules
+  - type: llm_judge
+    name: rubric_judge
+    rubric: |
+      The agent must (1) acknowledge the customer's frustration and
+      (2) offer a concrete next step (refund or replacement). Reply
+      pass if both are present, fail otherwise.
+    judge_entrypoint: examples.hello_openai.agent:judge
