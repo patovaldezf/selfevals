@@ -1,9 +1,13 @@
 """OptimizationLoop: drive an Experiment through proposed iterations.
 
 The loop:
+0. Selects the optimization set from the supplied cases per
+   `run.sample_strategy` / `SplitAllocation`, excluding `holdout=True` cases
+   (spec §5, §11). Held-out cases are exposed via `holdout_cases` but never
+   evaluated by the loop.
 1. Transitions the Experiment from DRAFT → QUEUED → RUNNING.
 2. For each iteration, asks the Proposer for a Proposal.
-3. Runs the proposal across the optimization dataset via the Executor,
+3. Runs the proposal across the optimization set via the Executor,
    accumulating per-case GradeResults from the configured graders.
 4. Aggregates results into IterationMetrics.
 5. Hands the IterationAggregate to a DecisionEvaluator to compute a
@@ -33,6 +37,7 @@ from selfevals.optimization.proposers import (
     ProposerContext,
     SearchSpaceExhaustedError,
 )
+from selfevals.optimization.sampling import select_optimization_set
 from selfevals.schemas.enums import DecisionOutcome, ExperimentState, IterationState
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.iteration import (
@@ -50,6 +55,7 @@ from selfevals.schemas.trace import GraderResult
 
 if TYPE_CHECKING:
     from selfevals.runner.executor import CaseRun, Executor, RepetitionResult
+    from selfevals.schemas.dataset import SplitAllocation
     from selfevals.schemas.eval_case import EvalCase
     from selfevals.storage.interface import WorkspaceScope
 
@@ -116,6 +122,7 @@ class OptimizationLoop:
         decision_evaluator: DecisionEvaluatorProtocol | None = None,
         repetitions_per_case: int = 1,
         grade_concurrency: int = 8,
+        split_allocation: SplitAllocation | None = None,
     ) -> None:
         if not graders:
             raise ValueError("at least one grader is required")
@@ -125,11 +132,22 @@ class OptimizationLoop:
             raise ValueError("repetitions_per_case must be >= 1")
         if grade_concurrency < 1:
             raise ValueError("grade_concurrency must be >= 1")
+        # Consume run.sample_strategy + holdout + SplitAllocation: the loop
+        # evaluates only the optimization set; holdout=True cases are reserved
+        # for a held-out gate and never touch the optimizer (spec §5, §11).
+        split = select_optimization_set(cases, experiment.run, split_allocation=split_allocation)
+        if not split.optimization:
+            raise ValueError(
+                "sampling produced an empty optimization set "
+                f"(strategy={experiment.run.sample_strategy!r}, "
+                f"{len(cases)} cases in, {len(split.holdout)} held out)"
+            )
         self._experiment = experiment
         self._executor = executor
         self._proposer = proposer
         self._graders = graders
-        self._cases = cases
+        self._cases = split.optimization
+        self._holdout_cases = split.holdout
         self._scope = scope
         self._evaluator = decision_evaluator or _DefaultEvaluator()
         self._reps = repetitions_per_case
@@ -138,6 +156,17 @@ class OptimizationLoop:
     @property
     def experiment(self) -> Experiment:
         return self._experiment
+
+    @property
+    def optimization_cases(self) -> list[EvalCase]:
+        """The cases the loop evaluates — the sampled, non-holdout set."""
+        return list(self._cases)
+
+    @property
+    def holdout_cases(self) -> list[EvalCase]:
+        """Cases held out of the optimization loop (spec §11). Returned so a
+        caller can run them as a separate gate; the loop never evaluates them."""
+        return list(self._holdout_cases)
 
     async def run(self) -> OptimizationResult:
         if self._experiment.state == ExperimentState.DRAFT:
