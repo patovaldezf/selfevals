@@ -21,6 +21,8 @@ from selfevals.api.schemas import (
     ExperimentDetailResponse,
     ExperimentListPage,
     ExperimentSummary,
+    FunnelNodeResponse,
+    FunnelResponse,
     IterationSummary,
     SpanSummary,
     ThreadResponse,
@@ -245,6 +247,34 @@ def iteration_detail(
     }
 
 
+def load_iteration_funnel(
+    storage: SQLiteStorage, *, workspace_id: str, iteration_id: str
+) -> FunnelResponse | None:
+    """The grader funnel drill-down for a single iteration (B2).
+
+    We read the funnel DIRECTLY from `IterationRecord.metrics.funnel` — the
+    persisted source of truth — and deliberately bypass `_reconstruct_result`:
+    that helper rebuilds the `OptimizationResult` JSON for the reporter but
+    does NOT rehydrate `aggregate.funnel`, so the funnel inside
+    `ExperimentDetailResponse.result` is always empty. Touching it is out of
+    scope (it would ripple into the reporter tests); this dedicated endpoint
+    sidesteps the gap entirely.
+
+    Returns None for an unknown iteration (→ 404 at the route). An iteration
+    with no breakdown yields `nodes == {}`, which is correct, not an error:
+    most graders (e.g. the pingpong example) emit no structured breakdown.
+    """
+    with storage.open(workspace_id) as scope:
+        try:
+            it = scope.get_entity(IterationRecord, iteration_id)
+        except Exception:
+            return None
+        assert isinstance(it, IterationRecord)
+    funnel = it.metrics.funnel if it.metrics is not None else {}
+    nodes = {k: FunnelNodeResponse.model_validate(v) for k, v in (funnel or {}).items()}
+    return FunnelResponse(iteration_id=it.id, iteration=it.iteration, nodes=nodes)
+
+
 def load_trace(storage: SQLiteStorage, *, workspace_id: str, trace_id: str) -> TraceResponse | None:
     """Look up a Trace by either its entity id (`tr_...`) or its run_id
     (`run_...`). Both are common navigation targets — IterationRecord
@@ -335,7 +365,9 @@ def load_thread(
             ThreadTurn(
                 trace_id=trace.id,
                 run_id=trace.run.run_id,
-                position=trace.run.thread_position if trace.run.thread_position is not None else idx,
+                position=trace.run.thread_position
+                if trace.run.thread_position is not None
+                else idx,
                 experiment_id=trace.run.experiment_id,
                 iteration=trace.run.iteration,
                 final_state=str(trace.final_state.status),

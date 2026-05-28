@@ -135,6 +135,28 @@ export type ThreadDetail = {
   turns: ThreadTurn[];
 };
 
+/**
+ * One rolled-up funnel node (B2). Recursive: `children` is keyed by the
+ * child node's `key`. Mirror of `selfevals.api.schemas.FunnelNodeResponse`.
+ * The backend owns all the rollup math — the FE only renders this tree.
+ */
+export type FunnelNode = {
+  key: string;
+  count: number;
+  mean_score: number | null;
+  total_weight: number;
+  label_counts: Record<string, number>;
+  failure_mode_counts: Record<string, number>;
+  children: Record<string, FunnelNode>;
+};
+
+export type FunnelDetail = {
+  iteration_id: string;
+  iteration: number;
+  // Empty when no grader emitted a structured breakdown (the common case).
+  nodes: Record<string, FunnelNode>;
+};
+
 export class ApiError extends Error {
   status: number;
   body: unknown;
@@ -280,5 +302,22 @@ export const api = {
   ) =>
     request<ThreadDetail>(`/api/workspaces/${workspaceId}/threads/${threadId}`, {
       fetch
-    })
+    }),
+
+  /**
+   * Per-iteration grader funnel drill-down (B2). Lazy-loaded only when the
+   * user opens the Funnel tab — the funnel is additive/informational, so it
+   * stays off the experiment page's server load. `nodes` is empty when no
+   * grader emitted a structured breakdown. Throws `ApiError` (404) for an
+   * unknown iteration.
+   */
+  iterationFunnel: (
+    workspaceId: string,
+    iterationId: string,
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<FunnelDetail>(
+      `/api/workspaces/${workspaceId}/iterations/${iterationId}/funnel`,
+      { fetch }
+    )
 };
