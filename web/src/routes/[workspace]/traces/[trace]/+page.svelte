@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PointerField from '$lib/components/PointerField.svelte';
   import SpanNode from '$lib/components/SpanNode.svelte';
   import type { SpanSummary } from '$lib/api/client';
   import { openTraceStream, type StreamHandle } from '$lib/api/sse';
@@ -9,6 +10,58 @@
   export let data: PageData;
 
   let selected: SpanSummary | null = null;
+
+  // Pointer fields by span kind. The schema (schemas/trace.py) puts these
+  // on every span as `<name>_pointer` + `<name>_hash`. We surface them as
+  // PointerField widgets so the user can click to resolve the actual
+  // bytes — without this, every `*_pointer: "oss://..."` in the JSON
+  // dump is opaque and the trace viewer is debug theater.
+  const POINTERS_BY_KIND: Record<string, Array<{ label: string; field: string }>> = {
+    llm_call: [
+      { label: 'system prompt', field: 'system_prompt' },
+      { label: 'messages', field: 'messages' },
+      { label: 'output content', field: 'output.content' },
+      { label: 'reasoning summary', field: 'reasoning.summary' },
+      { label: 'reasoning full', field: 'reasoning.full' }
+    ],
+    tool_call: [
+      { label: 'args', field: 'args' },
+      { label: 'result', field: 'result' }
+    ],
+    retrieval: [{ label: 'query', field: 'query' }],
+    memory_read: [{ label: 'values', field: 'values' }],
+    memory_write: [{ label: 'values', field: 'values' }]
+  };
+
+  /** Navigate a dotted path on the span detail and return `<field>_pointer` + `<field>_hash`. */
+  function readPointer(
+    detail: Record<string, unknown>,
+    dottedField: string
+  ): { pointer: string | null; hash: string | null } {
+    const segments = dottedField.split('.');
+    const leaf = segments.pop() as string;
+    let obj: Record<string, unknown> = detail;
+    for (const seg of segments) {
+      const next = obj[seg];
+      if (!next || typeof next !== 'object') return { pointer: null, hash: null };
+      obj = next as Record<string, unknown>;
+    }
+    const pointer = obj[`${leaf}_pointer`];
+    const hash = obj[`${leaf}_hash`];
+    return {
+      pointer: typeof pointer === 'string' ? pointer : null,
+      hash: typeof hash === 'string' ? hash : null
+    };
+  }
+
+  $: pointerFields =
+    selected && POINTERS_BY_KIND[selected.kind]
+      ? POINTERS_BY_KIND[selected.kind].map((p) => ({
+          ...p,
+          ...readPointer(selected!.detail, p.field)
+        }))
+      : [];
+  $: hasAnyPointer = pointerFields.some((p) => p.pointer !== null);
 
   // Live state: starts from the server-loaded snapshot and is augmented
   // by SSE events. We don't mutate `data.trace` directly so refetches
@@ -145,7 +198,33 @@
         </section>
       {/if}
 
-      <pre class="font-mono text-xs bg-surface border border-border rounded-lg p-5 overflow-x-auto">{JSON.stringify(selected.detail, null, 2)}</pre>
+      {#if pointerFields.length > 0}
+        <section class="mb-6 rounded-lg border border-border bg-surface px-5 py-4">
+          <div class="text-xs uppercase tracking-wide text-text-3 mb-3 flex items-baseline justify-between">
+            <span>Payloads</span>
+            {#if !hasAnyPointer}
+              <span class="text-text-3 normal-case italic">none captured for this span</span>
+            {/if}
+          </div>
+          {#if hasAnyPointer}
+            <div class="space-y-4">
+              {#each pointerFields as f (f.field)}
+                {#if f.pointer}
+                  <PointerField label={f.label} pointer={f.pointer} hash={f.hash} />
+                {/if}
+              {/each}
+            </div>
+          {/if}
+        </section>
+      {/if}
+
+      <details class="group">
+        <summary class="text-xs uppercase tracking-wide text-text-3 cursor-pointer hover:text-text-1 mb-2 list-none flex items-center gap-1.5">
+          <span class="group-open:rotate-90 transition-transform" aria-hidden="true">›</span>
+          Raw detail
+        </summary>
+        <pre class="font-mono text-xs bg-surface border border-border rounded-lg p-5 overflow-x-auto">{JSON.stringify(selected.detail, null, 2)}</pre>
+      </details>
     {:else}
       <div class="text-text-3 text-sm">Select a span to inspect.</div>
     {/if}

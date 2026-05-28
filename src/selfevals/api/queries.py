@@ -432,6 +432,24 @@ def _span_summary(span: Any) -> SpanSummary:
         "error_type",
         "message",
         "recoverable",
+        # Pointer fields per kind (schemas/trace.py). The FE resolves these
+        # lazily via /payloads — without exposing them here, the trace
+        # viewer can never load the actual prompt/args/result bytes, even
+        # though the bytes are sitting in the object store.
+        "system_prompt_pointer",
+        "system_prompt_hash",
+        "messages_pointer",
+        "messages_hash",
+        "tools_offered",
+        "tools_offered_hash",
+        "args_pointer",
+        "args_hash",
+        "result_pointer",
+        "result_hash",
+        "query_pointer",
+        "query_hash",
+        "values_pointer",
+        "values_hash",
     }
     for key, value in payload.items():
         if key in keep_keys:
