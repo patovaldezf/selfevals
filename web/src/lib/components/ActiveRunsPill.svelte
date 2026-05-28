@@ -28,9 +28,7 @@
   });
 
   export let workspaceId: string | null = null;
-  $: visible = workspaceId
-    ? runs.filter((r) => r.workspace_id === workspaceId)
-    : runs;
+  $: visible = workspaceId ? runs.filter((r) => r.workspace_id === workspaceId) : runs;
 </script>
 
 {#if visible.length > 0}

@@ -102,16 +102,17 @@
         </button>
       {/if}
     </div>
-    <div
-      class="font-mono text-[11px] text-text-3 truncate"
-      title={pointer}
-    >
+    <div class="font-mono text-[11px] text-text-3 truncate" title={pointer}>
       {shortPointer}{#if hash}<span class="text-text-3"> · {hash.slice(0, 19)}…</span>{/if}
     </div>
     {#if state.kind === 'loading'}
       <div class="text-xs text-text-3 italic">resolving…</div>
     {:else if state.kind === 'resolved'}
-      <pre class="font-mono text-xs bg-surface-2 border border-border rounded p-3 overflow-x-auto whitespace-pre-wrap break-words max-h-96">{prettyIfJson(state.text, state.isJson)}</pre>
+      <pre
+        class="font-mono text-xs bg-surface-2 border border-border rounded p-3 overflow-x-auto whitespace-pre-wrap break-words max-h-96">{prettyIfJson(
+          state.text,
+          state.isJson
+        )}</pre>
     {:else if state.kind === 'error'}
       <div class="text-xs text-danger font-mono">
         {state.status} · {state.message}

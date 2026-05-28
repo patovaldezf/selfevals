@@ -17,16 +17,15 @@
 <div class="grid min-h-screen grid-cols-[220px_1fr]">
   <aside class="border-r border-border bg-surface px-5 py-7 flex flex-col gap-8">
     <a href="/" class="flex items-center gap-2 font-semibold tracking-tight">
-      <span
-        class="inline-block h-2.5 w-2.5 rounded-full bg-accent"
-        aria-hidden="true"
-      ></span>
+      <span class="inline-block h-2.5 w-2.5 rounded-full bg-accent" aria-hidden="true"></span>
       <span>selfevals</span>
     </a>
 
     <nav class="flex flex-col gap-1 text-sm">
       {#each nav as item}
-        {@const active = $page.url.pathname === item.href || (item.href !== '/' && $page.url.pathname.startsWith(item.href + '/'))}
+        {@const active =
+          $page.url.pathname === item.href ||
+          (item.href !== '/' && $page.url.pathname.startsWith(item.href + '/'))}
         <a
           href={item.href}
           class="px-3 py-1.5 rounded-md transition-colors {active

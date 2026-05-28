@@ -6,22 +6,22 @@
 @import '@fontsource/jetbrains-mono/400.css';
 @import '@fontsource/jetbrains-mono/500.css';
 @theme {
-  --color-bg: #FCFCFC;
-  --color-surface: #FFFFFF;
-  --color-surface-2: #F7F7F6;
-  --color-border: #E8E8E6;
-  --color-border-strong: #D6D6D2;
-  --color-text-1: #0A0A0A;
+  --color-bg: #fcfcfc;
+  --color-surface: #ffffff;
+  --color-surface-2: #f7f7f6;
+  --color-border: #e8e8e6;
+  --color-border-strong: #d6d6d2;
+  --color-text-1: #0a0a0a;
   --color-text-2: #525252;
   --color-text-3: #888888;
-  --color-accent: #1F1F1F;
-  --color-accent-fg: #FFFFFF;
-  --color-success: #0F7B3E;
-  --color-warning: #B45309;
-  --color-danger: #B91C1C;
-  --color-chart-1: #1F1F1F;
-  --color-chart-2: #6B7280;
-  --color-chart-3: #B45309;
+  --color-accent: #1f1f1f;
+  --color-accent-fg: #ffffff;
+  --color-success: #0f7b3e;
+  --color-warning: #b45309;
+  --color-danger: #b91c1c;
+  --color-chart-1: #1f1f1f;
+  --color-chart-2: #6b7280;
+  --color-chart-3: #b45309;
 
   --radius-sm: 4px;
   --radius-md: 8px;

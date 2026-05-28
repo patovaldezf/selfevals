@@ -8,7 +8,6 @@
   chronologically with calm, generous spacing.
 -->
 <script lang="ts">
-  import CopyableId from '$lib/components/CopyableId.svelte';
   import GradeChip from '$lib/components/GradeChip.svelte';
   import type { ThreadTurn } from '$lib/api/client';
 
@@ -67,11 +66,16 @@
         >
           <span class="group-open:rotate-90 transition-transform" aria-hidden="true">›</span>
           Grader results
-          <span class="font-mono normal-case text-text-3" data-numeric>· {graderResults.length}</span>
+          <span class="font-mono normal-case text-text-3" data-numeric
+            >· {graderResults.length}</span
+          >
         </summary>
         <pre
-          class="mt-2 overflow-x-auto rounded-lg border border-border bg-surface-2/40 p-4 font-mono text-xs"
-        >{JSON.stringify(graderResults, null, 2)}</pre>
+          class="mt-2 overflow-x-auto rounded-lg border border-border bg-surface-2/40 p-4 font-mono text-xs">{JSON.stringify(
+            graderResults,
+            null,
+            2
+          )}</pre>
       </details>
     {:else}
       <div class="text-xs text-text-3">No grader results for this turn.</div>

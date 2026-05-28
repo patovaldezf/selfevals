@@ -35,7 +35,9 @@
   </span>
 {:else if grade}
   <!-- Unknown label: show it verbatim rather than swallowing it. -->
-  <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-text-2 bg-surface-2">
+  <span
+    class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-text-2 bg-surface-2"
+  >
     {grade}
   </span>
 {:else}

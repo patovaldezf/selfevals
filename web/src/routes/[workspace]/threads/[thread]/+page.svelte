@@ -36,7 +36,9 @@
   </header>
 
   {#if turnCount === 0}
-    <div class="rounded-lg border border-border bg-surface px-5 py-8 text-center text-sm text-text-3">
+    <div
+      class="rounded-lg border border-border bg-surface px-5 py-8 text-center text-sm text-text-3"
+    >
       This thread has no turns.
     </div>
   {:else}

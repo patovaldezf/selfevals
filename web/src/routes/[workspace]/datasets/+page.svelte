@@ -15,7 +15,9 @@
     </p>
   </header>
 
-  <div class="rounded-lg border border-dashed border-border bg-surface px-8 py-16 text-center text-text-3 text-sm">
+  <div
+    class="rounded-lg border border-dashed border-border bg-surface px-8 py-16 text-center text-text-3 text-sm"
+  >
     Dataset browser ships next. Use the CLI to inspect:<br />
     <code class="font-mono text-xs mt-3 inline-block px-2 py-1 rounded bg-surface-2"
       >cat evals/datasets/*.jsonl | head</code

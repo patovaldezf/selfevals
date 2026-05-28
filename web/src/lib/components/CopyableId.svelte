@@ -43,10 +43,7 @@
     : 'group inline-flex items-center gap-1 font-mono text-xs text-text-3 hover:text-text-1 transition-colors'}
 >
   <span class="truncate">{id}</span>
-  <span
-    aria-hidden="true"
-    class="text-text-3 group-hover:text-text-1 text-[10px] shrink-0"
-  >
+  <span aria-hidden="true" class="text-text-3 group-hover:text-text-1 text-[10px] shrink-0">
     {copied ? '✓' : '⧉'}
   </span>
 </button>

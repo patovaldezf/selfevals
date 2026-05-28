@@ -20,9 +20,7 @@
 <div class="flex flex-col gap-1.5 rounded-lg border border-border bg-surface px-4 py-3.5">
   <span class="text-xs uppercase tracking-wide text-text-3">{label}</span>
   <div class="flex items-baseline gap-1.5">
-    <span class="text-2xl font-mono font-medium text-text-1" data-numeric
-      >{fmt(value)}</span
-    >
+    <span class="text-2xl font-mono font-medium text-text-1" data-numeric>{fmt(value)}</span>
     {#if unit}
       <span class="text-xs text-text-3">{unit}</span>
     {/if}

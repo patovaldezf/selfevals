@@ -30,8 +30,8 @@
   <header class="mb-8">
     <h1 class="text-2xl font-semibold tracking-tight">Anchor set</h1>
     <p class="text-text-2 mt-1.5 text-sm">
-      Primary metric across experiments. Spec §H: this lives behind the
-      anchor case set; until it ships, we show per-experiment timelines.
+      Primary metric across experiments. Spec §H: this lives behind the anchor case set; until it
+      ships, we show per-experiment timelines.
     </p>
   </header>
 

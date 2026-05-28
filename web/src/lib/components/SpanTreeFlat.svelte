@@ -35,10 +35,7 @@
 
   let collapsed: Set<string> = new Set();
 
-  function flatten(
-    byParent: Map<string | null, SpanSummary[]>,
-    collapsedIds: Set<string>
-  ): Row[] {
+  function flatten(byParent: Map<string | null, SpanSummary[]>, collapsedIds: Set<string>): Row[] {
     const out: Row[] = [];
     const walk = (parentId: string | null, depth: number): void => {
       const children = byParent.get(parentId) ?? [];
@@ -64,12 +61,8 @@
     scrollTop = (e.target as HTMLElement).scrollTop;
   }
 
-  $: visibleStart = Math.max(
-    0,
-    Math.floor(scrollTop / ROW_HEIGHT_PX) - OVERSCAN_ROWS
-  );
-  $: visibleCount =
-    Math.ceil(viewportHeight / ROW_HEIGHT_PX) + OVERSCAN_ROWS * 2;
+  $: visibleStart = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT_PX) - OVERSCAN_ROWS);
+  $: visibleCount = Math.ceil(viewportHeight / ROW_HEIGHT_PX) + OVERSCAN_ROWS * 2;
   $: visibleEnd = Math.min(rows.length, visibleStart + visibleCount);
   $: visibleRows = rows.slice(visibleStart, visibleEnd);
   $: padTop = visibleStart * ROW_HEIGHT_PX;
@@ -124,7 +117,8 @@
                 }
               }}
               aria-label={isCollapsed ? 'Expand subtree' : 'Collapse subtree'}
-            >{isCollapsed ? '▸' : '▾'}</span>
+              >{isCollapsed ? '▸' : '▾'}</span
+            >
           {:else}
             <span class="w-3 shrink-0" aria-hidden="true"></span>
           {/if}
@@ -132,8 +126,8 @@
             class="inline-block text-[12px] leading-none flex-shrink-0 w-3 text-center"
             style:color={style.color}
             aria-hidden="true"
-            title={style.label}
-          >{style.glyph}</span>
+            title={style.label}>{style.glyph}</span
+          >
           <span class="font-mono text-xs truncate flex-1 min-w-0">{row.node.name}</span>
           {#each facts as f (f.key)}
             <span
@@ -147,8 +141,8 @@
           <span
             class="font-mono text-[10px] text-text-3 whitespace-nowrap"
             title="duration"
-            data-numeric
-          >{fmtDuration(row.node.duration_ms)}</span>
+            data-numeric>{fmtDuration(row.node.duration_ms)}</span
+          >
         </button>
       </li>
     {/each}

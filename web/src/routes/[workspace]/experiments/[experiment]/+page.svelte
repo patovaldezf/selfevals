@@ -21,8 +21,7 @@
   type Tab = 'iterations' | 'compare' | 'funnel' | 'decisions';
   let tab: Tab = 'iterations';
   function setTab(id: string) {
-    if (id === 'iterations' || id === 'compare' || id === 'funnel' || id === 'decisions')
-      tab = id;
+    if (id === 'iterations' || id === 'compare' || id === 'funnel' || id === 'decisions') tab = id;
   }
   let openIteration: IterationSummary | null = null;
 
@@ -64,9 +63,7 @@
       if (token !== compareToken) return;
       compareResult = null;
       compareError =
-        err instanceof ApiError
-          ? `Compare failed (${err.status}).`
-          : 'Backend unreachable.';
+        err instanceof ApiError ? `Compare failed (${err.status}).` : 'Backend unreachable.';
     } finally {
       if (token === compareToken) compareLoading = false;
     }
@@ -204,9 +201,7 @@
     />
     <div class="rounded-lg border border-border bg-surface px-4 py-3.5 flex items-center gap-3">
       <div class="flex-1">
-        <div class="text-xs uppercase tracking-wide text-text-3 mb-1">
-          Trend
-        </div>
+        <div class="text-xs uppercase tracking-wide text-text-3 mb-1">Trend</div>
         <div class="font-mono text-sm text-text-2" data-numeric>
           {trendValues.length} pts
         </div>
@@ -217,12 +212,7 @@
 
   <div class="border-b border-border mb-6">
     <div class="flex gap-6 text-sm">
-      {#each [
-        { id: 'iterations', label: `Iterations · ${iterations.length}` },
-        { id: 'compare', label: 'Compare' },
-        { id: 'funnel', label: 'Funnel' },
-        { id: 'decisions', label: `Decisions · ${data.decisions.length}` }
-      ] as t}
+      {#each [{ id: 'iterations', label: `Iterations · ${iterations.length}` }, { id: 'compare', label: 'Compare' }, { id: 'funnel', label: 'Funnel' }, { id: 'decisions', label: `Decisions · ${data.decisions.length}` }] as t}
         <button
           type="button"
           class="-mb-px py-2.5 border-b-2 transition-colors {tab === t.id
@@ -350,9 +340,7 @@
         Pick iteration A and B to see what changed and which is better.
       </div>
     {:else if compareLoading && !compareResult}
-      <div
-        class="rounded-lg border border-border bg-surface text-text-3 text-sm py-16 text-center"
-      >
+      <div class="rounded-lg border border-border bg-surface text-text-3 text-sm py-16 text-center">
         Computing diff…
       </div>
     {:else if compareError}
@@ -543,8 +531,10 @@
                 {#each r.funnel_diff as row}
                   <tr>
                     <td class="px-4 py-2.5 font-mono text-text-2 text-xs">{row.path}</td>
-                    <td class="px-4 py-2.5 text-right font-mono" data-numeric>{fmtNumber(row.a)}</td>
-                    <td class="px-4 py-2.5 text-right font-mono" data-numeric>{fmtNumber(row.b)}</td>
+                    <td class="px-4 py-2.5 text-right font-mono" data-numeric>{fmtNumber(row.a)}</td
+                    >
+                    <td class="px-4 py-2.5 text-right font-mono" data-numeric>{fmtNumber(row.b)}</td
+                    >
                     <td
                       class="px-4 py-2.5 text-right font-mono text-xs"
                       style:color={deltaColor(row.delta)}
@@ -595,7 +585,9 @@
             </p>
           </div>
         {:else}
-          <div class="mb-2 flex items-baseline justify-between text-[11px] uppercase tracking-wide text-text-3">
+          <div
+            class="mb-2 flex items-baseline justify-between text-[11px] uppercase tracking-wide text-text-3"
+          >
             <span>Node</span>
             <span>Mean score</span>
           </div>
@@ -616,7 +608,9 @@
               <span class="font-mono text-xs text-text-3" data-numeric>#{d.iteration}</span>
               <DecisionBadge outcome={d.outcome} />
             </div>
-            <span class="text-text-3 text-xs font-mono">{new Date(d.created_at).toLocaleString()}</span>
+            <span class="text-text-3 text-xs font-mono"
+              >{new Date(d.created_at).toLocaleString()}</span
+            >
           </div>
           <p class="text-sm text-text-2 mt-2">{d.automated_rationale}</p>
         </li>
@@ -655,7 +649,11 @@
       <div>
         <dt class="text-text-3 text-xs mb-0.5">Parameters</dt>
         <dd>
-          <pre class="font-mono text-xs bg-surface-2 rounded p-3 overflow-x-auto">{JSON.stringify(openIteration.proposed_parameters, null, 2)}</pre>
+          <pre class="font-mono text-xs bg-surface-2 rounded p-3 overflow-x-auto">{JSON.stringify(
+              openIteration.proposed_parameters,
+              null,
+              2
+            )}</pre>
         </dd>
       </div>
       <div class="grid grid-cols-2 gap-4">

@@ -24,18 +24,12 @@
   })();
 </script>
 
-<svg
-  {width}
-  {height}
-  viewBox="0 0 {width} {height}"
-  class="text-text-2"
-  aria-hidden="true"
->
+<svg {width} {height} viewBox="0 0 {width} {height}" class="text-text-2" aria-hidden="true">
   {#if path}
     <path
       d={path}
       fill="none"
-      stroke={stroke}
+      {stroke}
       stroke-width="1.25"
       stroke-linejoin="round"
       stroke-linecap="round"

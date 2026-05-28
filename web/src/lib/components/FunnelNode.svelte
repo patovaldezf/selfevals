@@ -31,9 +31,7 @@
 </script>
 
 <div class="border-l border-border" style="padding-left: {depth === 0 ? 0 : 16}px">
-  <div
-    class="flex items-baseline gap-3 py-1.5 {depth > 0 ? 'pl-3' : ''}"
-  >
+  <div class="flex items-baseline gap-3 py-1.5 {depth > 0 ? 'pl-3' : ''}">
     <span class="font-mono text-sm text-text-1 truncate">{node.key}</span>
 
     <div class="flex flex-wrap items-center gap-1.5 min-w-0">

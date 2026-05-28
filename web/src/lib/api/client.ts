@@ -228,10 +228,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(
-  path: string,
-  init?: RequestInit & { fetch?: typeof fetch }
-): Promise<T> {
+async function request<T>(path: string, init?: RequestInit & { fetch?: typeof fetch }): Promise<T> {
   const f = init?.fetch ?? fetch;
   const res = await f(DEFAULT_BASE + path, {
     ...init,
@@ -286,31 +283,17 @@ export const api = {
     );
   },
 
-  experiment: (
-    workspaceId: string,
-    experimentId: string,
-    fetch?: typeof globalThis.fetch
-  ) =>
-    request<ExperimentDetail>(
-      `/api/workspaces/${workspaceId}/experiments/${experimentId}`,
-      { fetch }
-    ),
+  experiment: (workspaceId: string, experimentId: string, fetch?: typeof globalThis.fetch) =>
+    request<ExperimentDetail>(`/api/workspaces/${workspaceId}/experiments/${experimentId}`, {
+      fetch
+    }),
 
-  decisions: (
-    workspaceId: string,
-    experimentId: string,
-    fetch?: typeof globalThis.fetch
-  ) =>
-    request<DecisionRow[]>(
-      `/api/workspaces/${workspaceId}/experiments/${experimentId}/decisions`,
-      { fetch }
-    ),
+  decisions: (workspaceId: string, experimentId: string, fetch?: typeof globalThis.fetch) =>
+    request<DecisionRow[]>(`/api/workspaces/${workspaceId}/experiments/${experimentId}/decisions`, {
+      fetch
+    }),
 
-  trace: (
-    workspaceId: string,
-    traceId: string,
-    fetch?: typeof globalThis.fetch
-  ) =>
+  trace: (workspaceId: string, traceId: string, fetch?: typeof globalThis.fetch) =>
     request<TraceDetail>(`/api/workspaces/${workspaceId}/traces/${traceId}`, {
       fetch
     }),
@@ -356,11 +339,7 @@ export const api = {
     return { text, isJson };
   },
 
-  thread: (
-    workspaceId: string,
-    threadId: string,
-    fetch?: typeof globalThis.fetch
-  ) =>
+  thread: (workspaceId: string, threadId: string, fetch?: typeof globalThis.fetch) =>
     request<ThreadDetail>(`/api/workspaces/${workspaceId}/threads/${threadId}`, {
       fetch
     }),
@@ -372,15 +351,10 @@ export const api = {
    * grader emitted a structured breakdown. Throws `ApiError` (404) for an
    * unknown iteration.
    */
-  iterationFunnel: (
-    workspaceId: string,
-    iterationId: string,
-    fetch?: typeof globalThis.fetch
-  ) =>
-    request<FunnelDetail>(
-      `/api/workspaces/${workspaceId}/iterations/${iterationId}/funnel`,
-      { fetch }
-    ),
+  iterationFunnel: (workspaceId: string, iterationId: string, fetch?: typeof globalThis.fetch) =>
+    request<FunnelDetail>(`/api/workspaces/${workspaceId}/iterations/${iterationId}/funnel`, {
+      fetch
+    }),
 
   /**
    * Server-rendered structured diff of two iterations (B3). The diff math

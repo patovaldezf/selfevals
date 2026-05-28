@@ -44,9 +44,7 @@
       </div>
     {:else if data.workspaces.length === 0}
       <div class="rounded-lg border border-border bg-surface px-6 py-16 text-center">
-        <p class="text-text-2 mb-4">
-          No workspaces yet. Seed one from the CLI:
-        </p>
+        <p class="text-text-2 mb-4">No workspaces yet. Seed one from the CLI:</p>
         <code class="font-mono text-xs px-2 py-1 rounded bg-surface-2"
           >uv run selfevals init my-team</code
         >

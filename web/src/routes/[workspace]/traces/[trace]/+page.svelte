@@ -93,9 +93,7 @@
       byParent.set(s.parent_id, list);
     }
     for (const list of byParent.values()) {
-      list.sort(
-        (a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime()
-      );
+      list.sort((a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime());
     }
     return byParent;
   })();
@@ -194,7 +192,9 @@
             </a>
             <CopyableId id={data.trace.thread_id} label="thread id" />
             {#if data.trace.thread_position !== null}
-              <span class="font-mono text-text-3" data-numeric>turn {data.trace.thread_position}</span>
+              <span class="font-mono text-text-3" data-numeric
+                >turn {data.trace.thread_position}</span
+              >
             {/if}
           </dd>
         </div>
@@ -217,7 +217,9 @@
       {/if}
     </dl>
 
-    <div class="text-xs uppercase tracking-wide text-text-3 mb-2 flex items-baseline justify-between">
+    <div
+      class="text-xs uppercase tracking-wide text-text-3 mb-2 flex items-baseline justify-between"
+    >
       <span>Spans</span>
       <span class="text-text-3 font-mono normal-case" data-numeric>{spans.length}</span>
     </div>
@@ -232,8 +234,8 @@
         <span
           class="inline-block text-[14px] leading-none"
           style:color={selectedStyle.color}
-          aria-hidden="true"
-        >{selectedStyle.glyph}</span>
+          aria-hidden="true">{selectedStyle.glyph}</span
+        >
         <span class="font-mono uppercase tracking-wide">{selectedStyle.label}</span>
         <span aria-hidden="true">·</span>
         <span class="font-mono" data-numeric>{selected.duration_ms}ms</span>
@@ -257,7 +259,9 @@
 
       {#if pointerFields.length > 0}
         <section class="mb-6 rounded-lg border border-border bg-surface px-5 py-4">
-          <div class="text-xs uppercase tracking-wide text-text-3 mb-3 flex items-baseline justify-between">
+          <div
+            class="text-xs uppercase tracking-wide text-text-3 mb-3 flex items-baseline justify-between"
+          >
             <span>Payloads</span>
             {#if !hasAnyPointer}
               <span class="text-text-3 normal-case italic">none captured for this span</span>
@@ -276,11 +280,18 @@
       {/if}
 
       <details class="group">
-        <summary class="text-xs uppercase tracking-wide text-text-3 cursor-pointer hover:text-text-1 mb-2 list-none flex items-center gap-1.5">
+        <summary
+          class="text-xs uppercase tracking-wide text-text-3 cursor-pointer hover:text-text-1 mb-2 list-none flex items-center gap-1.5"
+        >
           <span class="group-open:rotate-90 transition-transform" aria-hidden="true">›</span>
           Raw detail
         </summary>
-        <pre class="font-mono text-xs bg-surface border border-border rounded-lg p-5 overflow-x-auto">{JSON.stringify(selected.detail, null, 2)}</pre>
+        <pre
+          class="font-mono text-xs bg-surface border border-border rounded-lg p-5 overflow-x-auto">{JSON.stringify(
+            selected.detail,
+            null,
+            2
+          )}</pre>
       </details>
     {:else}
       <div class="text-text-3 text-sm">Select a span to inspect.</div>

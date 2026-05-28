@@ -1,5 +1,4 @@
 <script lang="ts">
-  import DecisionBadge from '$lib/components/DecisionBadge.svelte';
   import MetricChip from '$lib/components/MetricChip.svelte';
   import Sparkline from '$lib/components/Sparkline.svelte';
   import type { PageData } from './$types';
@@ -51,25 +50,13 @@
   </header>
 
   <section class="grid grid-cols-3 gap-4 mb-12">
-    <MetricChip
-      label="Experiments"
-      value={data.workspace.experiment_count}
-      format="number"
-    />
-    <MetricChip
-      label="Recent health"
-      value={data.workspace.recent_health}
-      format="percent"
-    />
+    <MetricChip label="Experiments" value={data.workspace.experiment_count} format="number" />
+    <MetricChip label="Recent health" value={data.workspace.recent_health} format="percent" />
     <div class="rounded-lg border border-border bg-surface px-4 py-3.5 flex items-center gap-3">
       <div class="flex-1">
-        <div class="text-xs uppercase tracking-wide text-text-3 mb-1">
-          Anchor pass@1
-        </div>
+        <div class="text-xs uppercase tracking-wide text-text-3 mb-1">Anchor pass@1</div>
         <div class="font-mono text-sm text-text-2" data-numeric>
-          {anchorAll.length > 0
-            ? `${anchorAll.length} runs`
-            : 'no runs yet'}
+          {anchorAll.length > 0 ? `${anchorAll.length} runs` : 'no runs yet'}
         </div>
       </div>
       <Sparkline values={anchorAll} width={100} height={36} />
@@ -157,9 +144,8 @@
         <span class="text-xs text-text-3 font-mono">soon</span>
       </div>
       <p class="text-sm text-text-2 leading-relaxed">
-        Clusters of failing traces grouped by failure mode will land here once
-        the §J.6 module ships. Reserved real estate so the design doesn't
-        retrofit later.
+        Clusters of failing traces grouped by failure mode will land here once the §J.6 module
+        ships. Reserved real estate so the design doesn't retrofit later.
       </p>
     </div>
     <div class="rounded-lg border border-border bg-surface px-5 py-5">
