@@ -37,6 +37,28 @@ What selfevals sends to your agent for each case.
 | `parameters`    | `dict[str, Any]`     | Overrides from the proposer (e.g. model temperature, prompt swap). Pass through verbatim. |
 | `metadata`      | `dict[str, Any]`     | Free-form metadata for tracing.                                                       |
 
+#### Reading proposer model params
+
+Grid/random/LLM proposers don't drop their search-space params at the top
+level of `parameters` — they wrap them under a `model_params` key (the
+namespace the editable contract gates):
+
+```python
+req.parameters == {"model_params": {"level": 0.7, "temperature": 0.2}}
+```
+
+Rather than reach into that envelope by hand, use the
+`get_model_param` helper, which flattens it for you:
+
+```python
+level = req.get_model_param("level", 0.0)        # -> 0.7
+missing = req.get_model_param("nope", 0.0)       # -> 0.0 (default)
+```
+
+It returns the supplied default when the key is absent — or when no
+`model_params` envelope is present at all — so adapters never have to
+know the envelope's shape.
+
 ### `AdapterResponse`
 
 What your agent must return.

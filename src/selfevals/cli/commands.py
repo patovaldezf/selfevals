@@ -660,9 +660,16 @@ def _wrap_user_callable(callable_obj: object, entrypoint: AgentEntrypoint) -> Ag
             return result
         if isinstance(result, str):
             return AdapterResponse(content=result)
+        hint = ""
+        if inspect.isawaitable(result):
+            hint = (
+                " — did you forget to await an async call in your entrypoint? "
+                "selfevals awaits coroutines natively, so an `async def` entrypoint "
+                "should return its value directly without asyncio.run()."
+            )
         raise TypeError(
             f"agent entrypoint {entrypoint.raw!r} returned "
-            f"{type(result).__name__}; expected str or AdapterResponse"
+            f"{type(result).__name__}; expected str or AdapterResponse{hint}"
         )
 
     # Async entrypoints (`async def run(req)`) must be awaited, not called as

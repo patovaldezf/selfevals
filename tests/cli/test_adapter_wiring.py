@@ -23,6 +23,7 @@ from selfevals.repo.loader import (
     HttpAgentSpec,
 )
 from selfevals.runner.adapters import (
+    AdapterError,
     AdapterRequest,
     AdapterResponse,
     CliCommandAdapter,
@@ -140,3 +141,39 @@ async def test_wrap_user_callable_coerces_str_return_async() -> None:
     adapter = _wrap_user_callable(run, _EP)
     resp = await adapter.invoke(_req())
     assert resp.content == "hello"
+
+
+@pytest.mark.asyncio
+@pytest.mark.filterwarnings("ignore::RuntimeWarning")  # the dangling coroutine IS the symptom
+async def test_async_entrypoint_returning_coroutine_hints_await() -> None:
+    # Reachable case the hint targets: an `async def` entrypoint that forgets to
+    # await an inner async call, so it resolves to a *coroutine* (not an
+    # AdapterResponse). _coerce sees a coroutine and must now say "did you forget
+    # to await?" instead of the bare "returned coroutine" that sent brain_os
+    # chasing the wrong cause. The never-awaited inner coroutine raises a
+    # RuntimeWarning — which is precisely the bug we're making legible.
+    async def _inner() -> AdapterResponse:
+        return AdapterResponse(content="x")
+
+    async def run(req: AdapterRequest):  # type: ignore[no-untyped-def]
+        return _inner()  # returns a coroutine — the inner await is missing
+
+    adapter = _wrap_user_callable(run, _EP)
+    with pytest.raises((AdapterError, TypeError), match="forget to await"):
+        await adapter.invoke(_req())
+
+
+def test_plain_wrong_type_has_no_await_hint() -> None:
+    # A sync entrypoint returning a plain non-coercible value (int) must NOT get
+    # the await hint — only awaitables do. The TypeError from _coerce propagates
+    # wrapped in AdapterError ("embedded callable raised: ...").
+    import asyncio
+
+    def run(req: AdapterRequest):  # type: ignore[no-untyped-def]
+        return 123
+
+    adapter = _wrap_user_callable(run, _EP)
+    with pytest.raises(AdapterError) as exc:
+        asyncio.run(adapter.invoke(_req()))
+    assert "forget to await" not in str(exc.value)
+    assert "returned int" in str(exc.value)

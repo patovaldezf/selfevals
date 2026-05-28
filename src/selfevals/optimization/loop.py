@@ -19,6 +19,7 @@ The loop:
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from inspect import isawaitable
@@ -40,6 +41,7 @@ from selfevals.optimization.aggregator import (
     aggregate_iteration,
 )
 from selfevals.optimization.proposers import (
+    GridProposer,
     Proposer,
     ProposerContext,
     SearchSpaceExhaustedError,
@@ -68,6 +70,9 @@ if TYPE_CHECKING:
     from selfevals.schemas.dataset import SplitAllocation
     from selfevals.schemas.eval_case import EvalCase
     from selfevals.storage.interface import WorkspaceScope
+
+
+logger = logging.getLogger("selfevals.optimization")
 
 
 @dataclass(frozen=True)
@@ -200,6 +205,21 @@ class OptimizationLoop:
         # Dominant failure modes carried from the prior iteration — the context
         # the proposer is "shown" so a hypothesis can target a specific mode (§7).
         prev_failure_modes: list[str] = []
+
+        # Surface (don't hide) a grid that max_iterations would truncate: warn
+        # and continue so the run still produces partial coverage (WARN +
+        # CONTINUE — never abort).
+        if isinstance(self._proposer, GridProposer):
+            grid_size = self._proposer.grid_size(self._experiment)
+            if max_iter < grid_size:
+                logger.warning(
+                    "grid has %d combinations but max_iterations=%d; %d combination(s) "
+                    "will be skipped. Raise max_iterations to >= %d to cover the full grid.",
+                    grid_size,
+                    max_iter,
+                    grid_size - max_iter,
+                    grid_size,
+                )
 
         for index in range(max_iter):
             pending = self._pending_hypotheses()

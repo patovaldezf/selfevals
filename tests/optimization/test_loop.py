@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -396,6 +397,66 @@ def test_loop_rejects_invalid_grade_concurrency() -> None:
             cases=[_case()],
             grade_concurrency=0,
         )
+
+
+@pytest.mark.asyncio
+async def test_loop_warns_when_max_iterations_truncates_grid(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # 4 combos (2x2) but max_iterations=2 → loop should warn and still finish.
+    cases = [_case("pong")]
+    exp = _experiment(
+        max_iterations=2,
+        search_space={"level": [0.0, 1.0], "top_p": [0.9, 1.0]},
+    )
+    executor = Executor(
+        adapter=_adapter_for("pong", level=1.0),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    loop = OptimizationLoop(
+        experiment=exp,
+        executor=executor,
+        proposer=GridProposer(),
+        graders=[DeterministicGrader()],
+        cases=cases,
+    )
+    with caplog.at_level(logging.WARNING, logger="selfevals.optimization"):
+        result = await loop.run()
+    # WARN + CONTINUE: the run completes, only the first 2 of 4 combos ran.
+    assert exp.state == ExperimentState.COMPLETED
+    assert len(result.iterations) == 2
+    warnings = [
+        r
+        for r in caplog.records
+        if r.name == "selfevals.optimization" and r.levelno == logging.WARNING
+    ]
+    assert any("will be skipped" in r.getMessage() for r in warnings)
+    assert any("max_iterations=2" in r.getMessage() for r in warnings)
+
+
+@pytest.mark.asyncio
+async def test_loop_no_warning_when_max_iterations_covers_grid(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    cases = [_case("pong")]
+    # 2 combos, max_iterations=4 → covers the whole grid, no truncation warning.
+    exp = _experiment(max_iterations=4, search_space={"level": [0.0, 1.0]})
+    executor = Executor(
+        adapter=_adapter_for("pong", level=1.0),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    loop = OptimizationLoop(
+        experiment=exp,
+        executor=executor,
+        proposer=GridProposer(),
+        graders=[DeterministicGrader()],
+        cases=cases,
+    )
+    with caplog.at_level(logging.WARNING, logger="selfevals.optimization"):
+        await loop.run()
+    assert not any("will be skipped" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.asyncio

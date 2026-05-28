@@ -71,6 +71,16 @@ class AdapterRequest:
 
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    def get_model_param(self, key: str, default: Any = None) -> Any:
+        """Read a model param from the proposer envelope `parameters["model_params"]`.
+
+        Grid/random/llm proposers wrap their search-space params under a
+        ``model_params`` key (the namespace the editable contract gates). This
+        helper flattens that envelope so adapters don't hard-code its shape.
+        """
+        inner = (self.parameters or {}).get("model_params") or {}
+        return inner.get(key, default)
+
 
 @dataclass(frozen=True)
 class AdapterResponse:
@@ -125,8 +135,15 @@ class EmbeddedAdapter(AgentAdapter):
         except Exception as exc:
             raise AdapterError(f"embedded callable raised: {exc}") from exc
         if not isinstance(result, AdapterResponse):
+            hint = ""
+            if inspect.isawaitable(result):
+                hint = (
+                    " — did you forget to await an async call? An `async def` entrypoint "
+                    "should return its value directly; selfevals awaits it natively."
+                )
             raise AdapterError(
-                f"embedded callable returned {type(result).__name__}, expected AdapterResponse"
+                f"embedded callable returned {type(result).__name__}, "
+                f"expected AdapterResponse{hint}"
             )
         return result
 

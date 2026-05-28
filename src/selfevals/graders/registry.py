@@ -6,6 +6,15 @@ all referenced names through this registry. Anything that is not
 registered raises a :class:`SelfEvalsUserError` with a list of the
 available names — no silent fallthrough.
 
+A grader name may instead be a **dotted path** of the form
+``"package.module:ClassName"`` (i.e. it contains a ``:``). In that case
+the class is imported on demand and instantiated, with no prior
+registration needed — the declarative escape hatch for project-local
+custom graders. The class must subclass :class:`Grader` and be
+constructible with no required arguments. Built-in names (``deterministic``
+etc.) take the registry path; dotted paths take the import path. The two
+coexist.
+
 The registry is module-level; integration tests reset it in a fixture.
 It can be scoped per Experiment later if cross-experiment isolation
 becomes important.
@@ -13,6 +22,7 @@ becomes important.
 
 from __future__ import annotations
 
+import importlib
 from collections.abc import Callable
 
 from selfevals.graders.artifact import ArtifactCompletenessGrader
@@ -45,17 +55,65 @@ def available_graders() -> list[str]:
     return sorted(_REGISTRY)
 
 
-def resolve_graders(names: list[str]) -> list[Grader]:
-    """Materialise a list of grader instances from registered names.
+def _resolve_dotted_grader(spec: str) -> Grader:
+    """Import and instantiate a grader from a ``"module:ClassName"`` path.
 
-    Raises :class:`SelfEvalsUserError` with the list of available names
-    when any entry is missing — this is the path that produces the
-    "Grader 'foo' not registered" message in the troubleshooting doc.
+    Mirrors `repo.loader.resolve_agent_callable`: the class is imported on
+    demand. Raises :class:`SelfEvalsUserError` if the module/attribute can't
+    be imported, the target isn't a `Grader` subclass, or it can't be
+    constructed with no arguments.
+    """
+    from selfevals._errors import SelfEvalsUserError
+
+    module_name, _, attribute = spec.partition(":")
+    if not module_name or not attribute:
+        raise SelfEvalsUserError(
+            f"grader path {spec!r} is missing a module or class name",
+            hint="expected the form 'package.module:ClassName'",
+        )
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as exc:
+        raise SelfEvalsUserError(
+            f"grader path {spec!r}: module {module_name!r} could not be imported: {exc}",
+            hint="is the module importable from your working directory / installed?",
+        ) from exc
+    target = getattr(module, attribute, None)
+    if target is None:
+        raise SelfEvalsUserError(
+            f"grader path {spec!r}: module {module_name!r} has no attribute {attribute!r}"
+        )
+    if not (isinstance(target, type) and issubclass(target, Grader)):
+        raise SelfEvalsUserError(
+            f"grader path {spec!r}: {attribute!r} is not a subclass of Grader"
+        )
+    try:
+        return target()
+    except TypeError as exc:
+        raise SelfEvalsUserError(
+            f"grader path {spec!r}: {attribute!r} could not be constructed with no "
+            f"arguments: {exc}",
+            hint="custom graders must have a no-arg constructor (give __init__ defaults)",
+        ) from exc
+
+
+def resolve_graders(names: list[str]) -> list[Grader]:
+    """Materialise a list of grader instances from names or dotted paths.
+
+    A name containing ``:`` is a ``"module:ClassName"`` dotted path, imported
+    and instantiated on demand (no registration needed). Otherwise it is looked
+    up in the registry. A missing registry name raises
+    :class:`SelfEvalsUserError` with the list of available names — this is the
+    path that produces the "Grader 'foo' not registered" message in the
+    troubleshooting doc.
     """
     from selfevals.cli._friendly import unknown_grader  # avoid CLI ↔ graders import cycle
 
     out: list[Grader] = []
     for n in names:
+        if ":" in n:
+            out.append(_resolve_dotted_grader(n))
+            continue
         factory = _REGISTRY.get(n)
         if factory is None:
             raise unknown_grader(n, list(_REGISTRY))

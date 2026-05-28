@@ -16,6 +16,6 @@ from selfevals.runner.adapters import AdapterRequest, AdapterResponse
 
 
 def run(req: AdapterRequest) -> AdapterResponse:
-    level = req.parameters.get("model_params", {}).get("level", 0.0)
+    level = req.get_model_param("level", 0.0)
     content = "pong" if level >= 0.5 else "miss"
     return AdapterResponse(content=content, tokens_input=4, tokens_output=2)
