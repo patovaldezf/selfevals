@@ -1,6 +1,7 @@
 """selfevals — self-improving evals framework for AI agents."""
 
 from selfevals.graders.base import (
+    BreakdownNode,
     GradeLabel,
     Grader,
     GraderContext,
@@ -26,6 +27,7 @@ __all__ = [
     "AdapterResponse",
     "AdapterToolUse",
     "AgentAdapter",
+    "BreakdownNode",
     "GradeLabel",
     "GradeResult",
     "Grader",

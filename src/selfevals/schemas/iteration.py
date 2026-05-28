@@ -59,7 +59,7 @@ class CodeDiff(SelfEvalsModel):
     """A code change emitted only by agent_loop proposals."""
 
     path: NonEmptyStr
-    operation: NonEmptyStr  # "create" | "modify" | "delete" — left free for MVP
+    operation: NonEmptyStr  # "create" | "modify" | "delete" — left free-form
     diff_pointer: str | None = None
     diff_hash: str | None = None
 
@@ -144,6 +144,13 @@ class IterationMetrics(SelfEvalsModel):
     deterministic-grader tag before then). Persisting these is what makes the
     "did this change reduce mode X?" question answerable across iterations.
     See docs/spec/error_analysis_design.md §5."""
+    funnel: dict[str, Any] = Field(default_factory=dict)
+    """Rolled-up grader funnel breakdown for this iteration, keyed by top-level
+    node `key` (serialized `aggregator.FunnelNode` trees: count / mean_score /
+    total_weight / label_counts / failure_mode_counts / children). Empty when
+    no grader emitted a breakdown. Additive and purely informational: it never
+    changes the primary metric or the decision — it powers the funnel
+    drill-down in the reporter, compare view, and frontend."""
 
 
 class IterationDecision(SelfEvalsModel):
