@@ -127,11 +127,17 @@ async function request<T>(
     }
   });
   if (!res.ok) {
-    let body: unknown = null;
+    // Read the body once as text, then try JSON. Calling `res.json()` then
+    // `res.text()` in a fallback consumes the body on the first call and
+    // the second throws `TypeError: Body is unusable: Body has already
+    // been read` — which masks the real upstream error with a confusing
+    // one. Text-first lets us preserve the original body either way.
+    const raw = await res.text();
+    let body: unknown = raw;
     try {
-      body = await res.json();
+      body = JSON.parse(raw);
     } catch {
-      body = await res.text();
+      // not JSON; keep raw text
     }
     throw new ApiError(res.status, body);
   }
