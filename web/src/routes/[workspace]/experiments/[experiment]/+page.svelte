@@ -151,8 +151,17 @@
         <tbody class="divide-y divide-border">
           {#each iterations as it}
             <tr
-              class="hover:bg-surface-2 transition-colors cursor-pointer"
+              class="hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-1 transition-colors cursor-pointer"
+              role="button"
+              tabindex="0"
+              aria-label="Open details for iteration #{it.iteration}"
               on:click={() => (openIteration = it)}
+              on:keydown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openIteration = it;
+                }
+              }}
             >
               <td class="px-4 py-3 font-mono text-text-3 text-xs" data-numeric>{it.iteration}</td>
               <td class="px-4 py-3">

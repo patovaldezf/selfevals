@@ -15,8 +15,8 @@ Para el plan completo, ver [FRONTEND_PRODUCT_PLAN.md](FRONTEND_PRODUCT_PLAN.md).
 | A4 | #19 selfevals serve | ✅ merged | latente BUG-4 hasta este PR |
 | A5 | #20 identidad humana sobre ULID | ✅ merged | — |
 | A6 | #21 span kind visible + densidad | ✅ merged | QA visual destrabada al fix-ear BUG-4 |
-| **BUG-4** | proxy `/api` en `selfevals serve` | ✅ fixed este PR | hooks.server.ts + `SELFEVALS_API_BASE` |
-| A7 | a11y filas ([button]/[link]) | ⏳ pendiente | — |
+| BUG-4 | #22 proxy `/api` en `selfevals serve` | ✅ merged | hooks.server.ts + `SELFEVALS_API_BASE` |
+| A7 | a11y filas ([button]/[link]) | 🟡 in progress | — |
 | A8 | paginación consistente + virtual scroll | ⏳ pendiente | — |
 
 ## Pendientes registrados (orden de descubrimiento)
@@ -33,10 +33,10 @@ Para el plan completo, ver [FRONTEND_PRODUCT_PLAN.md](FRONTEND_PRODUCT_PLAN.md).
    - Scope: backend resolver + tests. No es de Fase A; ir como propio
      PR cuando duela.
 
-2. **Anchor-set: CopyableId chip dentro del row.** El `<a>` envuelve
-   toda la fila — meter `<button>` adentro es HTML inválido y se traga
-   el click. **Bloqueado por A7** (filas como `[button]`/`[link]`).
-   Cuando A7 reescriba el row pattern, restaurar el chip ahí.
+2. ~~**Anchor-set: CopyableId chip dentro del row.**~~ ✅ Resuelto en
+   A7. Row reescrito de `<a>` envolvente a `<div>` con `<a>` (link al
+   experiment) y `<CopyableId>` lado a lado. focus-within ring para
+   feedback de teclado consistente.
 
 3. ~~**QA visual de los chips CopyableId.**~~ ✅ Desbloqueado con
    BUG-4. Render visual confirmado en el trace viewer y experiment
@@ -71,9 +71,9 @@ Para el plan completo, ver [FRONTEND_PRODUCT_PLAN.md](FRONTEND_PRODUCT_PLAN.md).
    regresión. Cuando llegue mobile, refactorizar SpanNode para
    colapsar facts a chevron expandible.
 
-### De A7 (pendiente)
+### De A7 (en progreso)
 
-_(pendiente)_
+_(pendiente — registrar al cerrar)_
 
 ### De A8 (pendiente)
 

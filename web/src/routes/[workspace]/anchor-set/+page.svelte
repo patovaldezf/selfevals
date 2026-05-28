@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CopyableId from '$lib/components/CopyableId.svelte';
   import Sparkline from '$lib/components/Sparkline.svelte';
   import type { PageData } from './$types';
   import type { LayoutData } from '../$types';
@@ -41,14 +42,18 @@
   {:else}
     <div class="space-y-3">
       {#each byExp as [id, rec]}
-        <a
-          href={`/${data.workspace.id}/experiments/${id}`}
-          class="block rounded-lg border border-border bg-surface px-5 py-4 hover:bg-surface-2 transition-colors"
+        <div
+          class="rounded-lg border border-border bg-surface px-5 py-4 hover:bg-surface-2 focus-within:bg-surface-2 focus-within:ring-2 focus-within:ring-text-1 transition-colors"
         >
           <div class="flex items-center justify-between">
-            <div>
-              <div class="font-medium">{rec.name}</div>
-              <div class="text-text-3 text-xs font-mono">{id}</div>
+            <div class="min-w-0 flex flex-col items-start gap-1">
+              <a
+                href={`/${data.workspace.id}/experiments/${id}`}
+                class="font-medium hover:text-text-1 focus-visible:outline-none"
+              >
+                {rec.name}
+              </a>
+              <CopyableId {id} label="experiment id" />
             </div>
             <div class="flex items-center gap-6">
               <div class="text-right">
@@ -60,7 +65,7 @@
               <Sparkline values={rec.values} width={180} height={36} />
             </div>
           </div>
-        </a>
+        </div>
       {/each}
     </div>
   {/if}
