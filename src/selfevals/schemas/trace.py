@@ -38,7 +38,7 @@ from selfevals.schemas.enums import (
     TraceState,
 )
 
-TRACE_SCHEMA_VERSION = "1.0.0"
+TRACE_SCHEMA_VERSION = "1.1.0"
 
 
 class RunInfo(SelfEvalsModel):
@@ -130,6 +130,7 @@ class TokenBreakdown(SelfEvalsModel):
 class CostBreakdown(SelfEvalsModel):
     input: float = Field(default=0.0, ge=0.0)
     cache_read: float = Field(default=0.0, ge=0.0)
+    cache_creation: float = Field(default=0.0, ge=0.0)
     output: float = Field(default=0.0, ge=0.0)
     total: float = Field(default=0.0, ge=0.0)
 

@@ -19,11 +19,14 @@ from typing import TYPE_CHECKING
 from selfevals._internal.ids import new_prefixed_id
 from selfevals._internal.time import utc_now
 from selfevals.runner.adapters import AdapterError, AdapterRequest
+from selfevals.runner.pricing import estimate_cost
 from selfevals.runner.sandbox import SandboxPolicy
 from selfevals.schemas.enums import StopReason, ToolCallStatus
 from selfevals.schemas.trace import (
     AgentSnapshotRef,
+    CostBreakdown,
     RunInfo,
+    TokenBreakdown,
     ToolUseRequest,
     Trace,
 )
@@ -244,6 +247,7 @@ class Executor:
                     response.provider_metadata.get("tokens_per_second")
                 ),
             )
+            llm.set_cost(self._cost_for(response))
             llm.provider_metadata = dict(response.provider_metadata)
         for tu in response.tool_uses:
             # The Tool registry does not yet annotate side-effects, so we treat
@@ -257,6 +261,37 @@ class Executor:
             ) as tool_span:
                 tool_span.sandboxed = sandboxed
                 tool_span.status = ToolCallStatus.OK
+
+    def _cost_for(self, response: AdapterResponse) -> CostBreakdown | None:
+        """Resolve the cost of one adapter response.
+
+        The adapter's `cost_usd` is authoritative when it reports one — we keep
+        it as the breakdown total (the component split is the provider's, not
+        ours to infer). When the adapter reports no cost, derive it from the
+        response tokens and the agent's model via the pricing table. An unknown
+        model yields None (a one-time warning fires in the pricing layer) — we
+        never fabricate a cost.
+        """
+        if response.cost_usd > 0:
+            return CostBreakdown(total=response.cost_usd)
+        agent = self._adapter.agent
+        if agent is None:
+            return None
+        tokens = TokenBreakdown(
+            input=response.tokens_input,
+            input_cache_read=response.tokens_cache_read,
+            input_cache_creation=response.tokens_cache_creation,
+            output=response.tokens_output,
+            reasoning=response.tokens_reasoning,
+            total=(
+                response.tokens_input
+                + response.tokens_cache_read
+                + response.tokens_cache_creation
+                + response.tokens_output
+                + response.tokens_reasoning
+            ),
+        )
+        return estimate_cost(agent.model.provider, agent.model.name, tokens)
 
     def _agent_ref(self) -> AgentSnapshotRef:
         ag = self._adapter.agent
