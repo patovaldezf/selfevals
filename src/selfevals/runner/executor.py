@@ -50,6 +50,16 @@ class RepetitionResult:
 class CaseRun:
     case_id: str
     repetitions: list[RepetitionResult] = field(default_factory=list)
+    simulator_cost_usd: float = 0.0
+    """Aggregate cost (USD) of UserSimulator turns produced by the
+    MultiTurnExecutor for this case run. Stays separate from the SUT's
+    trace metrics so trajectory/cost graders that read the SUT's trace are
+    unaffected by simulation overhead. Always 0.0 for single-shot Executor
+    runs and for conversation cases without a simulator."""
+
+    simulator_turns: int = 0
+    """Number of user turns the simulator emitted across all repetitions
+    of this case (does not include the scripted user turns)."""
 
     @property
     def successful_count(self) -> int:

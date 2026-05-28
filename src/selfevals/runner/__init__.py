@@ -24,8 +24,14 @@ from selfevals.runner.adapters import (
 from selfevals.runner.executor import CaseRun, Executor, RepetitionResult
 from selfevals.runner.multiturn import MultiTurnExecutor
 from selfevals.runner.sandbox import SandboxPolicy, SandboxViolationError
+from selfevals.runner.simulator import (
+    ROLE_TAG_USER_SIMULATOR,
+    SimulatorSpec,
+    UserSimulator,
+)
 
 __all__ = [
+    "ROLE_TAG_USER_SIMULATOR",
     "AdapterError",
     "AdapterRequest",
     "AdapterResponse",
@@ -41,4 +47,6 @@ __all__ = [
     "RepetitionResult",
     "SandboxPolicy",
     "SandboxViolationError",
+    "SimulatorSpec",
+    "UserSimulator",
 ]
