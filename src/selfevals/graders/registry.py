@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from selfevals.graders.artifact import ArtifactCompletenessGrader
 from selfevals.graders.base import Grader
 from selfevals.graders.deterministic import DeterministicGrader
 from selfevals.graders.guardrail import GuardrailGrader
@@ -65,6 +66,7 @@ def resolve_graders(names: list[str]) -> list[Grader]:
 # Built-in factories. Registered eagerly on import so that anything that
 # imports `selfevals.graders` (or just this module) sees the defaults.
 
+register_grader("artifact_completeness", ArtifactCompletenessGrader)
 register_grader("deterministic", DeterministicGrader)
 register_grader("guardrail", GuardrailGrader)
 register_grader("trajectory", TrajectoryGrader)
