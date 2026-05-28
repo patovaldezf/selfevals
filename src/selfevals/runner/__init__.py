@@ -22,6 +22,7 @@ from selfevals.runner.adapters import (
     HttpEndpointAdapter,
 )
 from selfevals.runner.executor import CaseRun, Executor, RepetitionResult
+from selfevals.runner.multiturn import MultiTurnExecutor
 from selfevals.runner.sandbox import SandboxPolicy, SandboxViolationError
 
 __all__ = [
@@ -36,6 +37,7 @@ __all__ = [
     "EmbeddedCallable",
     "Executor",
     "HttpEndpointAdapter",
+    "MultiTurnExecutor",
     "RepetitionResult",
     "SandboxPolicy",
     "SandboxViolationError",

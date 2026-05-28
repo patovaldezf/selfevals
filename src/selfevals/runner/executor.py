@@ -166,7 +166,14 @@ class Executor:
         run_info: RunInfo,
         agent_ref: AgentSnapshotRef,
         parameter_overrides: dict[str, object],
+        input_override: dict[str, object] | None = None,
     ) -> RepetitionResult:
+        """Run one adapter invocation and assemble its Trace.
+
+        `input_override` lets a caller (the MultiTurnExecutor) feed a
+        turn-specific conversation history instead of the case's raw input;
+        when None the case input is used verbatim (the single-shot path).
+        """
         started_at = utc_now()
         recorder = TraceRecorder(
             workspace_id=self._workspace_id,
@@ -182,7 +189,7 @@ class Executor:
         adapter_request = AdapterRequest(
             workspace_id=self._workspace_id,
             case_id=case.id,
-            input=case.input,
+            input=case.input if input_override is None else input_override,
             context=case.context,
             tools_allowed=self._tools_allowed(case),
             parameters=parameter_overrides,
