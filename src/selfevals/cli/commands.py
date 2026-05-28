@@ -668,3 +668,117 @@ def _ensure_workspace(storage: SQLiteStorage, spec: ExperimentSpec) -> None:
     )
     with storage.open(spec.workspace_id) as s:
         s.put_entity(ws)
+
+
+def _run_uvicorn(host: str, port: int, reload: bool) -> None:
+    """Wrapper around uvicorn.run for testability — tests stub this."""
+    try:
+        import uvicorn
+    except ImportError as exc:
+        raise SelfEvalsUserError(
+            "uvicorn is not installed. Install with: pip install 'selfevals[web]'"
+        ) from exc
+    uvicorn.run(
+        "selfevals.api.app:build_app",
+        host=host,
+        port=port,
+        reload=reload,
+        factory=True,
+        log_level="warning",
+    )
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    """Run the FastAPI API (and optionally the SvelteKit web UI) in one command.
+
+    Without this, dogfooding meant two terminals: `python -m selfevals.api`
+    in one and `npm run dev` in another. The Altman/Musk filter from
+    FRONTEND_PRODUCT_PLAN.md §3 — "a dev tries it in 5 min" — fails when
+    the onboarding has two processes and a proxy. One command, one URL.
+
+    Web wiring: SvelteKit's `adapter-node` build is a Node server (it
+    does SSR); we can't serve it from FastAPI directly. Instead we spawn
+    `node <web-dist>/index.js` as a child process with its own port (the
+    API port + 1 by default), print both URLs, and tear it down cleanly
+    when uvicorn exits or the user hits Ctrl+C.
+    """
+    import os
+    import signal
+    import subprocess
+    from pathlib import Path
+
+    os.environ["SELFEVALS_DB"] = str(args.db)
+
+    # Auto-detect a built web bundle if --web-dist wasn't given and the
+    # user didn't disable web mode. Looks for `web/build/index.js`
+    # relative to cwd — matches the conventional repo layout.
+    web_dist: Path | None = None
+    if not args.no_web:
+        if args.web_dist:
+            candidate = Path(args.web_dist)
+            if not (candidate / "index.js").exists():
+                raise SelfEvalsUserError(
+                    f"--web-dist {candidate} does not contain index.js — "
+                    f"run `npm run build` in the web/ dir first."
+                )
+            web_dist = candidate
+        else:
+            default_dist = Path.cwd() / "web" / "build"
+            if (default_dist / "index.js").exists():
+                web_dist = default_dist
+
+    web_proc: subprocess.Popen[bytes] | None = None
+    web_port = args.port + 1
+    if web_dist is not None:
+        web_env = os.environ.copy()
+        web_env["PORT"] = str(web_port)
+        # The SvelteKit dev server proxies /api → 127.0.0.1:8000; the
+        # built server has no proxy, so the web side must call the API
+        # via absolute URLs. SvelteKit's `+page.server.ts` `fetch` runs
+        # in Node and respects `ORIGIN` for resolving relative URLs.
+        web_env["ORIGIN"] = f"http://{args.host}:{web_port}"
+        try:
+            web_proc = subprocess.Popen(
+                ["node", str(web_dist / "index.js")],
+                env=web_env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError as exc:
+            raise SelfEvalsUserError(
+                "node is not installed but --web-dist was set. Install Node "
+                "(https://nodejs.org) or pass --no-web to run the API alone."
+            ) from exc
+
+    # Tear down the web child cleanly on Ctrl+C / SIGTERM.
+    def _shutdown(_signum: int, _frame: object | None) -> None:
+        if web_proc is not None and web_proc.poll() is None:
+            web_proc.terminate()
+        raise KeyboardInterrupt
+
+    prev_sigint = signal.signal(signal.SIGINT, _shutdown)
+    prev_sigterm = signal.signal(signal.SIGTERM, _shutdown)
+
+    print("selfevals serve")
+    print(f"  API : http://{args.host}:{args.port}")
+    if web_proc is not None:
+        print(f"  Web : http://{args.host}:{web_port}")
+    else:
+        print("  Web : disabled (no build at web/build/index.js; pass --web-dist)")
+    print(f"  DB  : {args.db}")
+    print("  ^C to stop.")
+
+    try:
+        _run_uvicorn(args.host, args.port, args.reload)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        signal.signal(signal.SIGINT, prev_sigint)
+        signal.signal(signal.SIGTERM, prev_sigterm)
+        if web_proc is not None and web_proc.poll() is None:
+            web_proc.terminate()
+            try:
+                web_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                web_proc.kill()
+    return 0
