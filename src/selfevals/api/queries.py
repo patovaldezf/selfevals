@@ -184,6 +184,7 @@ def list_experiments(
 def experiment_detail(
     storage: SQLiteStorage, *, workspace_id: str, experiment_id: str
 ) -> ExperimentDetailResponse | None:
+    result_dict: dict[str, Any] | None = None
     with storage.open(workspace_id) as scope:
         try:
             exp = scope.get_entity(Experiment, experiment_id)
@@ -192,11 +193,11 @@ def experiment_detail(
         assert isinstance(exp, Experiment)
         iterations = _experiment_iterations(scope, exp.id)
         decisions = _experiment_decisions(scope, exp.id)
-
-    result_dict: dict[str, Any] | None = None
-    if iterations:
-        result = _reconstruct_result(exp, iterations, decisions)
-        result_dict = json.loads(render_json(result))
+        # Reconstruct while the scope is open — it reloads persisted Traces to
+        # repopulate case_runs / failure_reasons.
+        if iterations:
+            result = _reconstruct_result(scope, exp, iterations, decisions)
+            result_dict = json.loads(render_json(result))
 
     summary = ExperimentSummary(**_experiment_summary_dict(exp, iteration_count=len(iterations)))
     return ExperimentDetailResponse(

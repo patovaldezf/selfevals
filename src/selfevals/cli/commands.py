@@ -61,11 +61,12 @@ from selfevals.runner.adapters import (
     EmbeddedAdapter,
     HttpEndpointAdapter,
 )
-from selfevals.runner.executor import Executor
+from selfevals.runner.executor import CaseRun, Executor, RepetitionResult
 from selfevals.runner.sandbox import SandboxPolicy
 from selfevals.schemas.enums import ProposerStrategy
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.iteration import DecisionRecord, IterationRecord
+from selfevals.schemas.trace import Trace
 from selfevals.schemas.workspace import Workspace
 from selfevals.storage.interface import ListFilter
 from selfevals.storage.seed import seed_failure_taxonomy, seed_workspace
@@ -203,10 +204,12 @@ def cmd_report(args: argparse.Namespace) -> int:
             assert isinstance(exp, Experiment)
             iterations = _experiment_iterations(scope, exp.id)
             decisions = _experiment_decisions(scope, exp.id)
+            # Build the result while the scope is open — _reconstruct_result
+            # reloads persisted Traces to repopulate case_runs / failure_reasons.
+            result = _reconstruct_result(scope, exp, iterations, decisions)
     finally:
         storage.close()
 
-    result = _reconstruct_result(exp, iterations, decisions)
     if args.format == "json":
         print(render_json(result))
     else:
@@ -350,16 +353,51 @@ def _experiment_decisions(scope: object, experiment_id: str) -> dict[int, Decisi
     return by_iter
 
 
+def _load_case_runs(scope: object, experiment_id: str, iteration: int) -> list[CaseRun]:
+    """Rehydrate an iteration's CaseRuns from persisted Trace entities.
+
+    `run.persist_traces` writes each repetition's Trace (stamped with its
+    grader_results) to storage; the IterationRecord only keeps the trace ids.
+    Without re-reading the traces, a report rebuilt from disk would have empty
+    `case_runs` and therefore empty `failure_reasons` — losing the per-grade
+    rationales that an inline `run --format json` shows. Filter Trace entities
+    by experiment+iteration (default `persist_traces=failed` keeps exactly the
+    non-passing ones the reporter dedups), group by eval_case_id, and rebuild
+    minimal CaseRuns. `response`/`error` stay None — the reporter only reads
+    `trace.grader_results`.
+    """
+    listed = scope.list_entities(  # type: ignore[attr-defined]
+        Trace,
+        ListFilter(where={"run.experiment_id": experiment_id, "run.iteration": iteration}),
+    )
+    by_case: dict[str, list[RepetitionResult]] = {}
+    for tr in listed:
+        if not isinstance(tr, Trace):
+            continue
+        case_id = tr.run.eval_case_id or tr.run.run_id
+        by_case.setdefault(case_id, []).append(
+            RepetitionResult(repetition=tr.run.repetition, trace=tr, response=None, error=None)
+        )
+    case_runs: list[CaseRun] = []
+    for case_id, reps in by_case.items():
+        reps.sort(key=lambda r: r.repetition)
+        case_runs.append(CaseRun(case_id=case_id, repetitions=reps))
+    return case_runs
+
+
 def _reconstruct_result(
+    scope: object,
     experiment: Experiment,
     iterations: Sequence[IterationRecord],
     decisions: dict[int, DecisionRecord],
 ) -> OptimizationResult:
     """Build an OptimizationResult from persisted state.
 
-    Some live-only fields (case_runs, per-case GradeResults) are lost
-    once iterations hit disk — we surface what survives. The reporter
-    only uses aggregate-level fields, so the report fidelity is intact.
+    Aggregate-level fields come from the IterationRecord; `case_runs` are
+    rehydrated from persisted Traces (see `_load_case_runs`) so the report's
+    `failure_reasons` match an inline `run --format json`. Live-only fields the
+    traces don't carry (e.g. the AdapterResponse) stay absent — the reporter
+    doesn't read them.
     """
     from selfevals.schemas.iteration import Proposal
 
@@ -393,7 +431,7 @@ def _reconstruct_result(
                 iteration=record.iteration,
                 proposal=proposal,
                 aggregate=aggregate,
-                case_runs=[],
+                case_runs=_load_case_runs(scope, experiment.id, record.iteration),
                 iteration_record=record,
                 decision_record=decision,
             )
