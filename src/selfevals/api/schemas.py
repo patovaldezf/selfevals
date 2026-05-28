@@ -117,6 +117,7 @@ class TraceResponse(BaseModel):
     id: str
     run_id: str
     experiment_id: str | None
+    experiment_name: str | None = None
     iteration: int | None
     thread_id: str | None = None
     thread_position: int | None = None

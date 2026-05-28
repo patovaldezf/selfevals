@@ -96,6 +96,7 @@ export type TraceDetail = {
   id: string;
   run_id: string;
   experiment_id: string | null;
+  experiment_name: string | null;
   iteration: number | null;
   final_state: string;
   started_at: string;

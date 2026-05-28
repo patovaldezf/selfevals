@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CopyableId from '$lib/components/CopyableId.svelte';
   import PointerField from '$lib/components/PointerField.svelte';
   import SpanNode from '$lib/components/SpanNode.svelte';
   import type { SpanSummary } from '$lib/api/client';
@@ -129,16 +130,34 @@
   onDestroy(() => {
     streamHandle?.close();
   });
+
+  $: traceTitle = data.trace.experiment_name ?? 'Standalone trace';
 </script>
 
 <svelte:head>
-  <title>Trace {data.trace.run_id} · selfevals</title>
+  <title>{traceTitle} · selfevals</title>
 </svelte:head>
 
 <div class="grid grid-cols-[420px_1fr] min-h-screen">
   <aside class="border-r border-border bg-surface px-5 py-7 overflow-y-auto">
-    <div class="text-xs text-text-3 font-mono mb-1">Trace</div>
-    <h1 class="text-lg font-mono font-medium mb-4">{data.trace.run_id}</h1>
+    <div class="text-xs text-text-3 uppercase tracking-wide mb-1">Trace</div>
+    {#if data.trace.experiment_name && data.trace.experiment_id}
+      <h1 class="text-lg font-semibold tracking-tight mb-1">
+        <a
+          href={`/${$page.params.workspace}/experiments/${data.trace.experiment_id}`}
+          class="hover:text-text-1"
+        >
+          {data.trace.experiment_name}
+        </a>
+      </h1>
+      {#if data.trace.iteration !== null}
+        <div class="text-text-3 text-xs mb-4">Iteration #{data.trace.iteration}</div>
+      {:else}
+        <div class="mb-4"></div>
+      {/if}
+    {:else}
+      <h1 class="text-lg font-semibold tracking-tight mb-4">{traceTitle}</h1>
+    {/if}
     <dl class="space-y-2 text-xs mb-6">
       <div class="flex justify-between items-center">
         <dt class="text-text-3">final state</dt>
@@ -164,6 +183,18 @@
         <dt class="text-text-3">spans</dt>
         <dd class="font-mono" data-numeric>{spans.length}</dd>
       </div>
+      <div class="flex justify-between items-center gap-2">
+        <dt class="text-text-3">run id</dt>
+        <dd class="min-w-0"><CopyableId id={data.trace.run_id} label="run id" /></dd>
+      </div>
+      {#if data.trace.experiment_id}
+        <div class="flex justify-between items-center gap-2">
+          <dt class="text-text-3">experiment id</dt>
+          <dd class="min-w-0">
+            <CopyableId id={data.trace.experiment_id} label="experiment id" />
+          </dd>
+        </div>
+      {/if}
     </dl>
 
     <div class="text-xs uppercase tracking-wide text-text-3 mb-2">Spans</div>
