@@ -181,6 +181,24 @@
           <dd class="font-mono" data-numeric>#{data.trace.iteration}</dd>
         </div>
       {/if}
+      {#if data.trace.thread_id}
+        <div class="flex justify-between items-start gap-2">
+          <dt class="text-text-3 pt-0.5">thread</dt>
+          <dd class="flex flex-col items-end gap-1 min-w-0">
+            <a
+              href={`/${$page.params.workspace}/threads/${data.trace.thread_id}`}
+              class="group inline-flex items-center gap-1.5 text-text-2 hover:text-text-1 transition-colors"
+            >
+              <span>View conversation</span>
+              <span class="text-text-3 group-hover:text-text-1 shrink-0" aria-hidden="true">→</span>
+            </a>
+            <CopyableId id={data.trace.thread_id} label="thread id" />
+            {#if data.trace.thread_position !== null}
+              <span class="font-mono text-text-3" data-numeric>turn {data.trace.thread_position}</span>
+            {/if}
+          </dd>
+        </div>
+      {/if}
       <div class="flex justify-between">
         <dt class="text-text-3">spans</dt>
         <dd class="font-mono" data-numeric>{spans.length}</dd>
