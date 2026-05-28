@@ -1,9 +1,39 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from pathlib import Path
+
 import pytest
 
 from selfevals.graders.base import BreakdownNode, GradeLabel
-from selfevals.optimization.aggregator import CaseOutcome, aggregate_iteration
+from selfevals.optimization.aggregator import (
+    Aggregator,
+    CaseOutcome,
+    aggregate_iteration,
+)
+from selfevals.runner.executor import CaseRun, RepetitionResult
+from selfevals.schemas.enums import (
+    DatasetSource,
+    DatasetType,
+    GroundTruthMethod,
+    Level,
+    SandboxMode,
+)
+from selfevals.schemas.eval_case import (
+    CaseTaxonomy,
+    EvalCase,
+    Expected,
+    FeatureTag,
+    GroundTruthSpec,
+    SourceInfo,
+)
+from selfevals.schemas.trace import AgentSnapshotRef, RunInfo, Trace
+from selfevals.storage.filesystem import FilesystemObjectStore
+from selfevals.trace.payload_router import PayloadRouter
+from selfevals.trace.recorder import TraceRecorder
+
+WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
+T0 = datetime(2026, 5, 16, 12, 0, 0, tzinfo=UTC)
 
 
 def _outcome(
@@ -270,3 +300,94 @@ def test_unsupported_metric_raises() -> None:
             case_outcomes=[_outcome([GradeLabel.PASS])],
             primary_metric="my_made_up_metric",
         )
+
+
+def _eval_case() -> EvalCase:
+    return EvalCase(
+        id=EvalCase.make_id(),
+        workspace_id=WS,
+        name="t",
+        task_type="x",
+        input={"messages": [{"role": "user", "content": "hi"}]},
+        taxonomy=CaseTaxonomy(
+            level=Level.FINAL_RESPONSE,
+            feature=FeatureTag(primary="commerce.product_resolution"),
+            source=SourceInfo(type=DatasetSource.HANDCRAFTED),
+            ground_truth=GroundTruthSpec(methods=[GroundTruthMethod.EXACT_MATCH]),
+            dataset_type=DatasetType.CAPABILITY,
+        ),
+        expected=Expected(must_include=["pong"]),
+    )
+
+
+def _trace_with_llm_calls(tmp_path: Path, *, cache_hits: list[bool]) -> Trace:
+    """Build a valid trace whose LLM call spans have the given cache_hit flags."""
+    recorder = TraceRecorder(
+        workspace_id=WS,
+        run=RunInfo(run_id="run_01"),
+        agent=AgentSnapshotRef(agent_id="ag_x", agent_version=1),
+        framework_version="selfevals/0.0.3",
+        runtime="python-3.12",
+        sandbox=SandboxMode.MOCK,
+        environment_started_at=T0,
+        payload_router=PayloadRouter(FilesystemObjectStore(tmp_path), workspace_id=WS),
+    )
+    with recorder:
+        for i, hit in enumerate(cache_hits):
+            with recorder.llm_call(
+                f"call-{i}", provider="anthropic", model="claude-sonnet-4-6"
+            ) as llm:
+                llm.cache_hit = hit
+    return recorder.build()
+
+
+def test_outcome_counts_cache_hits_across_traces(tmp_path: Path) -> None:
+    # Two repetitions: rep 0 has 2 calls (1 cached), rep 1 has 1 call (cached).
+    case_run = CaseRun(
+        case_id="ec_x",
+        repetitions=[
+            RepetitionResult(
+                repetition=0,
+                trace=_trace_with_llm_calls(tmp_path / "r0", cache_hits=[True, False]),
+                response=None,
+                error=None,
+            ),
+            RepetitionResult(
+                repetition=1,
+                trace=_trace_with_llm_calls(tmp_path / "r1", cache_hits=[True]),
+                response=None,
+                error=None,
+            ),
+        ],
+    )
+    outcome = Aggregator.case_outcome(_eval_case(), case_run, [[], []])
+    assert outcome.llm_call_count == 3
+    assert outcome.cache_hit_count == 2
+
+
+def test_aggregate_sums_cache_hits_and_llm_calls() -> None:
+    outcomes = [
+        CaseOutcome(
+            case_id="a",
+            per_repetition_label=[GradeLabel.PASS],
+            per_repetition_score=[1.0],
+            cache_hit_count=2,
+            llm_call_count=3,
+        ),
+        CaseOutcome(
+            case_id="b",
+            per_repetition_label=[GradeLabel.PASS],
+            per_repetition_score=[1.0],
+            cache_hit_count=1,
+            llm_call_count=4,
+        ),
+    ]
+    agg = aggregate_iteration(case_outcomes=outcomes)
+    assert agg.cache_hit_count == 3
+    assert agg.llm_call_count == 7
+
+
+def test_aggregate_cache_counts_default_to_zero() -> None:
+    agg = aggregate_iteration(case_outcomes=[_outcome([GradeLabel.PASS])])
+    assert agg.cache_hit_count == 0
+    assert agg.llm_call_count == 0

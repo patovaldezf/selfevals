@@ -324,6 +324,25 @@ def test_json_cost_time_block_populated_with_data() -> None:
     assert payload["cost_time"]["time_total_seconds"] == 2.0
 
 
+def test_json_iteration_surfaces_cache_counts() -> None:
+    exp = _experiment()
+    result = OptimizationResult(experiment=exp)
+    result.iterations.append(_synthetic_iteration(primary=0.5, cache_hit_count=2, llm_call_count=5))
+    payload = to_dict(result)
+    cache = payload["iterations"][0]["cache"]
+    assert cache == {"hits": 2, "llm_calls": 5}
+    # best_iteration mirrors the same shape.
+    assert payload["best_iteration"]["cache"] == {"hits": 2, "llm_calls": 5}
+
+
+def test_json_iteration_cache_defaults_to_zero() -> None:
+    exp = _experiment()
+    result = OptimizationResult(experiment=exp)
+    result.iterations.append(_synthetic_iteration(primary=0.5))
+    payload = to_dict(result)
+    assert payload["iterations"][0]["cache"] == {"hits": 0, "llm_calls": 0}
+
+
 def _synthetic_iteration(
     *,
     primary: float = 0.5,
@@ -332,6 +351,8 @@ def _synthetic_iteration(
     failure_modes: dict[str, int] | None = None,
     cost: float = 0.0,
     duration_ms: int = 0,
+    cache_hit_count: int = 0,
+    llm_call_count: int = 0,
 ) -> IterationOutcome:
     aggregate = IterationAggregate(
         primary_metric="pass@1",
@@ -341,6 +362,8 @@ def _synthetic_iteration(
         failure_mode_counts=failure_modes or {},
         total_cost_usd=cost,
         total_duration_ms=duration_ms,
+        cache_hit_count=cache_hit_count,
+        llm_call_count=llm_call_count,
         case_count=1,
         case_outcomes=[
             CaseOutcome(

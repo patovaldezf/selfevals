@@ -20,6 +20,7 @@ from statistics import mean
 from typing import TYPE_CHECKING
 
 from selfevals.graders.base import BreakdownNode, GradeLabel, GradeResult
+from selfevals.schemas.trace import LLMCallSpan
 
 if TYPE_CHECKING:
     from selfevals.runner.executor import CaseRun
@@ -35,6 +36,11 @@ class CaseOutcome:
     failure_modes: list[str] = field(default_factory=list)
     cost_usd: float = 0.0
     duration_ms: int = 0
+    cache_hit_count: int = 0
+    """Number of `LLMCallSpan`s in this case's traces that were cache hits."""
+    llm_call_count: int = 0
+    """Total `LLMCallSpan`s in this case's traces. Pairs with `cache_hit_count`
+    so the signal reads as "N cache hits of M llm calls"."""
     breakdowns: list[BreakdownNode] = field(default_factory=list)
     """Flat list of every funnel `BreakdownNode` (one per grade that carried a
     breakdown, across all repetitions of this case). The aggregator rolls these
@@ -102,6 +108,13 @@ class IterationAggregate:
     failure_mode_counts: dict[str, int] = field(default_factory=dict)
     total_cost_usd: float = 0.0
     total_duration_ms: int = 0
+    cache_hit_count: int = 0
+    """LLM cache hits summed across all cases this iteration. Surfaces in the
+    JSON report so consumers can tell cached responses from cold calls without
+    reading raw traces."""
+    llm_call_count: int = 0
+    """Total LLM calls summed across all cases this iteration. Denominator for
+    `cache_hit_count`."""
     case_count: int = 0
     case_outcomes: list[CaseOutcome] = field(default_factory=list)
     funnel: dict[str, FunnelNode] = field(default_factory=dict)
@@ -127,6 +140,19 @@ def _trace_cost_and_duration(traces: list[Trace]) -> tuple[float, int]:
     cost = sum(t.metrics.total_cost_usd for t in traces)
     duration = sum(t.metrics.total_duration_ms for t in traces)
     return cost, duration
+
+
+def _llm_call_and_cache_hit_count(traces: list[Trace]) -> tuple[int, int]:
+    """Count LLM call spans and how many of them were cache hits."""
+    llm_calls = 0
+    cache_hits = 0
+    for trace in traces:
+        for span in trace.spans:
+            if isinstance(span, LLMCallSpan):
+                llm_calls += 1
+                if span.cache_hit:
+                    cache_hits += 1
+    return llm_calls, cache_hits
 
 
 def _percentile(sorted_values: list[float], q: float) -> float:
@@ -203,6 +229,7 @@ def _outcome_for(
                 breakdowns.append(r.breakdown)
     traces = [rep.trace for rep in case_run.repetitions]
     cost, duration = _trace_cost_and_duration(traces)
+    llm_calls, cache_hits = _llm_call_and_cache_hit_count(traces)
     return CaseOutcome(
         case_id=case.id,
         per_repetition_label=labels,
@@ -210,6 +237,8 @@ def _outcome_for(
         failure_modes=failure_modes,
         cost_usd=cost,
         duration_ms=duration,
+        cache_hit_count=cache_hits,
+        llm_call_count=llm_calls,
         breakdowns=breakdowns,
     )
 
@@ -298,6 +327,8 @@ def aggregate_iteration(
             failure_counter[mode] += 1
     total_cost = sum(o.cost_usd for o in case_outcomes)
     total_duration = sum(o.duration_ms for o in case_outcomes)
+    total_cache_hits = sum(o.cache_hit_count for o in case_outcomes)
+    total_llm_calls = sum(o.llm_call_count for o in case_outcomes)
     guardrails: dict[str, float] = {}
     if total_cost > 0:
         guardrails["cost_usd_per_case"] = total_cost / n
@@ -318,6 +349,8 @@ def aggregate_iteration(
         failure_mode_counts=dict(failure_counter),
         total_cost_usd=total_cost,
         total_duration_ms=total_duration,
+        cache_hit_count=total_cache_hits,
+        llm_call_count=total_llm_calls,
         case_count=n,
         case_outcomes=case_outcomes,
         funnel=_rollup_funnel(case_outcomes),

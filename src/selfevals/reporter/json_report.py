@@ -78,6 +78,7 @@ def _iteration_to_dict(it: IterationOutcome) -> dict[str, Any]:
             "reliability": dict(agg.reliability),
         },
         "failure_modes": dict(agg.failure_mode_counts),
+        "cache": {"hits": agg.cache_hit_count, "llm_calls": agg.llm_call_count},
         "funnel": {key: node.to_dict() for key, node in agg.funnel.items()},
         "totals": {
             "cost_usd": agg.total_cost_usd,
