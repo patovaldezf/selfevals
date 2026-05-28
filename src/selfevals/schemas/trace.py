@@ -38,7 +38,11 @@ from selfevals.schemas.enums import (
     TraceState,
 )
 
-TRACE_SCHEMA_VERSION = "1.1.0"
+# Schema changelog (all additive — old traces load unchanged):
+# 1.1.0: `CostBreakdown.cache_creation` (cache-write cost line).
+# 1.2.0: `GraderResult.breakdown` — optional funnel breakdown tree
+#        (see graders.base.BreakdownNode); default None when absent.
+TRACE_SCHEMA_VERSION = "1.2.0"
 
 
 class RunInfo(SelfEvalsModel):
@@ -323,6 +327,11 @@ class GraderResult(SelfEvalsModel):
     """Stable failure-mode identities attributed to this result: deterministic
     grader tags at grade time, plus `FailureMode` ids stamped by error analysis
     (see error_analysis_design.md §4). The trace↔mode link lives here."""
+    breakdown: dict[str, Any] | None = None
+    """Optional funnel breakdown tree, serialized from a runtime
+    `graders.base.BreakdownNode` (key/label/score/weight/reason/failure_modes/
+    children). Additive and purely informational: the top-level `label`/`score`
+    stay authoritative for pass/fail. Feeds the funnel drill-down."""
 
 
 class TraceOutputs(SelfEvalsModel):
