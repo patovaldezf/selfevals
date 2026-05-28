@@ -13,6 +13,11 @@ A `Grader` reads a Trace + EvalCase and returns a `GradeResult` (label
 - `ArtifactCompletenessGrader` scores artifact-producing agents (structured
   documents/reports) on schema validity + required-section presence, with an
   optional advisory LLM-judge quality signal that never flips the verdict.
+- `JudgePanelGrader` composes N judges (typically `LLMJudgeGrader`) into one
+  authoritative verdict via a consensus rule and wires up the judge-defense
+  levers (panel / counterfactual variance / human spot-check). It needs
+  constructor args (the judge list), so it is exposed only here for
+  programmatic construction, not via the zero-arg `registry`.
 
 Calibration helpers turn observed predictions + human annotations into
 the metrics tracked on a `GraderCard`.
@@ -37,6 +42,11 @@ from selfevals.graders.deterministic import (
     DeterministicRuleViolationError,
 )
 from selfevals.graders.guardrail import GuardrailGrader
+from selfevals.graders.judge_panel import (
+    CounterfactualConfig,
+    HumanSpotCheckConfig,
+    JudgePanelGrader,
+)
 from selfevals.graders.llm_judge import (
     JudgeDecision,
     LLMJudgeGrader,
@@ -51,6 +61,7 @@ __all__ = [
     "ArtifactCompletenessGrader",
     "BreakdownNode",
     "CalibrationReport",
+    "CounterfactualConfig",
     "DeterministicGrader",
     "DeterministicRuleViolationError",
     "GradeLabel",
@@ -60,7 +71,9 @@ __all__ = [
     "GuardrailGrader",
     "HardInvariants",
     "HumanLabel",
+    "HumanSpotCheckConfig",
     "JudgeDecision",
+    "JudgePanelGrader",
     "LLMJudgeGrader",
     "PredictedLabel",
     "RubricTemplate",
