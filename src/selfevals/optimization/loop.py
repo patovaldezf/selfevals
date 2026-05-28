@@ -20,13 +20,19 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from inspect import isawaitable
 from typing import TYPE_CHECKING
 
 from selfevals._internal.ids import new_prefixed_id
 from selfevals.analysis.staging import AnalysisStagingRecord
-from selfevals.graders.base import GradeLabel, Grader, GraderContext, GradeResult
+from selfevals.graders.base import (
+    BreakdownNode,
+    GradeLabel,
+    Grader,
+    GraderContext,
+    GradeResult,
+)
 from selfevals.optimization.aggregator import (
     Aggregator,
     CaseOutcome,
@@ -39,6 +45,8 @@ from selfevals.optimization.proposers import (
     SearchSpaceExhaustedError,
 )
 from selfevals.optimization.sampling import select_optimization_set
+from selfevals.runner.executor import CaseRun, RepetitionResult
+from selfevals.runner.multiturn import MultiTurnExecutor
 from selfevals.schemas.enums import DecisionOutcome, ExperimentState, IterationState
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.iteration import (
@@ -56,7 +64,7 @@ from selfevals.schemas.trace import GraderResult
 
 if TYPE_CHECKING:
     from selfevals.analysis.hypothesis import HypothesisRecord
-    from selfevals.runner.executor import CaseRun, Executor, RepetitionResult
+    from selfevals.runner.executor import Executor
     from selfevals.schemas.dataset import SplitAllocation
     from selfevals.schemas.eval_case import EvalCase
     from selfevals.storage.interface import WorkspaceScope
@@ -146,6 +154,9 @@ class OptimizationLoop:
             )
         self._experiment = experiment
         self._executor = executor
+        # Conversation cases run turn-by-turn over the same executor; non-
+        # conversation cases keep the single-shot path.
+        self._multi_turn_executor = MultiTurnExecutor(executor)
         self._proposer = proposer
         self._graders = graders
         self._cases = split.optimization
@@ -286,7 +297,10 @@ class OptimizationLoop:
                 return await grader.grade(ctx)
 
         for case in self._cases:
-            case_run = await self._executor.run_case(
+            # Conversation cases run turn-by-turn (one trace per turn, all
+            # sharing a thread_id); everything else takes the single-shot path.
+            runner = self._multi_turn_executor if case.is_conversation() else self._executor
+            case_run = await runner.run_case(
                 case,
                 repetitions=self._reps,
                 experiment_id=self._experiment.id,
@@ -313,7 +327,15 @@ class OptimizationLoop:
             for rep, grades in zip(case_run.repetitions, grades_per_rep, strict=True):
                 self._maybe_persist_trace(rep, grades)
             per_case_grades[case.id] = grades_per_rep
-            case_outcomes.append(Aggregator.case_outcome(case, case_run, grades_per_rep))
+            # A conversation case produced one trace per turn; collapse the
+            # turns of each thread into a single per-thread outcome (final turn
+            # authoritative, earlier turns advisory in a per-turn funnel) so the
+            # aggregator counts threads as repetitions, not turns.
+            if case.is_conversation():
+                outcome_run, outcome_grades = _collapse_conversation_turns(case_run, grades_per_rep)
+            else:
+                outcome_run, outcome_grades = case_run, grades_per_rep
+            case_outcomes.append(Aggregator.case_outcome(case, outcome_run, outcome_grades))
         primary_metric = self._experiment.target.primary.name
         reliability_metrics = self._experiment.reliability.metrics
         aggregate = aggregate_iteration(
@@ -323,9 +345,7 @@ class OptimizationLoop:
         )
         return aggregate, case_runs, per_case_grades
 
-    def _maybe_persist_trace(
-        self, rep: RepetitionResult, grades: list[GradeResult]
-    ) -> None:
+    def _maybe_persist_trace(self, rep: RepetitionResult, grades: list[GradeResult]) -> None:
         """Persist this repetition's trace per `run.persist_traces` (§5).
 
         The trace is stamped with its grader results first, so `analyze pull`
@@ -462,6 +482,81 @@ class OptimizationLoop:
         for hyp in offered:
             if hyp.consumed_by_iteration is not None:
                 self._scope.put_entity(hyp)
+
+
+def _collapse_conversation_turns(
+    case_run: CaseRun,
+    grades_per_turn: list[list[GradeResult]],
+) -> tuple[CaseRun, list[list[GradeResult]]]:
+    """Collapse per-turn results of a conversation case into per-thread ones.
+
+    A conversation `CaseRun` holds one `RepetitionResult` per turn, with each
+    trace's `run.thread_id` identifying its thread (= one logical repetition)
+    and `run.thread_position` its turn index. This groups the turns by thread
+    and, for each thread, produces a single synthetic repetition + grade:
+
+    - the representative trace is the final turn's trace (output-state
+      authoritative, matching "grade output-state, trajectory diagnostic");
+    - the synthetic grade takes the final turn's label/score, and gets a
+      `breakdown` rooted at `conversation` with one advisory (weight=0) child
+      `turn_{i}` per turn carrying that turn's label/score, so the aggregator's
+      funnel rollup surfaces a per-turn drill-down without affecting metrics.
+
+    Threads are ordered by first appearance so results stay deterministic.
+    """
+    order: list[str] = []
+    by_thread: dict[str, list[tuple[RepetitionResult, list[GradeResult]]]] = {}
+    for rep, grades in zip(case_run.repetitions, grades_per_turn, strict=True):
+        thread_id = rep.trace.run.thread_id or rep.trace.id
+        if thread_id not in by_thread:
+            by_thread[thread_id] = []
+            order.append(thread_id)
+        by_thread[thread_id].append((rep, grades))
+
+    collapsed_reps: list[RepetitionResult] = []
+    collapsed_grades: list[list[GradeResult]] = []
+    for rep_index, thread_id in enumerate(order):
+        turns = sorted(
+            by_thread[thread_id],
+            key=lambda pair: pair[0].trace.run.thread_position or 0,
+        )
+        final_rep, final_grades = turns[-1]
+        # One synthetic grade per grader on the final turn, each carrying a
+        # per-turn funnel breakdown.
+        synthetic: list[GradeResult] = []
+        for g_index, final_grade in enumerate(final_grades):
+            children = [
+                BreakdownNode(
+                    key=f"turn_{position}",
+                    label=(turn_grades[g_index].label if g_index < len(turn_grades) else None),
+                    score=(turn_grades[g_index].score if g_index < len(turn_grades) else None),
+                    weight=0.0,
+                    reason="per-turn diagnostic (advisory)",
+                )
+                for position, (_, turn_grades) in enumerate(turns)
+            ]
+            synthetic.append(
+                replace(
+                    final_grade,
+                    breakdown=BreakdownNode(
+                        key="conversation",
+                        label=final_grade.label,
+                        score=final_grade.score,
+                        children=children,
+                    ),
+                )
+            )
+        collapsed_reps.append(
+            RepetitionResult(
+                repetition=rep_index,
+                trace=final_rep.trace,
+                response=final_rep.response,
+                error=next((r.error for r, _ in turns if r.error is not None), None),
+            )
+        )
+        collapsed_grades.append(synthetic)
+
+    return CaseRun(case_id=case_run.case_id, repetitions=collapsed_reps), collapsed_grades
 
 
 def _to_trace_grader_result(grade: GradeResult) -> GraderResult:
