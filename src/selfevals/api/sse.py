@@ -67,6 +67,16 @@ async def stream_trace(
             storage.close()
         if snapshot is not None:
             yield _encode("snapshot", snapshot.model_dump(mode="json"))
+            # If the trace is already terminal in storage, there is nothing
+            # live to wait for: emit `complete` and return so the client
+            # closes the EventSource and drops out of "live" mode. Without
+            # this the stream stayed open forever on finished traces — the
+            # FE never saw `complete`, the pill kept pulsing, and the
+            # EventSource leaked across navigations.
+            final_state = snapshot.final_state
+            if final_state and final_state != "running":
+                yield _encode("complete", {"final_state": final_state})
+                return
         else:
             yield _encode("snapshot", {"run_id": run_id, "spans": []})
 
