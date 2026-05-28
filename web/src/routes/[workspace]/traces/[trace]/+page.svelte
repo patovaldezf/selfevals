@@ -1,7 +1,7 @@
 <script lang="ts">
   import CopyableId from '$lib/components/CopyableId.svelte';
   import PointerField from '$lib/components/PointerField.svelte';
-  import SpanNode from '$lib/components/SpanNode.svelte';
+  import SpanTreeFlat from '$lib/components/SpanTreeFlat.svelte';
   import { factsFor } from '$lib/spans/facts';
   import { styleForKind } from '$lib/spans/kindStyle';
   import type { SpanSummary } from '$lib/api/client';
@@ -199,18 +199,11 @@
       {/if}
     </dl>
 
-    <div class="text-xs uppercase tracking-wide text-text-3 mb-2">Spans</div>
-    <ul class="text-sm space-y-px">
-      {#each tree.get(null) ?? [] as root}
-        <SpanNode
-          node={root}
-          depth={0}
-          {tree}
-          {selected}
-          setSelected={(s) => (selected = s)}
-        />
-      {/each}
-    </ul>
+    <div class="text-xs uppercase tracking-wide text-text-3 mb-2 flex items-baseline justify-between">
+      <span>Spans</span>
+      <span class="text-text-3 font-mono normal-case" data-numeric>{spans.length}</span>
+    </div>
+    <SpanTreeFlat {tree} {selected} setSelected={(s) => (selected = s)} />
   </aside>
 
   <main class="px-10 py-10 overflow-y-auto">

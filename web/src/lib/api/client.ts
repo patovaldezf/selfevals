@@ -62,6 +62,14 @@ export type ExperimentDetail = {
   iterations: IterationSummary[];
 };
 
+export type ExperimentListPage = {
+  items: ExperimentSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+};
+
 export type DecisionRow = {
   id: string;
   iteration: number;
@@ -156,11 +164,22 @@ export const api = {
   workspace: (id: string, fetch?: typeof globalThis.fetch) =>
     request<WorkspaceDetail>(`/api/workspaces/${id}`, { fetch }),
 
-  listExperiments: (workspaceId: string, fetch?: typeof globalThis.fetch) =>
-    request<ExperimentSummary[]>(
-      `/api/workspaces/${workspaceId}/experiments`,
+  listExperiments: (
+    workspaceId: string,
+    fetch?: typeof globalThis.fetch,
+    options: { limit?: number; offset?: number } = {}
+  ) => {
+    // A8: server returns a paginated envelope. Default page size matches
+    // the server default (100) so the FE doesn't have to track it.
+    const params = new URLSearchParams();
+    if (options.limit !== undefined) params.set('limit', String(options.limit));
+    if (options.offset !== undefined) params.set('offset', String(options.offset));
+    const qs = params.toString();
+    return request<ExperimentListPage>(
+      `/api/workspaces/${workspaceId}/experiments${qs ? `?${qs}` : ''}`,
       { fetch }
-    ),
+    );
+  },
 
   experiment: (
     workspaceId: string,

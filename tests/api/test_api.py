@@ -68,7 +68,7 @@ def test_workspace_show_404_for_unknown(client: TestClient) -> None:
 
 def test_experiment_detail_and_iterations(client: TestClient) -> None:
     ws = client.get("/api/workspaces").json()["workspaces"][0]
-    experiments = client.get(f"/api/workspaces/{ws['id']}/experiments").json()
+    experiments = client.get(f"/api/workspaces/{ws['id']}/experiments").json()["items"]
     assert experiments, "expected at least one experiment to be seeded"
     exp = experiments[0]
     assert exp["primary_metric"] == "pass@1"
@@ -94,7 +94,7 @@ def test_experiment_detail_and_iterations(client: TestClient) -> None:
 
 def test_decisions_endpoint_has_records(client: TestClient) -> None:
     ws = client.get("/api/workspaces").json()["workspaces"][0]
-    experiments = client.get(f"/api/workspaces/{ws['id']}/experiments").json()
+    experiments = client.get(f"/api/workspaces/{ws['id']}/experiments").json()["items"]
     exp = experiments[0]
     decisions = client.get(f"/api/workspaces/{ws['id']}/experiments/{exp['id']}/decisions").json()
     assert len(decisions) == 2
@@ -121,6 +121,49 @@ def test_anchor_set_returns_points(client: TestClient) -> None:
         assert p["primary_metric_name"] == "pass@1"
 
 
+def test_experiments_index_paginates_with_envelope(client: TestClient) -> None:
+    """A8: `/experiments` returns a pagination envelope, not a bare list.
+
+    Locks in the contract — `items`, `total`, `limit`, `offset`,
+    `has_more` — so the FE can offer "load more" without a breaking
+    change when an installation accumulates many experiments. The
+    pingpong fixture has 1 experiment so the page is small; this test
+    proves the shape, not the math under load.
+    """
+    ws = client.get("/api/workspaces").json()["workspaces"][0]
+    body = client.get(f"/api/workspaces/{ws['id']}/experiments").json()
+    assert set(body.keys()) == {"items", "total", "limit", "offset", "has_more"}
+    assert isinstance(body["items"], list)
+    assert body["total"] == len(body["items"])
+    assert body["limit"] == 100
+    assert body["offset"] == 0
+    assert body["has_more"] is False
+
+
+def test_experiments_index_offset_skips_items(client: TestClient) -> None:
+    """A8: `offset` skips items so a future "next page" call works.
+
+    Pingpong has 1 experiment so `offset=1` yields an empty page — that's
+    enough to pin the offset behavior (the alternative is seeding a second
+    experiment, which the fixture isn't shaped to do).
+    """
+    ws = client.get("/api/workspaces").json()["workspaces"][0]
+    body = client.get(f"/api/workspaces/{ws['id']}/experiments?offset=1").json()
+    assert body["offset"] == 1
+    assert body["items"] == []
+    assert body["total"] >= 1
+    assert body["has_more"] is False
+
+
+def test_experiments_index_rejects_negative_offset(client: TestClient) -> None:
+    """Offset must be `>= 0` — FastAPI Query validation enforces it
+    before our code sees the value, so a bad client can't trip an
+    IndexError downstream by slicing with a negative index."""
+    ws = client.get("/api/workspaces").json()["workspaces"][0]
+    resp = client.get(f"/api/workspaces/{ws['id']}/experiments?offset=-1")
+    assert resp.status_code == 422
+
+
 def test_trace_not_found_for_unknown_id(client: TestClient) -> None:
     ws = client.get("/api/workspaces").json()["workspaces"][0]
     response = client.get(f"/api/workspaces/{ws['id']}/traces/tr_missing")
@@ -132,7 +175,7 @@ def test_trace_response_exposes_experiment_name(client: TestClient) -> None:
     The API must surface the human name so the FE doesn't have to round-trip
     a second request for it."""
     ws = client.get("/api/workspaces").json()["workspaces"][0]
-    experiments = client.get(f"/api/workspaces/{ws['id']}/experiments").json()
+    experiments = client.get(f"/api/workspaces/{ws['id']}/experiments").json()["items"]
     exp = experiments[0]
     detail = client.get(f"/api/workspaces/{ws['id']}/experiments/{exp['id']}").json()
     run_ids = [

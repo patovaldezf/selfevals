@@ -16,8 +16,8 @@ Para el plan completo, ver [FRONTEND_PRODUCT_PLAN.md](FRONTEND_PRODUCT_PLAN.md).
 | A5 | #20 identidad humana sobre ULID | ✅ merged | — |
 | A6 | #21 span kind visible + densidad | ✅ merged | QA visual destrabada al fix-ear BUG-4 |
 | BUG-4 | #22 proxy `/api` en `selfevals serve` | ✅ merged | hooks.server.ts + `SELFEVALS_API_BASE` |
-| A7 | a11y filas ([button]/[link]) | 🟡 in progress | — |
-| A8 | paginación consistente + virtual scroll | ⏳ pendiente | — |
+| A7 | #23 a11y filas ([button]/[link]) | ✅ merged | — |
+| A8 | paginación + virtual scroll | 🟡 in progress | envelope solo en `/experiments` por ahora |
 
 ## Pendientes registrados (orden de descubrimiento)
 
@@ -71,9 +71,35 @@ Para el plan completo, ver [FRONTEND_PRODUCT_PLAN.md](FRONTEND_PRODUCT_PLAN.md).
    regresión. Cuando llegue mobile, refactorizar SpanNode para
    colapsar facts a chevron expandible.
 
-### De A7 (en progreso)
+### De A7 (cerrado)
 
-_(pendiente — registrar al cerrar)_
+Nada de deuda diferida — pendiente A5#2 (anchor-set CopyableId chip)
+quedó resuelto en este PR.
+
+### De A8 (en progreso)
+
+1. **Pagination envelope solo en `/experiments`.** Los demás endpoints
+   de lista (`/workspaces`, `/iterations`) siguen devolviendo lista
+   plana. Cuando algún usuario tenga >100 de cualquiera de esos, hacer
+   el mismo upgrade (la receta ya está). Por ahora, deuda registrada.
+
+2. **FE UI de "Load more" / paginación.** El envelope viaja pero la
+   UI no tiene botón "Load more" — solo muestra "X of N" cuando hay
+   más páginas. La razón: nadie tiene aún >100 experimentos así que
+   no hay un caso de uso real para probar. Cuando duela, añadir el
+   botón con `offset` incremental.
+
+3. **Virtual scroll: row height aproximada.** `SpanTreeFlat` asume
+   `ROW_HEIGHT_PX = 28` (uniforme). Si un día metemos rows multi-línea
+   (p.ej. error con traceback inline), la matemática del window se
+   rompe. Solución correcta cuando llegue: `ResizeObserver` por fila
+   + altura medida. Por ahora un fact en una sola línea encaja.
+
+4. **No hay "scroll to selected".** Si la traza tiene 1000 spans y el
+   span seleccionado está en el medio, abrir la página NO hace scroll
+   a esa fila. La selección viene del click humano (no de la URL todavía),
+   así que el seleccionado siempre empieza en `null` y el usuario
+   recorre. Cuando integrumos URL `?span=sp_...`, añadir auto-scroll.
 
 ### De A8 (pendiente)
 
