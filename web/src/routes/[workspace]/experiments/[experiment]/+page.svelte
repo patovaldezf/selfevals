@@ -2,9 +2,10 @@
   import { page } from '$app/stores';
   import CopyableId from '$lib/components/CopyableId.svelte';
   import DecisionBadge from '$lib/components/DecisionBadge.svelte';
+  import FunnelNode from '$lib/components/FunnelNode.svelte';
   import MetricChip from '$lib/components/MetricChip.svelte';
   import Sparkline from '$lib/components/Sparkline.svelte';
-  import type { IterationSummary } from '$lib/api/client';
+  import { api, ApiError, type FunnelDetail, type IterationSummary } from '$lib/api/client';
   import type { PageData } from './$types';
 
   export let data: PageData;
@@ -13,7 +14,8 @@
   // iteration drawer ("see what the agent actually did"). The trace endpoint
   // accepts both `tr_...` ids and `run_...` ids, so the run_ids on
   // `IterationSummary.trace_run_ids` link straight through.
-  $: workspaceId = $page.params.workspace;
+  // `[workspace]` is a required route param, so it is always present here.
+  $: workspaceId = $page.params.workspace as string;
 
   type Tab = 'iterations' | 'compare' | 'funnel' | 'decisions';
   let tab: Tab = 'iterations';
@@ -48,6 +50,52 @@
     { which: 'A', value: compareA, set: setA, it: itA },
     { which: 'B', value: compareB, set: setB, it: itB }
   ];
+
+  // --- Funnel tab (B2) -----------------------------------------------------
+  // The funnel is lazy/additive: we don't load it in +page.server.ts (keeps
+  // the page load cheap). It's fetched client-side only when the user picks
+  // an iteration. All rollup math lives in the backend; we only render.
+  let funnelIterationId: string | null = null;
+  let funnelDetail: FunnelDetail | null = null;
+  let funnelError: string | null = null;
+  let funnelLoading = false;
+  // Token guards against an out-of-order response overwriting a newer one.
+  let funnelRequest = 0;
+
+  // Default the picker to the best iteration the first time the tab opens.
+  $: if (tab === 'funnel' && funnelIterationId === null) {
+    const fallback = best ?? iterations[0];
+    if (fallback) funnelIterationId = fallback.id;
+  }
+
+  $: funnelIteration = iterations.find((it) => it.id === funnelIterationId) ?? null;
+
+  // Fetch whenever the selected iteration changes while the tab is open.
+  $: if (tab === 'funnel' && funnelIterationId !== null) {
+    void loadFunnel(funnelIterationId);
+  }
+
+  async function loadFunnel(iterationId: string): Promise<void> {
+    const token = ++funnelRequest;
+    funnelLoading = true;
+    funnelError = null;
+    try {
+      const detail = await api.iterationFunnel(workspaceId, iterationId);
+      if (token !== funnelRequest) return; // a newer request superseded this one
+      funnelDetail = detail;
+    } catch (err) {
+      if (token !== funnelRequest) return;
+      funnelDetail = null;
+      funnelError =
+        err instanceof ApiError && err.status === 404
+          ? 'Iteration not found.'
+          : 'Could not load the funnel for this iteration.';
+    } finally {
+      if (token === funnelRequest) funnelLoading = false;
+    }
+  }
+
+  $: funnelKeys = funnelDetail ? Object.keys(funnelDetail.nodes).sort() : [];
 
   function fmtNumber(value: number | null, digits = 4): string {
     if (value === null) return '—';
@@ -266,6 +314,53 @@
         </div>
       </div>
     {/if}
+  {:else if tab === 'funnel'}
+    <div class="rounded-lg border border-border bg-surface">
+      <div class="flex items-center justify-between gap-4 border-b border-border px-5 py-3.5">
+        <div class="flex items-baseline gap-2">
+          <span class="text-xs uppercase tracking-wide text-text-3">Funnel</span>
+          {#if funnelIteration}
+            <span class="font-mono text-xs text-text-3" data-numeric>
+              iteration #{funnelIteration.iteration}
+            </span>
+          {/if}
+        </div>
+        <select
+          class="font-mono text-xs px-2 py-1 rounded border border-border bg-bg"
+          bind:value={funnelIterationId}
+          aria-label="Select iteration"
+        >
+          {#each iterations as it}
+            <option value={it.id}>#{it.iteration}</option>
+          {/each}
+        </select>
+      </div>
+
+      <div class="px-5 py-4">
+        {#if funnelLoading}
+          <div class="text-text-3 text-sm py-10 text-center">Loading funnel…</div>
+        {:else if funnelError}
+          <div class="text-danger text-sm py-10 text-center">{funnelError}</div>
+        {:else if funnelDetail === null || funnelKeys.length === 0}
+          <div class="py-10 text-center">
+            <p class="text-text-2 text-sm">No grader breakdown recorded for this iteration.</p>
+            <p class="text-text-3 text-xs mt-1.5 max-w-md mx-auto">
+              The funnel appears when a grader emits a structured breakdown.
+            </p>
+          </div>
+        {:else}
+          <div class="mb-2 flex items-baseline justify-between text-[11px] uppercase tracking-wide text-text-3">
+            <span>Node</span>
+            <span>Mean score</span>
+          </div>
+          <div class="divide-y divide-border/60">
+            {#each funnelKeys as key (key)}
+              <FunnelNode node={funnelDetail.nodes[key]} />
+            {/each}
+          </div>
+        {/if}
+      </div>
+    </div>
   {:else if tab === 'decisions'}
     <ul class="space-y-3">
       {#each data.decisions as d}
