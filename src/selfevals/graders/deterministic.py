@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from selfevals.graders.base import GradeLabel, Grader, GraderContext, GradeResult
 from selfevals.schemas.trace import LLMCallSpan, ToolCallSpan
@@ -83,9 +83,11 @@ class DeterministicGrader(Grader):
         invoked = _tools_invoked(context.trace)
         invoked_set = set(invoked)
 
+        missing_required = 0
         for needle in expected.must_include:
             probe = needle if self._case_sensitive else needle.lower()
             if probe not in haystack:
+                missing_required += 1
                 violations.append(
                     _Violation(failure_mode="missing_required_substring", detail=needle)
                 )
@@ -119,10 +121,51 @@ class DeterministicGrader(Grader):
                 )
 
         # Loose hint metrics that don't fail but are useful for debug.
-        details = {
+        details: dict[str, Any] = {
             "tools_invoked": invoked,
             "llm_call_count": _llm_call_count(context.trace),
         }
+
+        # Recall mode: when min_recall is set and there are must_include items,
+        # the must_include dimension is graded by recall (fraction present) rather
+        # than all-or-nothing. Missing substrings still emit their failure modes
+        # (so diagnostics survive) but no longer force FAIL on their own; the
+        # threshold decides. Precedence: hard violations (must_not_include,
+        # required/forbidden tools, regex, structured output) ALWAYS take priority
+        # — even if recall passes, any hard violation makes the grade FAIL.
+        if expected.min_recall is not None and expected.must_include:
+            total = len(expected.must_include)
+            recall = (total - missing_required) / total
+            details["recall"] = recall
+            hard_violations = [
+                v for v in violations if v.failure_mode != "missing_required_substring"
+            ]
+            recall_passes = recall >= expected.min_recall
+            if recall_passes and not hard_violations:
+                modes = sorted({v.failure_mode for v in violations})
+                reason = f"recall {recall:.3f} >= min_recall {expected.min_recall:.3f}"
+                return GradeResult(
+                    grader=self.name,
+                    label=GradeLabel.PASS,
+                    reason=reason,
+                    score=recall,
+                    failure_modes=modes,
+                    details=details,
+                )
+            modes = sorted({v.failure_mode for v in violations})
+            if not recall_passes:
+                reason = f"recall {recall:.3f} < min_recall {expected.min_recall:.3f}"
+            else:
+                reason = "; ".join(f"{v.failure_mode}:{v.detail}" for v in hard_violations)
+            return GradeResult(
+                grader=self.name,
+                label=GradeLabel.FAIL,
+                reason=reason,
+                score=recall,
+                failure_modes=modes,
+                details=details,
+            )
+
         if not violations:
             return GradeResult(
                 grader=self.name,

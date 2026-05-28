@@ -214,6 +214,64 @@ async def test_missing_response_treated_as_empty_text() -> None:
     assert res.label == GradeLabel.FAIL
 
 
+@pytest.mark.asyncio
+async def test_min_recall_below_threshold_fails_with_fractional_score() -> None:
+    # 1 of 3 required substrings present -> recall 0.333 < 0.8 -> FAIL.
+    case = _case(Expected(must_include=["alpha", "beta", "gamma"], min_recall=0.8))
+    res = await DeterministicGrader().grade(_ctx(case, _trace(), content="alpha only"))
+    assert res.label == GradeLabel.FAIL
+    assert res.score == pytest.approx(1 / 3)
+    assert "missing_required_substring" in res.failure_modes
+    assert res.details["recall"] == pytest.approx(1 / 3)
+
+
+@pytest.mark.asyncio
+async def test_min_recall_met_passes_with_fractional_score() -> None:
+    # 2 of 3 required substrings present -> recall 0.667 >= 0.5 -> PASS.
+    case = _case(Expected(must_include=["alpha", "beta", "gamma"], min_recall=0.5))
+    res = await DeterministicGrader().grade(_ctx(case, _trace(), content="alpha and beta"))
+    assert res.label == GradeLabel.PASS
+    assert res.score == pytest.approx(2 / 3)
+    # Diagnostics for the missing item survive even on PASS.
+    assert "missing_required_substring" in res.failure_modes
+
+
+@pytest.mark.asyncio
+async def test_min_recall_none_preserves_all_or_nothing() -> None:
+    # Regression guard: without min_recall, any missing substring is FAIL/0.0.
+    case = _case(Expected(must_include=["alpha", "beta", "gamma"]))
+    res = await DeterministicGrader().grade(_ctx(case, _trace(), content="alpha and beta"))
+    assert res.label == GradeLabel.FAIL
+    assert res.score == 0.0
+    assert "missing_required_substring" in res.failure_modes
+
+
+@pytest.mark.asyncio
+async def test_min_recall_met_but_must_not_include_violated_still_fails() -> None:
+    # Recall passes (both present) but a hard violation takes precedence -> FAIL.
+    case = _case(
+        Expected(
+            must_include=["alpha", "beta"],
+            min_recall=0.5,
+            must_not_include=["secret"],
+        )
+    )
+    res = await DeterministicGrader().grade(_ctx(case, _trace(), content="alpha beta and a secret"))
+    assert res.label == GradeLabel.FAIL
+    # Score still reflects the recall dimension.
+    assert res.score == pytest.approx(1.0)
+    assert "forbidden_substring" in res.failure_modes
+
+
+@pytest.mark.asyncio
+async def test_min_recall_set_with_empty_must_include_does_not_crash() -> None:
+    # No required substrings: recall is vacuously satisfied -> PASS with score 1.0.
+    case = _case(Expected(must_include=[], min_recall=0.8))
+    res = await DeterministicGrader().grade(_ctx(case, _trace(), content="anything"))
+    assert res.label == GradeLabel.PASS
+    assert res.score == 1.0
+
+
 def test_empty_grader_name_rejected() -> None:
     with pytest.raises(ValueError):
         DeterministicGrader(name="")

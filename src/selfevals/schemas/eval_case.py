@@ -98,6 +98,10 @@ class Expected(SelfEvalsModel):
 
     outcome: str | None = None
     must_include: list[str] = Field(default_factory=list)
+    min_recall: float | None = Field(default=None, ge=0.0, le=1.0)
+    """When set, `must_include` is graded by recall — the fraction of required
+    substrings present — and PASSES iff recall >= min_recall, with score = recall.
+    When None (default), `must_include` is all-or-nothing as before."""
     must_not_include: list[str] = Field(default_factory=list)
     required_tools: list[str] = Field(default_factory=list)
     forbidden_tools: list[str] = Field(default_factory=list)
