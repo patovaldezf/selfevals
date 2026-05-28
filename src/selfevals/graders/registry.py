@@ -18,6 +18,7 @@ from collections.abc import Callable
 from selfevals.graders.base import Grader
 from selfevals.graders.deterministic import DeterministicGrader
 from selfevals.graders.guardrail import GuardrailGrader
+from selfevals.graders.trajectory import TrajectoryGrader
 
 GraderFactory = Callable[[], Grader]
 
@@ -66,3 +67,4 @@ def resolve_graders(names: list[str]) -> list[Grader]:
 
 register_grader("deterministic", DeterministicGrader)
 register_grader("guardrail", GuardrailGrader)
+register_grader("trajectory", TrajectoryGrader)
