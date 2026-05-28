@@ -1,6 +1,8 @@
 <script lang="ts">
   import PointerField from '$lib/components/PointerField.svelte';
   import SpanNode from '$lib/components/SpanNode.svelte';
+  import { factsFor } from '$lib/spans/facts';
+  import { styleForKind } from '$lib/spans/kindStyle';
   import type { SpanSummary } from '$lib/api/client';
   import { openTraceStream, type StreamHandle } from '$lib/api/sse';
   import { onDestroy, onMount } from 'svelte';
@@ -182,8 +184,21 @@
 
   <main class="px-10 py-10 overflow-y-auto">
     {#if selected}
-      <div class="text-xs text-text-3 mb-1 font-mono">
-        {selected.kind} · {selected.duration_ms}ms
+      {@const selectedStyle = styleForKind(selected.kind)}
+      {@const selectedFacts = factsFor(selected)}
+      <div class="flex items-center gap-2 text-xs text-text-3 mb-1">
+        <span
+          class="inline-block text-[14px] leading-none"
+          style:color={selectedStyle.color}
+          aria-hidden="true"
+        >{selectedStyle.glyph}</span>
+        <span class="font-mono uppercase tracking-wide">{selectedStyle.label}</span>
+        <span aria-hidden="true">·</span>
+        <span class="font-mono" data-numeric>{selected.duration_ms}ms</span>
+        {#each selectedFacts as f (f.key)}
+          <span aria-hidden="true">·</span>
+          <span class="font-mono" data-numeric title={f.title ?? f.key}>{f.value}</span>
+        {/each}
       </div>
       <h2 class="text-xl font-semibold mb-6">{selected.name}</h2>
 
