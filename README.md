@@ -139,7 +139,7 @@ its arguments. The surface:
 |---------|---------|
 | `init <slug>` | Create a workspace and seed the default failure-mode taxonomy. |
 | `run <spec.yaml>` | Run an experiment spec end-to-end. |
-| `report <ws> <exp>` | Render a stored experiment as markdown (`--format json` for JSON). |
+| `report <ws> <exp>` | Render a stored experiment as markdown (`--format json` for JSON; the JSON now includes per-iteration `cache` hit counts and deduplicated `failure_reasons`). |
 | `compare <ws> <itr_a> <itr_b>` | Diff two iterations side by side. |
 | `estimate` | Dry-run cost estimate for a search space × cases × reps. |
 | `workspace show <ws>` | Inspect a workspace. |
@@ -162,6 +162,17 @@ open/axial coding and `analyze push`es the result back; a human promotes
 candidate modes via `failuremode promote`. The bundled
 [`error-analysis` skill](src/selfevals/.agents/skills/error-analysis/SKILL.md)
 (discoverable via `selfevals skills list`) encodes the method.
+
+## Documentation
+
+| Doc | What it covers |
+|-----|----------------|
+| [`docs/eval_config.md`](docs/eval_config.md) | The YAML experiment spec: top-level keys, `EvalCase`/`Expected` fields (including recall-based `must_include` via `min_recall`), graders, agent transports, and proposers. |
+| [`docs/api_reference.md`](docs/api_reference.md) | The canonical HTTP API reference — every endpoint, response schema, and error codes. |
+| [`docs/json_report_schema.md`](docs/json_report_schema.md) | The `report --format json` output shape, including the per-iteration `cache` and `failure_reasons` keys. |
+| [`docs/adapters.md`](docs/adapters.md) | Adapter contract and per-transport YAML/code snippets. |
+| [`docs/FRONTEND.md`](docs/FRONTEND.md) | The web UI spec (views, endpoints, roadmap). |
+| [`docs/STATUS.md`](docs/STATUS.md) | Honest what-works / what-doesn't snapshot. |
 
 ## Layout
 
