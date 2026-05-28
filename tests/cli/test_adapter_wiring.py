@@ -14,6 +14,7 @@ from selfevals.cli.commands import (
     CommandError,
     _agent_entrypoint_for_judge,
     _build_adapter,
+    _wrap_user_callable,
 )
 from selfevals.repo.loader import (
     AgentEntrypoint,
@@ -22,10 +23,16 @@ from selfevals.repo.loader import (
     HttpAgentSpec,
 )
 from selfevals.runner.adapters import (
+    AdapterRequest,
+    AdapterResponse,
     CliCommandAdapter,
     EmbeddedAdapter,
     HttpEndpointAdapter,
 )
+
+
+def _req() -> AdapterRequest:
+    return AdapterRequest(workspace_id="ws_test", case_id="c1", input={"messages": []})
 
 
 def test_build_adapter_embedded() -> None:
@@ -92,3 +99,44 @@ def test_judge_fallback_rejects_cli_agent() -> None:
 def test_judge_fallback_rejects_http_agent() -> None:
     with pytest.raises(CommandError, match="not embedded"):
         _agent_entrypoint_for_judge("rubric", HttpAgentSpec(url="https://x"))
+
+
+# --- async entrypoint support (regression for the YAML-discovered async bug) ---
+#
+# `_wrap_user_callable` used to install a sync `_adapt` that called the user
+# callable without awaiting it. An `async def` entrypoint then handed
+# EmbeddedAdapter a bare coroutine — never awaited (RuntimeWarning) and rejected
+# as "returned coroutine; expected str or AdapterResponse". These pin both the
+# async and the (regression-guarded) sync path.
+
+_EP = AgentEntrypoint(raw="m:f", module="m", attribute="f")
+
+
+@pytest.mark.asyncio
+async def test_wrap_user_callable_awaits_async_entrypoint() -> None:
+    async def run(req: AdapterRequest) -> AdapterResponse:
+        return AdapterResponse(content=f"async:{req.case_id}")
+
+    adapter = _wrap_user_callable(run, _EP)
+    resp = await adapter.invoke(_req())
+    assert resp.content == "async:c1"
+
+
+@pytest.mark.asyncio
+async def test_wrap_user_callable_handles_sync_entrypoint() -> None:
+    def run(req: AdapterRequest) -> AdapterResponse:
+        return AdapterResponse(content=f"sync:{req.case_id}")
+
+    adapter = _wrap_user_callable(run, _EP)
+    resp = await adapter.invoke(_req())
+    assert resp.content == "sync:c1"
+
+
+@pytest.mark.asyncio
+async def test_wrap_user_callable_coerces_str_return_async() -> None:
+    async def run(req: AdapterRequest) -> str:
+        return "hello"
+
+    adapter = _wrap_user_callable(run, _EP)
+    resp = await adapter.invoke(_req())
+    assert resp.content == "hello"

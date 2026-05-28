@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import inspect
 import sys
 from collections.abc import Callable, Sequence
 from importlib import resources
@@ -616,8 +617,7 @@ def _wrap_user_callable(callable_obj: object, entrypoint: AgentEntrypoint) -> Ag
             f"({type(callable_obj).__name__})"
         )
 
-    def _adapt(req: AdapterRequest) -> AdapterResponse:
-        result = callable_obj(req)
+    def _coerce(result: object) -> AdapterResponse:
         if isinstance(result, AdapterResponse):
             return result
         if isinstance(result, str):
@@ -626,6 +626,27 @@ def _wrap_user_callable(callable_obj: object, entrypoint: AgentEntrypoint) -> Ag
             f"agent entrypoint {entrypoint.raw!r} returned "
             f"{type(result).__name__}; expected str or AdapterResponse"
         )
+
+    # Async entrypoints (`async def run(req)`) must be awaited, not called as
+    # sync. Wrapping an async fn in a sync `_adapt` would hand EmbeddedAdapter a
+    # bare coroutine — never awaited (RuntimeWarning) and mis-coerced to an
+    # error response. Mirror the async-ness of the user callable so the str/
+    # AdapterResponse coercion runs on the *resolved* value either way.
+    if inspect.iscoroutinefunction(callable_obj):
+
+        async def _adapt_async(req: AdapterRequest) -> AdapterResponse:
+            return _coerce(await callable_obj(req))
+
+        return EmbeddedAdapter(_adapt_async)
+
+    def _adapt(req: AdapterRequest) -> AdapterResponse:
+        result = callable_obj(req)
+        if inspect.isawaitable(result):
+            # Sync callable that returned a coroutine (e.g. a lambda wrapping an
+            # async fn). EmbeddedAdapter.invoke awaits it; coerce there is moot,
+            # so hand the awaitable back and let invoke resolve + type-check.
+            return result  # type: ignore[return-value]
+        return _coerce(result)
 
     return EmbeddedAdapter(_adapt)
 
