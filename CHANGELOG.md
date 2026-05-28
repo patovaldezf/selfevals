@@ -7,6 +7,43 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-05-28
+
+DX fixes surfaced by the brain_os integration (selfevals' first downstream
+user). Each one removes a workaround that user had to write.
+
+### Added
+
+- **`AdapterRequest.get_model_param(key, default)`.** Flattens the proposer
+  `parameters["model_params"]` envelope so adapters read params without
+  hard-coding its shape. The envelope itself stays — it's the namespace the
+  editable contract gates.
+- **Declarative custom graders via dotted path.** A grader name containing
+  `:` (e.g. `my_pkg.graders:TaskShapeGrader`) is imported on demand and
+  instantiated — no `register_grader` side-effect import. Built-in names keep
+  the registry path; the two coexist. The class must subclass `Grader` and be
+  no-arg constructible.
+
+### Changed
+
+- **Grid truncation and case subsampling are now logged, not silent.** When a
+  grid proposer has more combinations than `max_iterations`, the loop logs a
+  WARNING naming how many combos are skipped (and continues — it does not
+  abort). When `sample_strategy` subsamples the pool (`random_subset` /
+  `stratified`), `select_optimization_set` logs an INFO `subsampled N->M
+  cases`. `GridProposer.grid_size(experiment)` exposes the combo count.
+- **Coroutine return errors hint at `await`.** `EmbeddedAdapter.invoke` and
+  the CLI coercion path now append "did you forget to await?" when a coroutine
+  reaches the type check, instead of the bare "returned coroutine".
+
+### Docs
+
+- Documented `Expected.structured_output` as the escape hatch for
+  domain-specific expected fields (the schema is `extra="forbid"`), read by
+  custom graders via `context.case.expected.structured_output`.
+- New "Custom graders" section in `eval_config.md` covering the dotted-path
+  and programmatic-registration routes.
+
 ## [0.4.1] - 2026-05-28
 
 ### Fixed
