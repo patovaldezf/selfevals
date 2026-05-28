@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
 from collections import Counter
+
+import pytest
 
 from selfevals.optimization.sampling import (
     OptimizationSplit,
@@ -224,3 +227,29 @@ def test_empty_input_yields_empty_split() -> None:
     split = select_optimization_set([], _run(strategy="full"))
     assert split.optimization == []
     assert split.holdout == []
+
+
+# --- subsampling is surfaced, not silent ----------------------------------
+
+
+def test_random_subset_logs_subsampling(caplog: pytest.LogCaptureFixture) -> None:
+    cases = [_case() for _ in range(10)]
+    alloc = SplitAllocation(optimization=0.5, holdout=0.4, reliability=0.1)
+    with caplog.at_level(logging.INFO, logger="selfevals.sampling"):
+        split = select_optimization_set(
+            cases, _run(strategy="random_subset", seed=42), split_allocation=alloc
+        )
+    assert len(split.optimization) == 5
+    msgs = [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == "selfevals.sampling" and r.levelno == logging.INFO
+    ]
+    assert any("subsampled 10->5 cases" in m and "random_subset" in m for m in msgs)
+
+
+def test_full_does_not_log_subsampling(caplog: pytest.LogCaptureFixture) -> None:
+    cases = [_case() for _ in range(5)]
+    with caplog.at_level(logging.INFO, logger="selfevals.sampling"):
+        select_optimization_set(cases, _run(strategy="full"))
+    assert not any("subsampled" in r.getMessage() for r in caplog.records)

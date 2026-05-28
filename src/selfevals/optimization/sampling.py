@@ -21,6 +21,7 @@ without contaminating the optimizer.
 
 from __future__ import annotations
 
+import logging
 import random
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -30,6 +31,8 @@ if TYPE_CHECKING:
     from selfevals.schemas.dataset import SplitAllocation
     from selfevals.schemas.eval_case import EvalCase
     from selfevals.schemas.experiment import RunSpec
+
+logger = logging.getLogger("selfevals.sampling")
 
 # Used when RunSpec.seed is None so a `random_subset` / `stratified` run is
 # still reproducible across processes (spec §2.3).
@@ -87,6 +90,13 @@ def select_optimization_set(
         selected = _stratified_subset(pool, _fraction(split_allocation), seed=_seed(run_spec))
     else:  # pragma: no cover - Literal type makes this unreachable
         raise ValueError(f"unknown sample_strategy {strategy!r}")
+
+    # Surface (don't hide) a subsampled case pool so a caller can see the run
+    # evaluated fewer cases than were supplied.
+    if strategy != "full" and len(selected) < len(pool):
+        logger.info(
+            "sample_strategy=%s subsampled %d->%d cases", strategy, len(pool), len(selected)
+        )
 
     return OptimizationSplit(optimization=selected, holdout=holdout)
 

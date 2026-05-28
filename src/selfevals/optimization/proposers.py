@@ -165,6 +165,12 @@ class GridProposer(Proposer):
                 )
         return self._combos
 
+    def grid_size(self, experiment: Experiment) -> int:
+        """Total number of combinations in the grid (cartesian product of the
+        list-valued search-space entries). Lets callers warn when
+        max_iterations would truncate the grid."""
+        return len(self._ensure_combos(experiment))
+
     def propose(self, experiment: Experiment, context: ProposerContext) -> Proposal:
         combos = self._ensure_combos(experiment)
         if context.iteration_index >= len(combos):
