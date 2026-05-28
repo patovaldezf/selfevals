@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CopyableId from '$lib/components/CopyableId.svelte';
   import type { PageData } from './$types';
   import type { LayoutData } from '../$types';
 
@@ -32,13 +33,15 @@
         {#each data.experiments as exp}
           <tr class="hover:bg-surface-2 transition-colors">
             <td class="px-4 py-3">
-              <a
-                href={`/${data.workspace.id}/experiments/${exp.id}`}
-                class="flex flex-col gap-0.5"
-              >
-                <span class="font-medium">{exp.name}</span>
-                <span class="text-text-3 text-xs">{exp.id}</span>
-              </a>
+              <div class="flex flex-col gap-1 items-start">
+                <a
+                  href={`/${data.workspace.id}/experiments/${exp.id}`}
+                  class="font-medium hover:text-text-1"
+                >
+                  {exp.name}
+                </a>
+                <CopyableId id={exp.id} label="experiment id" />
+              </div>
             </td>
             <td class="px-4 py-3 text-text-2 font-mono text-xs">{exp.state}</td>
             <td class="px-4 py-3 text-text-2 font-mono text-xs">{exp.proposer_strategy}</td>

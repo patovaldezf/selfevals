@@ -127,6 +127,25 @@ def test_trace_not_found_for_unknown_id(client: TestClient) -> None:
     assert response.status_code == 404
 
 
+def test_trace_response_exposes_experiment_name(client: TestClient) -> None:
+    """A5: the trace viewer titles pages by experiment name, not by run_id.
+    The API must surface the human name so the FE doesn't have to round-trip
+    a second request for it."""
+    ws = client.get("/api/workspaces").json()["workspaces"][0]
+    experiments = client.get(f"/api/workspaces/{ws['id']}/experiments").json()
+    exp = experiments[0]
+    detail = client.get(f"/api/workspaces/{ws['id']}/experiments/{exp['id']}").json()
+    run_ids = [
+        rid
+        for it in detail["iterations"]
+        for rid in it["trace_run_ids"]
+    ]
+    assert run_ids, "expected at least one trace_run_id on the seeded iterations"
+    trace = client.get(f"/api/workspaces/{ws['id']}/traces/{run_ids[0]}").json()
+    assert trace["experiment_id"] == exp["id"]
+    assert trace["experiment_name"] == exp["name"]
+
+
 def test_resolve_payload_roundtrip(client: TestClient, seeded_db: Path) -> None:
     """Put bytes into the object store and resolve them via the API.
 
