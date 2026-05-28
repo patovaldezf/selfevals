@@ -7,6 +7,31 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-28
+
+### Fixed
+
+- **Async agent entrypoints discovered via YAML now run.** An
+  `agent.entrypoint: "mod:run"` pointing at an `async def` was wrapped in a
+  sync shim that called it without awaiting, handing `EmbeddedAdapter` a bare
+  coroutine — never awaited (RuntimeWarning) and rejected with "returned
+  coroutine; expected str or AdapterResponse". `_wrap_user_callable` now
+  detects `iscoroutinefunction` and installs an async wrapper, so YAML-loaded
+  async entrypoints work without the `asyncio.run` bridge. (Direct
+  `EmbeddedAdapter(async_fn)` use was already fine.)
+- **`failure_reasons` survive the storage round-trip.** `selfevals report`
+  and the web API's experiment-detail endpoint rebuilt `IterationOutcome`
+  from disk with empty `case_runs`, so the JSON report's `failure_reasons`
+  came back `[]` even though the inline `run --format json` populated them.
+  The non-passing traces (persisted per `run.persist_traces`, default
+  `failed`) are now reloaded and grouped back into `case_runs`, so a report
+  rebuilt from storage shows the same per-grade rationales as the inline run.
+
+### Changed
+
+- `__version__` is now in sync with the packaged version (0.4.0 shipped with
+  a stale `0.3.0` in `selfevals.version`).
+
 ## [0.4.0] - 2026-05-28
 
 ### Added
