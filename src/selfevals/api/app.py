@@ -39,6 +39,7 @@ from selfevals.api.queries import (
 from selfevals.api.schemas import (
     CreateWorkspaceRequest,
     ExperimentDetailResponse,
+    ExperimentListPage,
     HealthResponse,
     IterationListResponse,
     ThreadResponse,
@@ -178,17 +179,23 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
 
     @app.get(
         "/api/workspaces/{workspace_id}/experiments",
-        response_model=list[dict[str, Any]],
+        response_model=ExperimentListPage,
         tags=["experiments"],
     )
     def experiments_index(
         workspace_id: str,
         storage: SQLiteStorage = Depends(_storage),
         limit: Annotated[int, Query(ge=1, le=500)] = 100,
+        offset: Annotated[int, Query(ge=0)] = 0,
         _user: UserHeader = None,
-    ) -> list[dict[str, Any]]:
+    ) -> ExperimentListPage:
         try:
-            return list_experiments(storage, workspace_id=workspace_id, limit=limit)
+            return list_experiments(
+                storage,
+                workspace_id=workspace_id,
+                limit=limit,
+                offset=offset,
+            )
         finally:
             storage.close()
 
