@@ -15,10 +15,11 @@
   // `IterationSummary.trace_run_ids` link straight through.
   $: workspaceId = $page.params.workspace;
 
-  type Tab = 'iterations' | 'compare' | 'decisions';
+  type Tab = 'iterations' | 'compare' | 'funnel' | 'decisions';
   let tab: Tab = 'iterations';
   function setTab(id: string) {
-    if (id === 'iterations' || id === 'compare' || id === 'decisions') tab = id;
+    if (id === 'iterations' || id === 'compare' || id === 'funnel' || id === 'decisions')
+      tab = id;
   }
   let openIteration: IterationSummary | null = null;
 
@@ -120,6 +121,7 @@
       {#each [
         { id: 'iterations', label: `Iterations · ${iterations.length}` },
         { id: 'compare', label: 'Compare' },
+        { id: 'funnel', label: 'Funnel' },
         { id: 'decisions', label: `Decisions · ${data.decisions.length}` }
       ] as t}
         <button
