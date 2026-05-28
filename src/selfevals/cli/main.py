@@ -383,6 +383,46 @@ def _build_parser() -> argparse.ArgumentParser:
     p_examples_copy.add_argument("--to", default=".", help="Destination directory (default: cwd).")
     p_examples_copy.set_defaults(func=commands.cmd_examples_copy)
 
+    p_serve = make_subparser(
+        sub,
+        "serve",
+        help_text="Run the web UI + API in one process (no manual proxy).",
+        description=(
+            "Start the FastAPI bridge (and optionally the SvelteKit UI built "
+            "by `npm run build`) so a dev can see iterations, traces, and "
+            "live runs without juggling two terminals. Without --web-dist "
+            "the API runs alone — useful for headless usage or when the "
+            "web is served from `npm run dev` separately."
+        ),
+        examples=[
+            "selfevals --db ./selfevals.sqlite serve",
+            "selfevals serve --web-dist web/build --port 8080",
+            "selfevals serve --no-web",
+        ],
+    )
+    p_serve.add_argument("--host", default="127.0.0.1", help="Bind host (default 127.0.0.1).")
+    p_serve.add_argument("--port", type=int, default=8000, help="Bind port (default 8000).")
+    p_serve.add_argument(
+        "--web-dist",
+        default=None,
+        help=(
+            "Path to a `npm run build` output (adapter-node) for the web UI. "
+            "If present, mounts the SPA at `/` and serves its assets; the "
+            "API stays at `/api`. If omitted, only the API is served."
+        ),
+    )
+    p_serve.add_argument(
+        "--no-web",
+        action="store_true",
+        help="Explicitly disable the web UI even if a web build is auto-detected.",
+    )
+    p_serve.add_argument(
+        "--reload",
+        action="store_true",
+        help="Enable uvicorn auto-reload (dev only).",
+    )
+    p_serve.set_defaults(func=commands.cmd_serve)
+
     return parser
 
 
