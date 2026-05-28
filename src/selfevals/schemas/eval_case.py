@@ -105,6 +105,9 @@ class Expected(SelfEvalsModel):
     policy_flags: list[str] = Field(default_factory=list)
     structured_output: dict[str, Any] | None = None
     output_schema: dict[str, Any] | None = None
+    required_sections: list[str] = Field(default_factory=list)
+    """Top-level keys an artifact must carry, each mapping to a non-empty value.
+    Consumed by the ArtifactCompletenessGrader for artifact-producing agents."""
 
 
 class Blocking(SelfEvalsModel):

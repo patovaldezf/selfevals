@@ -10,11 +10,15 @@ A `Grader` reads a Trace + EvalCase and returns a `GradeResult` (label
   failed `GuardrailCheckSpan` entries from the trace. FAIL is blocking.
 - `LLMJudgeGrader` invokes an `AgentAdapter` as a judge against a rubric
   prompt; single-judge today, panel infrastructure-ready.
+- `ArtifactCompletenessGrader` scores artifact-producing agents (structured
+  documents/reports) on schema validity + required-section presence, with an
+  optional advisory LLM-judge quality signal that never flips the verdict.
 
 Calibration helpers turn observed predictions + human annotations into
 the metrics tracked on a `GraderCard`.
 """
 
+from selfevals.graders.artifact import ArtifactCompletenessGrader
 from selfevals.graders.base import (
     BreakdownNode,
     GradeLabel,
@@ -44,6 +48,7 @@ from selfevals.graders.trajectory import (
 )
 
 __all__ = [
+    "ArtifactCompletenessGrader",
     "BreakdownNode",
     "CalibrationReport",
     "DeterministicGrader",
