@@ -38,6 +38,10 @@ from selfevals.graders.llm_judge import (
     LLMJudgeGrader,
     RubricTemplate,
 )
+from selfevals.graders.trajectory import (
+    HardInvariants,
+    TrajectoryGrader,
+)
 
 __all__ = [
     "BreakdownNode",
@@ -49,10 +53,12 @@ __all__ = [
     "Grader",
     "GraderContext",
     "GuardrailGrader",
+    "HardInvariants",
     "HumanLabel",
     "JudgeDecision",
     "LLMJudgeGrader",
     "PredictedLabel",
     "RubricTemplate",
+    "TrajectoryGrader",
     "compute_classification_metrics",
 ]
