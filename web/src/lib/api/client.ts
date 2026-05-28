@@ -106,11 +106,33 @@ export type TraceDetail = {
   experiment_id: string | null;
   experiment_name: string | null;
   iteration: number | null;
+  thread_id: string | null;
+  thread_position: number | null;
   final_state: string;
   started_at: string;
   ended_at: string | null;
   spans: SpanSummary[];
   metrics: Record<string, unknown>;
+};
+
+export type ThreadTurn = {
+  trace_id: string;
+  run_id: string;
+  position: number;
+  experiment_id: string | null;
+  iteration: number | null;
+  final_state: string;
+  started_at: string;
+  ended_at: string | null;
+  primary_grade: string | null;
+  grader_results: Record<string, unknown>[];
+  metrics: Record<string, unknown>;
+};
+
+export type ThreadDetail = {
+  thread_id: string;
+  turn_count: number;
+  turns: ThreadTurn[];
 };
 
 export class ApiError extends Error {
@@ -249,5 +271,14 @@ export const api = {
     const text = await res.text();
     const isJson = res.headers.get('content-type')?.startsWith('application/json') ?? false;
     return { text, isJson };
-  }
+  },
+
+  thread: (
+    workspaceId: string,
+    threadId: string,
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<ThreadDetail>(`/api/workspaces/${workspaceId}/threads/${threadId}`, {
+      fetch
+    })
 };
