@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import pytest
@@ -201,3 +202,55 @@ def test_in_memory_store_works() -> None:
         scope.put_entity(ws)
         assert scope.exists(Workspace, ws.id)
     store.close()
+
+
+def test_storage_usable_across_threads(tmp_path: Path) -> None:
+    """Regression: FastAPI runs sync handlers in a threadpool, and
+    `Depends(_storage)` can create the connection on one worker and
+    close it on another. With sqlite's default `check_same_thread=True`,
+    that raises
+    `ProgrammingError: SQLite objects created in a thread can only be
+    used in that same thread` during teardown — handlers return 200
+    but the response stream is corrupted, the FE sees `!res.ok`, and
+    every page past `/` 500s. We use `check_same_thread=False` and
+    keep the storage single-use per request, so this must work.
+    """
+    db_path = str(tmp_path / "thread.sqlite")
+    # Open the connection on the main thread.
+    store = SQLiteStorage(db_path)
+    ws = _ws()
+    with store.open(ws.id) as scope:
+        scope.put_entity(ws)
+
+    # Read from a worker thread (simulating Depends being re-resolved
+    # on a different worker than the one that built the connection).
+    out: dict[str, object] = {}
+
+    def _read() -> None:
+        try:
+            with store.open(ws.id) as scope:
+                out["found"] = scope.exists(Workspace, ws.id)
+        except Exception as e:  # pragma: no cover - failure surfaced via assert
+            out["error"] = repr(e)
+
+    t = threading.Thread(target=_read)
+    t.start()
+    t.join(timeout=5.0)
+    assert "error" not in out, f"cross-thread read failed: {out.get('error')!r}"
+    assert out.get("found") is True
+
+    # And close from yet a third thread — this is the path that originally
+    # blew up in the API (`storage.close()` running on a different
+    # threadpool worker than the one that opened the connection).
+    closed_error: dict[str, object] = {}
+
+    def _close() -> None:
+        try:
+            store.close()
+        except Exception as e:  # pragma: no cover
+            closed_error["error"] = repr(e)
+
+    t2 = threading.Thread(target=_close)
+    t2.start()
+    t2.join(timeout=5.0)
+    assert "error" not in closed_error, f"cross-thread close failed: {closed_error!r}"

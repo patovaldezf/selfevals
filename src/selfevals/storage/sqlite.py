@@ -57,7 +57,16 @@ class SQLiteStorage(StorageInterface):
 
     def __init__(self, db_path: str | Path = ":memory:") -> None:
         self._db_path = str(db_path)
-        self._conn = sqlite3.connect(self._db_path, isolation_level=None)
+        # `check_same_thread=False`: FastAPI runs sync handlers in a threadpool,
+        # and `Depends(_storage)` may create the connection on one worker and
+        # close it on another, which trips sqlite's default thread guard
+        # (`ProgrammingError: SQLite objects created in a thread can only be
+        # used in that same thread`). The connection is still single-use per
+        # request (one storage instance per handler, closed in `finally`), so
+        # there is no concurrent access from multiple threads at once.
+        self._conn = sqlite3.connect(
+            self._db_path, isolation_level=None, check_same_thread=False
+        )
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")
         apply_migrations(self._conn)
