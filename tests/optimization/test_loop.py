@@ -169,6 +169,54 @@ async def test_loop_runs_max_iterations_when_no_convergence(tmp_path: Path) -> N
 
 
 @pytest.mark.asyncio
+async def test_loop_persists_and_carries_grader_reason(tmp_path: Path) -> None:
+    from selfevals.schemas.trace import Trace
+
+    # level 0.0 → adapter emits "miss", so the must_include=["pong"] rule fails
+    # and the DeterministicGrader produces a non-empty failure reason.
+    cases = [_case("pong")]
+    exp = _experiment(max_iterations=1, search_space={"level": [0.0]})
+    storage = SQLiteStorage(tmp_path / "db.sqlite")
+    ws = Workspace(id=WS, workspace_id=WS, slug="t", name="t")
+    with storage.open(WS) as scope:
+        scope.put_entity(ws)
+    scope = storage.open(WS)
+    executor = Executor(
+        adapter=_adapter_for("pong", level=0.0),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    loop = OptimizationLoop(
+        experiment=exp,
+        executor=executor,
+        proposer=GridProposer(),
+        graders=[DeterministicGrader()],
+        cases=cases,
+        scope=scope,
+    )
+    result = await loop.run()
+
+    # In-memory: the iteration's case-run traces carry the grader reason.
+    grader_results = [
+        gr
+        for it in result.iterations
+        for run in it.case_runs
+        for rep in run.repetitions
+        for gr in rep.trace.grader_results
+    ]
+    assert grader_results, "expected at least one stamped grader result"
+    assert all(gr.reason for gr in grader_results)
+
+    # Persisted: the failing trace was written and still carries the reason.
+    with storage.open(WS) as s:
+        traces = s.list_entities(Trace)
+    persisted = [gr for t in traces for gr in t.grader_results]
+    assert persisted, "expected the failing trace to be persisted with grader results"
+    assert all(gr.reason for gr in persisted)
+    storage.close()
+
+
+@pytest.mark.asyncio
 async def test_loop_terminates_on_search_space_exhausted() -> None:
     cases = [_case("pong")]
     exp = _experiment(
