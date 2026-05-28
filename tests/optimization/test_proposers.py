@@ -4,13 +4,17 @@ from typing import Any
 
 import pytest
 
+from selfevals.analysis.hypothesis import HypothesisRecord
 from selfevals.optimization.proposers import (
     GridProposer,
+    LLMProposalError,
+    LLMProposer,
     ManualProposer,
     ProposerContext,
     RandomProposer,
     SearchSpaceExhaustedError,
 )
+from selfevals.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
 from selfevals.schemas._base import EntityRef
 from selfevals.schemas.enums import (
     DatasetType,
@@ -179,3 +183,133 @@ def test_random_validates_editable_contract() -> None:
 def test_random_max_proposals_must_be_positive() -> None:
     with pytest.raises(ValueError):
         RandomProposer(max_proposals=0)
+
+
+def _hypothesis(
+    *,
+    statement: str,
+    parameters: dict[str, Any] | None = None,
+    mode_slug: str = "fm_x",
+) -> HypothesisRecord:
+    return HypothesisRecord(
+        id=HypothesisRecord.make_id(),
+        workspace_id=WS,
+        experiment_id="exp_x",
+        targets_mode_slug=mode_slug,
+        statement=statement,
+        suggested_parameters={"model_params": dict(parameters or {})} if parameters else {},
+    )
+
+
+def test_llm_offline_consumes_hypotheses_in_order() -> None:
+    exp = _experiment()
+    consumed: list[HypothesisRecord] = []
+    proposer = LLMProposer(on_consume=consumed.append)
+    h0 = _hypothesis(statement="lower temperature", parameters={"temperature": 0.1})
+    h1 = _hypothesis(statement="raise top_p", parameters={"top_p": 0.95})
+
+    p0 = proposer.propose(exp, ProposerContext(iteration_index=0, pending_hypotheses=(h0, h1)))
+    assert isinstance(p0, Proposal)
+    assert p0.hypothesis == "lower temperature"
+    assert p0.parameters == {"model_params": {"temperature": 0.1}}
+    assert p0.inputs_referenced == ["fm_x"]
+    assert h0.consumed_by_iteration == 0
+    assert consumed == [h0]
+
+    # h0 is now consumed; the next context (rebuilt by the loop) drops it.
+    p1 = proposer.propose(exp, ProposerContext(iteration_index=1, pending_hypotheses=(h1,)))
+    assert isinstance(p1, Proposal)
+    assert p1.hypothesis == "raise top_p"
+    assert h1.consumed_by_iteration == 1
+
+
+def test_llm_offline_skips_already_consumed_hypothesis() -> None:
+    exp = _experiment()
+    proposer = LLMProposer()
+    h0 = _hypothesis(statement="already applied")
+    h0.consumed_by_iteration = 0
+    h1 = _hypothesis(statement="fresh")
+
+    p = proposer.propose(exp, ProposerContext(iteration_index=1, pending_hypotheses=(h0, h1)))
+    assert isinstance(p, Proposal)
+    assert p.hypothesis == "fresh"
+    assert h1.consumed_by_iteration == 1
+    # The already-consumed one is untouched.
+    assert h0.consumed_by_iteration == 0
+
+
+def test_llm_offline_exhausts_when_no_pending() -> None:
+    exp = _experiment()
+    proposer = LLMProposer()
+    with pytest.raises(SearchSpaceExhaustedError):
+        proposer.propose(exp, ProposerContext(iteration_index=0, pending_hypotheses=()))
+
+
+def test_llm_offline_carries_confidence() -> None:
+    exp = _experiment()
+    proposer = LLMProposer(confidence=0.9)
+    h0 = _hypothesis(statement="h", parameters={"temperature": 0.0})
+    p = proposer.propose(exp, ProposerContext(iteration_index=0, pending_hypotheses=(h0,)))
+    assert isinstance(p, Proposal)
+    assert p.confidence == 0.9
+
+
+def test_llm_offline_validates_editable_contract() -> None:
+    exp = _experiment()  # tool_code is not editable
+    proposer = LLMProposer()
+    bad = HypothesisRecord(
+        id=HypothesisRecord.make_id(),
+        workspace_id=WS,
+        experiment_id="exp_x",
+        targets_mode_slug="fm_y",
+        statement="rewrite the tool",
+        suggested_parameters={"tool_code": "..."},
+    )
+    with pytest.raises(ProposalRejectedError):
+        proposer.propose(exp, ProposerContext(iteration_index=0, pending_hypotheses=(bad,)))
+
+
+def test_llm_confidence_must_be_in_range() -> None:
+    with pytest.raises(ValueError):
+        LLMProposer(confidence=1.5)
+
+
+@pytest.mark.asyncio
+async def test_llm_adapter_mode_parses_structured_output() -> None:
+    exp = _experiment()
+
+    def _agent(_: AdapterRequest) -> AdapterResponse:
+        return AdapterResponse(
+            content=None,
+            structured_output={
+                "parameters": {"prompt": "be terse"},
+                "hypothesis": "terser prompts reduce verbosity failures",
+                "confidence": 0.8,
+                "inputs_referenced": ["fm_verbose"],
+            },
+        )
+
+    proposer = LLMProposer(adapter=EmbeddedAdapter(_agent))
+    h0 = _hypothesis(statement="pending hint")
+    proposed = proposer.propose(exp, ProposerContext(iteration_index=0, pending_hypotheses=(h0,)))
+    proposal = await proposed  # type: ignore[misc]
+    assert isinstance(proposal, Proposal)
+    assert proposal.parameters == {"prompt": "be terse"}
+    assert proposal.hypothesis == "terser prompts reduce verbosity failures"
+    assert proposal.confidence == 0.8
+    assert proposal.inputs_referenced == ["fm_verbose"]
+    # Acting on evidence retires the offered hypothesis so it isn't replayed.
+    assert h0.consumed_by_iteration == 0
+
+
+@pytest.mark.asyncio
+async def test_llm_adapter_mode_rejects_malformed_output() -> None:
+    exp = _experiment()
+
+    def _agent(_: AdapterRequest) -> AdapterResponse:
+        return AdapterResponse(content="no structured output here")
+
+    proposer = LLMProposer(adapter=EmbeddedAdapter(_agent))
+    proposed = proposer.propose(exp, ProposerContext(iteration_index=0))
+    with pytest.raises(LLMProposalError):
+        await proposed  # type: ignore[misc]
