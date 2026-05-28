@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
+  import CopyableId from '$lib/components/CopyableId.svelte';
   import DecisionBadge from '$lib/components/DecisionBadge.svelte';
   import MetricChip from '$lib/components/MetricChip.svelte';
   import Sparkline from '$lib/components/Sparkline.svelte';
@@ -66,10 +67,12 @@
 </svelte:head>
 
 <div class="px-12 py-10 max-w-6xl mx-auto">
-  <nav class="text-xs text-text-3 font-mono mb-6">
-    <a class="hover:text-text-1" href={`/${data.detail.summary.id.split('_')[0] === 'exp' ? `${$$props.workspace ?? ''}` : ''}`}>workspace</a>
-    <span class="mx-1.5">/</span>
-    <span>{summary.id}</span>
+  <nav class="text-xs text-text-3 mb-6 flex items-center gap-1.5" aria-label="Breadcrumb">
+    <a class="hover:text-text-1" href={`/${workspaceId}`}>workspace</a>
+    <span aria-hidden="true">/</span>
+    <a class="hover:text-text-1" href={`/${workspaceId}/experiments`}>experiments</a>
+    <span aria-hidden="true">/</span>
+    <span class="text-text-2">{summary.name}</span>
   </nav>
 
   <header class="mb-10">
@@ -78,6 +81,9 @@
     </div>
     <h1 class="text-3xl font-semibold tracking-tight">{summary.name}</h1>
     <p class="text-text-2 mt-2 max-w-2xl">{summary.goal}</p>
+    <div class="mt-3">
+      <CopyableId id={summary.id} label="experiment id" />
+    </div>
   </header>
 
   <section class="grid grid-cols-4 gap-4 mb-10">
@@ -337,15 +343,15 @@
             <span class="text-text-3 text-xs">No traces persisted for this iteration.</span>
           {:else}
             <ul class="space-y-1">
-              {#each openIteration.trace_run_ids as runId}
-                <li>
+              {#each openIteration.trace_run_ids as runId, idx}
+                <li class="flex items-center gap-2">
                   <a
                     href={`/${workspaceId}/traces/${runId}`}
                     on:click={() => (openIteration = null)}
-                    class="group flex items-center justify-between gap-3 rounded border border-border bg-surface-2/40 hover:bg-surface-2 hover:border-text-3 px-2.5 py-1.5 transition-colors"
+                    class="group flex flex-1 items-center justify-between gap-3 rounded border border-border bg-surface-2/40 hover:bg-surface-2 hover:border-text-3 px-2.5 py-1.5 transition-colors"
                   >
-                    <span class="font-mono text-xs text-text-2 group-hover:text-text-1 truncate">
-                      {runId}
+                    <span class="text-sm text-text-2 group-hover:text-text-1">
+                      Open trace #{idx + 1}
                     </span>
                     <span
                       class="text-text-3 group-hover:text-text-1 text-xs shrink-0"
@@ -354,6 +360,7 @@
                       →
                     </span>
                   </a>
+                  <CopyableId id={runId} label="run id" />
                 </li>
               {/each}
             </ul>
@@ -362,7 +369,7 @@
       </div>
       <div>
         <dt class="text-text-3 text-xs mb-0.5">Record id</dt>
-        <dd class="font-mono text-xs text-text-3">{openIteration.id}</dd>
+        <dd><CopyableId id={openIteration.id} label="iteration record id" /></dd>
       </div>
     </dl>
   </aside>

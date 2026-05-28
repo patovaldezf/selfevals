@@ -222,6 +222,7 @@ def load_trace(storage: SQLiteStorage, *, workspace_id: str, trace_id: str) -> T
     """Look up a Trace by either its entity id (`tr_...`) or its run_id
     (`run_...`). Both are common navigation targets — IterationRecord
     persists `run_id`s while internal storage keys by entity id."""
+    experiment_name: str | None = None
     with storage.open(workspace_id) as scope:
         try:
             trace = scope.get_entity(Trace, trace_id)
@@ -240,11 +241,23 @@ def load_trace(storage: SQLiteStorage, *, workspace_id: str, trace_id: str) -> T
             if row is None:
                 return None
             trace = Trace.model_validate(json.loads(row[0]))
-    assert isinstance(trace, Trace)
+        assert isinstance(trace, Trace)
+        # Resolve the human name while the scope is still open so the
+        # trace viewer can title pages by experiment name (A5: identidad
+        # humana sobre ULID). A missing/orphan experiment is fine —
+        # standalone traces fall back to the run_id.
+        if trace.run.experiment_id is not None:
+            try:
+                exp = scope.get_entity(Experiment, trace.run.experiment_id)
+                if isinstance(exp, Experiment):
+                    experiment_name = exp.name
+            except Exception:
+                experiment_name = None
     return TraceResponse(
         id=trace.id,
         run_id=trace.run.run_id,
         experiment_id=trace.run.experiment_id,
+        experiment_name=experiment_name,
         iteration=trace.run.iteration,
         thread_id=trace.run.thread_id,
         thread_position=trace.run.thread_position,
