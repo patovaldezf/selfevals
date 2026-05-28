@@ -90,6 +90,23 @@ class ExperimentSummary(BaseModel):
     iteration_count: int = 0
 
 
+class ExperimentListPage(BaseModel):
+    """Paginated `GET /workspaces/{ws}/experiments` (A8).
+
+    Schema-versioned envelope so the FE can offer "load more" /
+    cursor-style navigation when an installation accumulates many
+    experiments. Ships before any FE pagination UI lands so the
+    contract is stable in V0 — the day a user has 500+ experiments
+    we don't need a breaking API change to surface a pager.
+    """
+
+    items: list[ExperimentSummary]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+
+
 class ExperimentDetailResponse(BaseModel):
     """Shape returned by GET /workspaces/{ws}/experiments/{id}.
 

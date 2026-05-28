@@ -11,11 +11,20 @@
 </svelte:head>
 
 <div class="px-12 py-10 max-w-6xl mx-auto">
-  <header class="mb-8">
-    <h1 class="text-2xl font-semibold tracking-tight">Experiments</h1>
-    <p class="text-text-2 mt-1.5 text-sm">
-      All experiments in {data.workspace.name}.
-    </p>
+  <header class="mb-8 flex items-baseline justify-between">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">Experiments</h1>
+      <p class="text-text-2 mt-1.5 text-sm">
+        All experiments in {data.workspace.name}.
+      </p>
+    </div>
+    <div class="text-xs text-text-3 font-mono" data-numeric>
+      {#if data.experimentsHasMore}
+        {data.experiments.length} of {data.experimentsTotal}
+      {:else}
+        {data.experimentsTotal} total
+      {/if}
+    </div>
   </header>
 
   <div class="border border-border rounded-lg overflow-hidden bg-surface">

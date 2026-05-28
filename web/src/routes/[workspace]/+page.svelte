@@ -79,7 +79,13 @@
   <section>
     <div class="flex items-baseline justify-between mb-4">
       <h2 class="text-lg font-semibold">Recent experiments</h2>
-      <span class="text-xs text-text-3">{sortedExperiments.length} total</span>
+      <span class="text-xs text-text-3">
+        {#if data.experimentsHasMore}
+          {sortedExperiments.length} of {data.experimentsTotal}
+        {:else}
+          {data.experimentsTotal} total
+        {/if}
+      </span>
     </div>
 
     {#if sortedExperiments.length === 0}

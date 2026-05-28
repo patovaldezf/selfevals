@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from selfevals.api.schemas import (
     ExperimentDetailResponse,
+    ExperimentListPage,
     ExperimentSummary,
     IterationSummary,
     SpanSummary,
@@ -126,23 +127,49 @@ def workspace_detail(storage: SQLiteStorage, *, workspace_id: str) -> WorkspaceR
 
 
 def list_experiments(
-    storage: SQLiteStorage, *, workspace_id: str, limit: int = 100
-) -> list[dict[str, Any]]:
+    storage: SQLiteStorage,
+    *,
+    workspace_id: str,
+    limit: int = 100,
+    offset: int = 0,
+) -> ExperimentListPage:
+    """Paginated experiments listing (A8).
+
+    `ListFilter` already supports limit/offset; we expose it here and
+    return a `total` so the FE can show "X of N" without a second
+    round-trip. The iteration-count subquery is intentionally a
+    full-scan per experiment — at the volumes we're targeting
+    (Fase A: <100 experiments), this is correct-and-cheap.
+    """
     with storage.open(workspace_id) as scope:
-        experiments = [
+        all_experiments = [
             e
-            for e in scope.list_entities(Experiment, ListFilter(order_by="updated_at", limit=limit))
+            for e in scope.list_entities(Experiment, ListFilter(order_by="updated_at"))
             if isinstance(e, Experiment)
         ]
-        out: list[dict[str, Any]] = []
-        for exp in experiments:
-            it_count = sum(
-                1
-                for it in scope.list_entities(IterationRecord, ListFilter())
-                if isinstance(it, IterationRecord) and it.experiment_id == exp.id
+        total = len(all_experiments)
+        page = all_experiments[offset : offset + limit]
+        all_iterations = [
+            it
+            for it in scope.list_entities(IterationRecord, ListFilter())
+            if isinstance(it, IterationRecord)
+        ]
+        iteration_counts: dict[str, int] = {}
+        for it in all_iterations:
+            iteration_counts[it.experiment_id] = iteration_counts.get(it.experiment_id, 0) + 1
+        items = [
+            ExperimentSummary(
+                **_experiment_summary_dict(exp, iteration_count=iteration_counts.get(exp.id, 0))
             )
-            out.append(_experiment_summary_dict(exp, iteration_count=it_count))
-        return out
+            for exp in page
+        ]
+    return ExperimentListPage(
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+        has_more=(offset + limit) < total,
+    )
 
 
 def experiment_detail(
