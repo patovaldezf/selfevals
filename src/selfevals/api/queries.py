@@ -427,6 +427,13 @@ def _span_summary(span: Any) -> SpanSummary:
         "params",
         "tokens",
         "cost_usd",
+        # Performance facets the tree node surfaces (A6). Jensen: TTFT
+        # and throughput are first-class for an agent debugger; hiding
+        # them in detail makes the tree blind to "fast but wrong".
+        "time_to_first_token_ms",
+        "tokens_per_second",
+        "cache_hit",
+        "retries",
         "output",
         "reasoning",
         "tool_name",
