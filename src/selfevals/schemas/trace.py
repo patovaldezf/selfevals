@@ -321,6 +321,10 @@ class GraderResult(SelfEvalsModel):
     grader: NonEmptyStr
     label: str
     score: float | None = None
+    reason: str | None = None
+    """Inline free-text rationale the grader produced for this result. Small
+    (<4KB); inlined directly so it persists with the trace and surfaces in
+    reports. For large payloads use `reason_pointer` instead."""
     reason_pointer: str | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     failure_modes: list[NonEmptyStr] = Field(default_factory=list)

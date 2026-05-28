@@ -97,7 +97,41 @@ def _iteration_to_dict(it: IterationOutcome) -> dict[str, Any]:
             "iteration_id": it.iteration_record.id,
             "decision_id": it.decision_record.id,
         },
+        "failure_reasons": _failure_reasons(it),
     }
+
+
+def _failure_reasons(it: IterationOutcome) -> list[dict[str, Any]]:
+    """Deduplicated grader rationales for the iteration's failing grades.
+
+    An iteration runs many cases x repetitions, each with its own grader
+    results, so emitting every reason would bloat the report. Instead we keep
+    the altitude low: walk every persisted trace, collect grader results whose
+    label is not a pass, and deduplicate on (grader, label, reason). The result
+    lets a consumer (e.g. brain_os) see WHY a grader failed without raw SQLite
+    spelunking, while staying compact — one entry per distinct failure.
+    """
+    seen: set[tuple[str, str, str]] = set()
+    reasons: list[dict[str, Any]] = []
+    for case_run in it.case_runs:
+        for rep in case_run.repetitions:
+            for gr in rep.trace.grader_results:
+                if gr.label == "pass" or not gr.reason:
+                    continue
+                key = (gr.grader, gr.label, gr.reason)
+                if key in seen:
+                    continue
+                seen.add(key)
+                reasons.append(
+                    {
+                        "grader": gr.grader,
+                        "label": gr.label,
+                        "score": gr.score,
+                        "reason": gr.reason,
+                        "failure_modes": list(gr.failure_modes),
+                    }
+                )
+    return reasons
 
 
 def _default(obj: Any) -> Any:
