@@ -15,6 +15,7 @@ from selfevals.schemas.trace import (
     EnvironmentInfo,
     ErrorSpan,
     FinalState,
+    GraderResult,
     GuardrailCheckSpan,
     LLMCallSpan,
     LLMOutput,
@@ -275,3 +276,22 @@ def test_error_span_payload() -> None:
         recoverable=False,
     )
     assert s.recoverable is False
+
+
+def test_grader_result_reason_round_trips() -> None:
+    gr = GraderResult(
+        grader="exact_match",
+        label="fail",
+        score=0.0,
+        reason="expected 'yes' but got 'no'",
+        failure_modes=["wrong_answer"],
+    )
+    assert gr.reason == "expected 'yes' but got 'no'"
+    assert gr.reason_pointer is None
+    restored = GraderResult.model_validate(gr.model_dump(mode="json"))
+    assert restored.reason == gr.reason
+
+
+def test_grader_result_reason_defaults_to_none() -> None:
+    gr = GraderResult(grader="exact_match", label="pass")
+    assert gr.reason is None

@@ -324,6 +324,22 @@ class OptimizationLoop:
                 list(flat_grades[i * width : (i + 1) * width])
                 for i in range(len(case_run.repetitions))
             ]
+            # Stamp the grader results onto each rep's trace so they ride along
+            # in-memory on `case_runs` (the reporter and any consumer of
+            # IterationOutcome can read `rep.trace.grader_results` directly,
+            # including each grader's free-text reason). RepetitionResult is
+            # frozen, so rebuild it; CaseRun is rebuilt with the new reps.
+            stamped_reps = [
+                replace(
+                    rep,
+                    trace=rep.trace.model_copy(
+                        update={"grader_results": [_to_trace_grader_result(g) for g in grades]}
+                    ),
+                )
+                for rep, grades in zip(case_run.repetitions, grades_per_rep, strict=True)
+            ]
+            case_run = replace(case_run, repetitions=stamped_reps)
+            case_runs[-1] = case_run
             for rep, grades in zip(case_run.repetitions, grades_per_rep, strict=True):
                 self._maybe_persist_trace(rep, grades)
             per_case_grades[case.id] = grades_per_rep
@@ -348,10 +364,11 @@ class OptimizationLoop:
     def _maybe_persist_trace(self, rep: RepetitionResult, grades: list[GradeResult]) -> None:
         """Persist this repetition's trace per `run.persist_traces` (§5).
 
-        The trace is stamped with its grader results first, so `analyze pull`
-        can classify it without re-running the agent. `none` skips entirely;
-        `failed` keeps only errored / failing-graded traces; `all` keeps them
-        all. No-op without a scope (e.g. `--no-persist` runs).
+        The rep's trace is already stamped with its grader results (see
+        `_run_iteration`), so `analyze pull` can classify it without re-running
+        the agent. `none` skips entirely; `failed` keeps only errored /
+        failing-graded traces; `all` keeps them all. No-op without a scope
+        (e.g. `--no-persist` runs).
         """
         mode = self._experiment.run.persist_traces
         if self._scope is None or mode == "none":
@@ -361,10 +378,7 @@ class OptimizationLoop:
         )
         if mode == "failed" and not failed:
             return
-        trace = rep.trace.model_copy(
-            update={"grader_results": [_to_trace_grader_result(g) for g in grades]}
-        )
-        self._scope.put_entity(trace)
+        self._scope.put_entity(rep.trace)
 
     def _build_iteration_record(
         self,
@@ -563,15 +577,17 @@ def _to_trace_grader_result(grade: GradeResult) -> GraderResult:
     """Project the loop's `GradeResult` onto the trace's `GraderResult`.
 
     Carries the fields error analysis needs — grader, label, score, confidence,
-    failure_modes. The free-text `reason` is dropped (the trace schema routes
-    reasons through an object-store pointer, which the loop doesn't populate).
-    The optional funnel `breakdown` is serialized to a plain dict so it
+    failure_modes — plus the free-text `reason`, which is inlined directly. A
+    grader reason is small text, so it persists alongside the result; the
+    trace's `reason_pointer` is reserved for large payloads the loop doesn't
+    produce. The optional funnel `breakdown` is serialized to a plain dict so it
     persists alongside the result (additive; never changes the label/score).
     """
     return GraderResult(
         grader=grade.grader,
         label=str(grade.label),
         score=grade.score,
+        reason=grade.reason,
         confidence=grade.confidence,
         failure_modes=list(grade.failure_modes),
         breakdown=grade.breakdown.to_dict() if grade.breakdown is not None else None,
