@@ -31,6 +31,8 @@ def render_compare(a: IterationRecord, b: IterationRecord) -> str:
     lines.append("")
     lines.extend(_failure_modes_diff_lines(a, b))
     lines.append("")
+    lines.extend(_funnel_diff_lines(a, b))
+    lines.append("")
     lines.extend(_recommendation_lines(a, b))
     return "\n".join(line for line in lines if line is not None)
 
@@ -107,6 +109,58 @@ def _failure_modes_diff_lines(a: IterationRecord, b: IterationRecord) -> list[st
         out.append(
             "- in **both**: " + ", ".join(f"`{m}` A={a_modes[m]} B={b_modes[m]}" for m in common)
         )
+    return out
+
+
+def _funnel_diff_lines(a: IterationRecord, b: IterationRecord) -> list[str]:
+    """Diff the rolled-up grader funnel by node path (mean score per node).
+
+    Returns `[]` when neither iteration recorded a funnel, so the section is
+    omitted entirely. Paths flatten the tree to `parent.child` keys so nested
+    drill-down nodes line up across A and B.
+    """
+    a_funnel = _funnel_map(a)
+    b_funnel = _funnel_map(b)
+    if not a_funnel and not b_funnel:
+        return []
+    keys = sorted(set(a_funnel) | set(b_funnel))
+    out = [
+        "## Funnel diff",
+        "",
+        "| node | A score | B score | Δ |",
+        "|------|---------|---------|---|",
+    ]
+    for key in keys:
+        av = a_funnel.get(key)
+        bv = b_funnel.get(key)
+        out.append(f"| `{key}` | {_fmt_num(av)} | {_fmt_num(bv)} | {_delta_str(av, bv)} |")
+    return out
+
+
+def _funnel_map(record: IterationRecord) -> dict[str, float]:
+    """Flatten the persisted funnel tree to `path -> mean_score`.
+
+    Nodes whose `mean_score` is None (label-only) are skipped so the diff
+    table only carries comparable numbers.
+    """
+    funnel = record.metrics.funnel if record.metrics else None
+    if not funnel:
+        return {}
+    out: dict[str, float] = {}
+
+    def _walk(nodes: dict[str, Any], prefix: str) -> None:
+        for key, node in nodes.items():
+            if not isinstance(node, dict):
+                continue
+            path = key if not prefix else f"{prefix}.{key}"
+            score = node.get("mean_score")
+            if isinstance(score, (int, float)):
+                out[path] = float(score)
+            children = node.get("children")
+            if isinstance(children, dict):
+                _walk(children, path)
+
+    _walk(funnel, "")
     return out
 
 

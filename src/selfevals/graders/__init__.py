@@ -15,7 +15,13 @@ Calibration helpers turn observed predictions + human annotations into
 the metrics tracked on a `GraderCard`.
 """
 
-from selfevals.graders.base import GradeLabel, Grader, GraderContext, GradeResult
+from selfevals.graders.base import (
+    BreakdownNode,
+    GradeLabel,
+    Grader,
+    GraderContext,
+    GradeResult,
+)
 from selfevals.graders.calibration import (
     CalibrationReport,
     HumanLabel,
@@ -34,6 +40,7 @@ from selfevals.graders.llm_judge import (
 )
 
 __all__ = [
+    "BreakdownNode",
     "CalibrationReport",
     "DeterministicGrader",
     "DeterministicRuleViolationError",

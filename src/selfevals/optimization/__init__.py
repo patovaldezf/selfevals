@@ -15,6 +15,7 @@ This package contains:
 from selfevals.optimization.aggregator import (
     Aggregator,
     CaseOutcome,
+    FunnelNode,
     IterationAggregate,
     aggregate_iteration,
 )
@@ -38,6 +39,7 @@ from selfevals.optimization.sampling import (
 __all__ = [
     "Aggregator",
     "CaseOutcome",
+    "FunnelNode",
     "GridProposer",
     "IterationAggregate",
     "IterationOutcome",

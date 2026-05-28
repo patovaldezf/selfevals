@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from selfevals.graders.base import GradeLabel
+from selfevals.graders.base import BreakdownNode, GradeLabel
 from selfevals.optimization.aggregator import CaseOutcome, aggregate_iteration
 
 
@@ -12,6 +12,7 @@ def _outcome(
     cost: float = 0.0,
     duration: int = 0,
     failure_modes: list[str] | None = None,
+    breakdowns: list[BreakdownNode] | None = None,
 ) -> CaseOutcome:
     return CaseOutcome(
         case_id=f"ec_{hash(tuple(labels))}",
@@ -20,6 +21,7 @@ def _outcome(
         cost_usd=cost,
         duration_ms=duration,
         failure_modes=failure_modes or [],
+        breakdowns=breakdowns or [],
     )
 
 
@@ -136,6 +138,130 @@ def test_latency_percentiles_absent_when_no_duration() -> None:
     agg = aggregate_iteration(case_outcomes=[_outcome([GradeLabel.PASS])])
     assert "latency_ms_p95" not in agg.guardrails
     assert "latency_ms_per_case_avg" not in agg.guardrails
+
+
+def test_funnel_empty_when_no_breakdowns() -> None:
+    agg = aggregate_iteration(case_outcomes=[_outcome([GradeLabel.PASS])])
+    assert agg.funnel == {}
+
+
+def test_funnel_rolls_up_by_key_with_weighted_mean_score() -> None:
+    outcomes = [
+        _outcome(
+            [GradeLabel.PASS],
+            breakdowns=[BreakdownNode(key="answer", label=GradeLabel.PASS, score=1.0, weight=2.0)],
+        ),
+        _outcome(
+            [GradeLabel.FAIL],
+            breakdowns=[
+                BreakdownNode(
+                    key="answer",
+                    label=GradeLabel.FAIL,
+                    score=0.0,
+                    weight=2.0,
+                    failure_modes=["wrong_answer"],
+                )
+            ],
+        ),
+    ]
+    agg = aggregate_iteration(case_outcomes=outcomes)
+    node = agg.funnel["answer"]
+    assert node.count == 2
+    # weighted mean: (1.0*2 + 0.0*2) / (2 + 2) = 0.5
+    assert node.mean_score == pytest.approx(0.5)
+    assert node.total_weight == pytest.approx(4.0)
+    assert node.label_counts == {"pass": 1, "fail": 1}
+    assert node.failure_mode_counts == {"wrong_answer": 1}
+
+
+def test_funnel_recurses_into_children() -> None:
+    outcomes = [
+        _outcome(
+            [GradeLabel.PARTIAL],
+            breakdowns=[
+                BreakdownNode(
+                    key="overall",
+                    score=0.5,
+                    weight=1.0,
+                    children=[
+                        BreakdownNode(key="retrieval", score=1.0, weight=1.0),
+                        BreakdownNode(key="answer", score=0.0, weight=1.0),
+                    ],
+                )
+            ],
+        ),
+        _outcome(
+            [GradeLabel.PASS],
+            breakdowns=[
+                BreakdownNode(
+                    key="overall",
+                    score=1.0,
+                    weight=1.0,
+                    children=[
+                        BreakdownNode(key="retrieval", score=1.0, weight=1.0),
+                    ],
+                )
+            ],
+        ),
+    ]
+    agg = aggregate_iteration(case_outcomes=outcomes)
+    overall = agg.funnel["overall"]
+    assert overall.count == 2
+    assert overall.mean_score == pytest.approx(0.75)
+    # retrieval appears in both breakdowns
+    assert overall.children["retrieval"].count == 2
+    assert overall.children["retrieval"].mean_score == pytest.approx(1.0)
+    # answer only in the first
+    assert overall.children["answer"].count == 1
+    assert overall.children["answer"].mean_score == pytest.approx(0.0)
+
+
+def test_funnel_advisory_weight_zero_node_excluded_from_mean() -> None:
+    # A weight=0 node (diagnostic / advisory) still counts and tallies failure
+    # modes, but must not contribute to the weighted mean score.
+    outcomes = [
+        _outcome(
+            [GradeLabel.PASS],
+            breakdowns=[
+                BreakdownNode(key="scored", score=1.0, weight=1.0),
+                BreakdownNode(
+                    key="diag",
+                    score=0.0,
+                    weight=0.0,
+                    failure_modes=["slow_path"],
+                ),
+            ],
+        ),
+    ]
+    agg = aggregate_iteration(case_outcomes=outcomes)
+    assert agg.funnel["scored"].mean_score == pytest.approx(1.0)
+    # weight=0 node has no scored weight → mean_score is None, but it is counted
+    diag = agg.funnel["diag"]
+    assert diag.mean_score is None
+    assert diag.count == 1
+    assert diag.failure_mode_counts == {"slow_path": 1}
+
+
+def test_funnel_node_to_dict_is_json_serializable() -> None:
+    import json
+
+    outcomes = [
+        _outcome(
+            [GradeLabel.PASS],
+            breakdowns=[
+                BreakdownNode(
+                    key="overall",
+                    score=0.8,
+                    children=[BreakdownNode(key="sub", score=0.8)],
+                )
+            ],
+        ),
+    ]
+    agg = aggregate_iteration(case_outcomes=outcomes)
+    payload = {key: node.to_dict() for key, node in agg.funnel.items()}
+    dumped = json.dumps(payload)
+    assert "overall" in dumped
+    assert payload["overall"]["children"]["sub"]["mean_score"] == pytest.approx(0.8)
 
 
 def test_unsupported_metric_raises() -> None:
