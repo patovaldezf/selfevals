@@ -35,6 +35,7 @@ from selfevals.optimization.loop import (
 )
 from selfevals.optimization.proposers import (
     GridProposer,
+    LLMProposer,
     ManualProposer,
     Proposer,
     RandomProposer,
@@ -646,7 +647,12 @@ def _build_proposer(experiment: Experiment) -> Proposer:
                 "manual proposer requires proposer.parameters.proposals as a non-empty list"
             )
         return ManualProposer(manual)
-    raise CommandError(f"unsupported proposer strategy in MVP: {strategy}")
+    if strategy == ProposerStrategy.LLM_PROPOSER:
+        # Offline by default: deterministically applies seeded hypotheses with
+        # no LLM or API key, so a spec can run end-to-end without a network.
+        params = dict(experiment.proposer.parameters)
+        return LLMProposer(confidence=float(params.get("confidence", 0.5)))
+    raise CommandError(f"unsupported proposer strategy: {strategy}")
 
 
 def _ensure_workspace(storage: SQLiteStorage, spec: ExperimentSpec) -> None:

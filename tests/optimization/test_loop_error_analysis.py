@@ -14,10 +14,11 @@ from typing import Any
 
 import pytest
 
+from selfevals.analysis.hypothesis import HypothesisRecord
 from selfevals.analysis.staging import AnalysisStagingRecord
 from selfevals.graders.deterministic import DeterministicGrader
 from selfevals.optimization.loop import OptimizationLoop, _dominant_modes
-from selfevals.optimization.proposers import GridProposer
+from selfevals.optimization.proposers import GridProposer, LLMProposer
 from selfevals.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
 from selfevals.runner.executor import Executor
 from selfevals.runner.sandbox import SandboxPolicy
@@ -287,3 +288,53 @@ async def test_persist_traces_failed_keeps_only_failures(tmp_path: Path) -> None
     traces2 = _persisted_traces(storage2)
     storage2.close()
     assert traces2 == []
+
+
+@pytest.mark.asyncio
+async def test_llm_proposer_offline_consumes_seeded_hypotheses(tmp_path: Path) -> None:
+    # The loop reads HypothesisRecord seeds from storage, the offline
+    # LLMProposer applies them in order, and the loop persists each as
+    # consumed so it isn't replayed. After the single seed is consumed the
+    # loop terminates on an exhausted search space.
+    exp = _experiment(max_iterations=5, search_space={"level": [0.0]})
+    exp.proposer = ProposerSpec(strategy=ProposerStrategy.LLM_PROPOSER)
+
+    storage = SQLiteStorage(tmp_path / "llm.sqlite")
+    with storage.open(WS) as scope:
+        scope.put_entity(Workspace(id=WS, workspace_id=WS, slug="t", name="t"))
+        scope.put_entity(
+            HypothesisRecord(
+                id=HypothesisRecord.make_id(),
+                workspace_id=WS,
+                experiment_id=exp.id,
+                targets_mode_slug="missing_required_substring",
+                statement="say pong explicitly",
+                suggested_parameters={"prompt": "always answer pong"},
+            )
+        )
+    executor = Executor(
+        adapter=_passing_adapter(), sandbox=SandboxPolicy(SandboxMode.MOCK), workspace_id=WS
+    )
+    loop = OptimizationLoop(
+        experiment=exp,
+        executor=executor,
+        proposer=LLMProposer(),
+        graders=[DeterministicGrader()],
+        cases=[_case()],
+        scope=storage.open(WS),
+    )
+    result = await loop.run()
+
+    assert len(result.iterations) == 1
+    only = result.iterations[0]
+    assert only.proposal.hypothesis == "say pong explicitly"
+    assert only.proposal.parameters == {"prompt": "always answer pong"}
+    assert result.terminated_reason.startswith("search_space_exhausted")
+
+    with storage.open(WS) as scope:
+        seeds = [
+            h for h in scope.list_entities(HypothesisRecord) if isinstance(h, HypothesisRecord)
+        ]
+    storage.close()
+    assert len(seeds) == 1
+    assert seeds[0].consumed_by_iteration == 0

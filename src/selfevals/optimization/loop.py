@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from inspect import isawaitable
 from typing import TYPE_CHECKING
 
 from selfevals._internal.ids import new_prefixed_id
@@ -54,6 +55,7 @@ from selfevals.schemas.iteration import (
 from selfevals.schemas.trace import GraderResult
 
 if TYPE_CHECKING:
+    from selfevals.analysis.hypothesis import HypothesisRecord
     from selfevals.runner.executor import CaseRun, Executor, RepetitionResult
     from selfevals.schemas.dataset import SplitAllocation
     from selfevals.schemas.eval_case import EvalCase
@@ -189,15 +191,22 @@ class OptimizationLoop:
         prev_failure_modes: list[str] = []
 
         for index in range(max_iter):
+            pending = self._pending_hypotheses()
             context = ProposerContext(
                 iteration_index=index,
                 history=tuple(it.iteration_record for it in result.iterations),
+                failure_modes=tuple(prev_failure_modes),
+                pending_hypotheses=pending,
             )
             try:
-                proposal = self._proposer.propose(self._experiment, context)
+                proposed = self._proposer.propose(self._experiment, context)
+                proposal = await proposed if isawaitable(proposed) else proposed
             except SearchSpaceExhaustedError as exc:
                 result.terminated_reason = f"search_space_exhausted: {exc}"
                 break
+            # A proposer may stamp `consumed_by_iteration` on a hypothesis it
+            # applied (LLMProposer does). Persist those so they aren't re-offered.
+            self._persist_consumed_hypotheses(pending)
 
             aggregate, case_runs, _per_case_grades = await self._run_iteration(
                 proposal, iteration=index
@@ -424,6 +433,34 @@ class OptimizationLoop:
                 ),
             )
         )
+
+    def _pending_hypotheses(self) -> tuple[HypothesisRecord, ...]:
+        """HypothesisRecords for this experiment a proposer hasn't applied yet.
+
+        Read fresh from storage each iteration and ordered oldest-first so an
+        `LLMProposer` consumes them deterministically. Empty (no work) when the
+        loop runs without a scope or analysis seeded none. See §7."""
+        if self._scope is None:
+            return ()
+        from selfevals.analysis.hypothesis import HypothesisRecord
+
+        records = [
+            h
+            for h in self._scope.list_entities(HypothesisRecord)
+            if isinstance(h, HypothesisRecord)
+            and h.experiment_id == self._experiment.id
+            and h.consumed_by_iteration is None
+        ]
+        records.sort(key=lambda h: (h.created_at, h.id))
+        return tuple(records)
+
+    def _persist_consumed_hypotheses(self, offered: tuple[HypothesisRecord, ...]) -> None:
+        """Write back any hypothesis a proposer stamped consumed this iteration."""
+        if self._scope is None:
+            return
+        for hyp in offered:
+            if hyp.consumed_by_iteration is not None:
+                self._scope.put_entity(hyp)
 
 
 def _to_trace_grader_result(grade: GradeResult) -> GraderResult:

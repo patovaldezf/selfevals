@@ -39,8 +39,9 @@ this file records what *is*.
   thresholds breach). Calibration utilities compute
   precision/recall/F1/macro-F1 and high-risk false negatives.
 - **OptimizationLoop**: `ManualProposer`, `GridProposer`,
-  `RandomProposer`. Convergence detection. Aggregation across reps.
-  Best-iteration selection.
+  `RandomProposer`, `LLMProposer` (offline deterministic hypothesis mode
+  by default; LLM mode via an injected `AgentAdapter`). Convergence
+  detection. Aggregation across reps. Best-iteration selection.
 - **DecisionMatrix**: guardrail check → first-iteration absolute
   target → improvement-vs-baseline. Emits `KEEP_CANDIDATE`, `REJECT`,
   `INVESTIGATE`, `SPAWN_SUBEXPERIMENT`, `REQUIRE_TRADEOFF_REVIEW`
@@ -84,8 +85,8 @@ this file records what *is*.
 
 ### Optimization
 
-- Only `manual`, `grid`, and `random` proposers. No Bayesian, no
-  evolutionary, no streaming proposers.
+- Only `manual`, `grid`, `random`, and `llm_proposer` proposers. No
+  Bayesian, no bandit, no evolutionary, no streaming proposers.
 - No pairwise comparison or multi-judge consensus (single judge
   only — the `GraderCard` schema is panel-ready).
 - Convergence detection is delta-based; there is no learned
