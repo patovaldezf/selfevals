@@ -5,7 +5,8 @@
   import FunnelNode from '$lib/components/FunnelNode.svelte';
   import MetricChip from '$lib/components/MetricChip.svelte';
   import Sparkline from '$lib/components/Sparkline.svelte';
-  import { api, ApiError, type FunnelDetail, type IterationSummary } from '$lib/api/client';
+  import { api, ApiError } from '$lib/api/client';
+  import type { CompareResponse, FunnelDetail, IterationSummary } from '$lib/api/client';
   import type { PageData } from './$types';
 
   export let data: PageData;
@@ -41,15 +42,42 @@
     .map((it) => it.primary_metric_value)
     .filter((v): v is number => v !== null);
 
-  $: itA = iterations.find((it) => it.id === compareA) ?? null;
-  $: itB = iterations.find((it) => it.id === compareB) ?? null;
+  // Compare tab (B3): the diff is computed server-side (one math source
+  // shared with the CLI). The FE picks A and B, fetches the structured
+  // diff, and renders it. No client-side delta math lives here anymore.
+  let compareResult: CompareResponse | null = null;
+  let compareLoading = false;
+  let compareError: string | null = null;
+  let compareToken = 0;
 
-  const setA = (v: string) => (compareA = v);
-  const setB = (v: string) => (compareB = v);
-  $: compareCols = [
-    { which: 'A', value: compareA, set: setA, it: itA },
-    { which: 'B', value: compareB, set: setB, it: itB }
-  ];
+  async function loadCompare(ws: string, a: string, b: string): Promise<void> {
+    // Guard against a stale response overwriting a newer selection: each
+    // fetch claims a token; only the latest one is allowed to commit.
+    const token = ++compareToken;
+    compareLoading = true;
+    compareError = null;
+    try {
+      const result = await api.compare(ws, summary.id, a, b);
+      if (token !== compareToken) return;
+      compareResult = result;
+    } catch (err) {
+      if (token !== compareToken) return;
+      compareResult = null;
+      compareError =
+        err instanceof ApiError
+          ? `Compare failed (${err.status}).`
+          : 'Backend unreachable.';
+    } finally {
+      if (token === compareToken) compareLoading = false;
+    }
+  }
+
+  $: if (workspaceId && compareA && compareB) {
+    void loadCompare(workspaceId, compareA, compareB);
+  } else {
+    compareResult = null;
+    compareError = null;
+  }
 
   // --- Funnel tab (B2) -----------------------------------------------------
   // The funnel is lazy/additive: we don't load it in +page.server.ts (keeps
@@ -108,6 +136,29 @@
     if (Math.abs(value) < 1e-9) return '0';
     const sign = value > 0 ? '+' : '';
     return `${sign}${fmtNumber(value, 3)}`;
+  }
+
+  // Same convention as the iterations table Δ column (~line 187): green up,
+  // red down, neutral grey for zero/missing.
+  function deltaColor(value: number | null): string {
+    if (value === null || Math.abs(value) < 1e-9) return 'var(--color-text-3)';
+    return value > 0 ? 'var(--color-success)' : 'var(--color-danger)';
+  }
+
+  // Recommendation banner copy, derived from the server's verdict.
+  function recommendationText(r: CompareResponse['recommendation']): string {
+    switch (r.kind) {
+      case 'winner':
+        return `${r.winner} is better: ${r.metric_name} ${fmtDelta(r.delta)} (${fmtNumber(
+          r.a_value
+        )} → ${fmtNumber(r.b_value)})`;
+      case 'tie':
+        return `A and B tie on ${r.metric_name} (${fmtNumber(r.a_value)}) — compare guardrails or failure modes to decide.`;
+      case 'different_metric':
+        return `Different primary metrics (A=${r.a_metric_name} vs B=${r.b_metric_name}); no recommendation.`;
+      default:
+        return 'No primary metric to compare.';
+    }
   }
 </script>
 
@@ -253,66 +304,261 @@
       </table>
     </div>
   {:else if tab === 'compare'}
-    <div class="grid grid-cols-2 gap-6">
-      {#each compareCols as col}
-        <div class="rounded-lg border border-border bg-surface p-5">
-          <div class="flex items-center justify-between mb-4">
-            <span class="text-xs uppercase tracking-wide text-text-3">Iteration {col.which}</span>
-            <select
-              class="font-mono text-xs px-2 py-1 rounded border border-border bg-bg"
-              value={col.which === 'A' ? compareA : compareB}
-              on:change={(e) => col.set(e.currentTarget.value)}
-            >
-              <option value="">— pick —</option>
-              {#each iterations as it}
-                <option value={it.id}>#{it.iteration}</option>
-              {/each}
-            </select>
-          </div>
-          {#if col.it}
-            <div class="space-y-3 text-sm">
-              <div>
-                <div class="text-text-3 text-xs mb-0.5">Hypothesis</div>
-                <div class="text-text-1">{col.it.hypothesis}</div>
-              </div>
-              <div>
-                <div class="text-text-3 text-xs mb-0.5">Parameters</div>
-                <pre class="font-mono text-xs bg-surface-2 rounded p-2.5 overflow-x-auto">{JSON.stringify(col.it.proposed_parameters, null, 2)}</pre>
-              </div>
-              <div class="flex gap-6">
-                <div>
-                  <div class="text-text-3 text-xs mb-0.5">Primary</div>
-                  <div class="font-mono" data-numeric>
-                    {fmtNumber(col.it.primary_metric_value)}
-                  </div>
-                </div>
-                <div>
-                  <div class="text-text-3 text-xs mb-0.5">Decision</div>
-                  <DecisionBadge outcome={col.it.decision_outcome} />
-                </div>
-              </div>
-            </div>
-          {:else}
-            <div class="text-text-3 text-sm py-12 text-center">Select an iteration.</div>
-          {/if}
-        </div>
-      {/each}
-    </div>
-    {#if itA && itB && itA.primary_metric_value !== null && itB.primary_metric_value !== null}
-      <div class="mt-6 rounded-lg border border-border bg-surface px-5 py-4 text-sm">
-        <div class="text-text-3 text-xs mb-1">Δ B − A</div>
-        <div
-          class="font-mono text-xl"
-          style:color={itB.primary_metric_value > itA.primary_metric_value
-            ? 'var(--color-success)'
-            : itB.primary_metric_value < itA.primary_metric_value
-              ? 'var(--color-danger)'
-              : 'var(--color-text-1)'}
-          data-numeric
-        >
-          {fmtDelta(itB.primary_metric_value - itA.primary_metric_value)}
+    <div class="grid grid-cols-2 gap-6 mb-6">
+      <div class="rounded-lg border border-border bg-surface px-5 py-4">
+        <div class="flex items-center justify-between gap-3">
+          <span class="text-xs uppercase tracking-wide text-text-3">
+            Iteration A
+            <span class="text-text-3 normal-case ml-1">· baseline</span>
+          </span>
+          <select
+            class="font-mono text-xs px-2 py-1 rounded border border-border bg-bg"
+            aria-label="Pick iteration A"
+            bind:value={compareA}
+          >
+            <option value={null}>— pick —</option>
+            {#each iterations as it}
+              <option value={it.id}>#{it.iteration}</option>
+            {/each}
+          </select>
         </div>
       </div>
+      <div class="rounded-lg border border-border bg-surface px-5 py-4">
+        <div class="flex items-center justify-between gap-3">
+          <span class="text-xs uppercase tracking-wide text-text-3">
+            Iteration B
+            <span class="text-text-3 normal-case ml-1">· candidate</span>
+          </span>
+          <select
+            class="font-mono text-xs px-2 py-1 rounded border border-border bg-bg"
+            aria-label="Pick iteration B"
+            bind:value={compareB}
+          >
+            <option value={null}>— pick —</option>
+            {#each iterations as it}
+              <option value={it.id}>#{it.iteration}</option>
+            {/each}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    {#if !compareA || !compareB}
+      <div
+        class="rounded-lg border border-dashed border-border bg-surface text-text-3 text-sm py-16 text-center"
+      >
+        Pick iteration A and B to see what changed and which is better.
+      </div>
+    {:else if compareLoading && !compareResult}
+      <div
+        class="rounded-lg border border-border bg-surface text-text-3 text-sm py-16 text-center"
+      >
+        Computing diff…
+      </div>
+    {:else if compareError}
+      <div
+        class="rounded-lg border bg-surface text-sm py-12 px-5 text-center"
+        style:border-color="var(--color-danger)"
+        style:color="var(--color-danger)"
+      >
+        {compareError}
+      </div>
+    {:else if compareResult}
+      {@const r = compareResult}
+      <!-- Recommendation banner: the verdict first, evidence below. -->
+      <div
+        class="rounded-lg border bg-surface px-5 py-4 mb-6"
+        style:border-color={r.recommendation.kind === 'winner'
+          ? 'var(--color-success)'
+          : 'var(--color-border)'}
+      >
+        <div class="flex items-center gap-2">
+          <span
+            class="text-base font-medium"
+            style:color={r.recommendation.kind === 'winner'
+              ? deltaColor(r.recommendation.delta)
+              : 'var(--color-text-1)'}
+          >
+            {recommendationText(r.recommendation)}
+          </span>
+        </div>
+        {#if r.recommendation.kind === 'winner' && r.recommendation.new_failure_modes.length > 0}
+          <div class="text-text-2 text-xs mt-1.5">
+            New failure modes:
+            {#each r.recommendation.new_failure_modes as m, i}<span class="font-mono"
+                >{m}{i < r.recommendation.new_failure_modes.length - 1 ? ', ' : ''}</span
+              >{/each}
+          </div>
+        {/if}
+        <!-- Honest holdout caveat: a first-class state, never a fake number. -->
+        <div
+          class="text-xs mt-2 pt-2 border-t border-dashed border-border"
+          style:color="var(--color-text-3)"
+          title="The iteration ledger carries no held-out split classification yet."
+        >
+          {r.holdout_status === 'unavailable'
+            ? 'Valid on optimization set · Holdout: not yet tracked'
+            : `Holdout: ${r.holdout_status}`}
+        </div>
+      </div>
+
+      <!-- Metrics diff -->
+      <section class="mb-6">
+        <h2 class="text-xs uppercase tracking-wide text-text-3 mb-2">Metrics</h2>
+        <div class="border border-border rounded-lg overflow-hidden bg-surface">
+          <table class="w-full text-sm">
+            <thead class="bg-surface-2 text-text-3 text-xs uppercase tracking-wide">
+              <tr>
+                <th class="text-left px-4 py-2.5 font-medium">Metric</th>
+                <th class="text-right px-4 py-2.5 font-medium">A</th>
+                <th class="text-right px-4 py-2.5 font-medium">B</th>
+                <th class="text-right px-4 py-2.5 font-medium">Δ</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-border">
+              {#each r.metrics_diff as row}
+                <tr>
+                  <td class="px-4 py-2.5 font-mono text-text-2 text-xs">{row.name}</td>
+                  <td class="px-4 py-2.5 text-right font-mono" data-numeric>{fmtNumber(row.a)}</td>
+                  <td class="px-4 py-2.5 text-right font-mono" data-numeric>{fmtNumber(row.b)}</td>
+                  <td
+                    class="px-4 py-2.5 text-right font-mono text-xs"
+                    style:color={deltaColor(row.delta)}
+                    data-numeric
+                  >
+                    {fmtDelta(row.delta)}
+                  </td>
+                </tr>
+              {:else}
+                <tr><td class="px-4 py-3 text-text-3 text-xs" colspan="4">No metrics.</td></tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Proposal diff -->
+      <section class="mb-6">
+        <h2 class="text-xs uppercase tracking-wide text-text-3 mb-2">Parameters</h2>
+        <div class="border border-border rounded-lg overflow-hidden bg-surface">
+          <table class="w-full text-sm">
+            <thead class="bg-surface-2 text-text-3 text-xs uppercase tracking-wide">
+              <tr>
+                <th class="text-left px-4 py-2.5 font-medium">Param</th>
+                <th class="text-left px-4 py-2.5 font-medium">A</th>
+                <th class="text-left px-4 py-2.5 font-medium">B</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-border">
+              {#each r.proposal_diff as row}
+                <tr class={row.changed ? 'bg-surface-2/60' : ''}>
+                  <td class="px-4 py-2.5 font-mono text-text-2 text-xs">
+                    {row.key}
+                    {#if row.changed}
+                      <span class="ml-1.5 text-[10px] uppercase tracking-wide text-text-3"
+                        >changed</span
+                      >
+                    {/if}
+                  </td>
+                  <td class="px-4 py-2.5 font-mono text-text-1 text-xs">{row.a}</td>
+                  <td
+                    class="px-4 py-2.5 font-mono text-xs"
+                    style:color={row.changed ? 'var(--color-text-1)' : 'var(--color-text-2)'}
+                    style:font-weight={row.changed ? '600' : '400'}
+                  >
+                    {row.b}
+                  </td>
+                </tr>
+              {:else}
+                <tr><td class="px-4 py-3 text-text-3 text-xs" colspan="3">No parameters.</td></tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Failure modes -->
+      <section class="mb-6">
+        <h2 class="text-xs uppercase tracking-wide text-text-3 mb-2">Failure modes</h2>
+        {#if Object.keys(r.failure_modes.only_a).length === 0 && Object.keys(r.failure_modes.only_b).length === 0 && Object.keys(r.failure_modes.common).length === 0}
+          <div class="rounded-lg border border-border bg-surface px-5 py-4 text-text-3 text-sm">
+            No failure modes recorded on either iteration.
+          </div>
+        {:else}
+          <div class="grid grid-cols-3 gap-4">
+            <div class="rounded-lg border border-border bg-surface px-4 py-3">
+              <div class="text-text-3 text-xs mb-2">In A only</div>
+              {#each Object.entries(r.failure_modes.only_a) as [mode, count]}
+                <div class="flex items-center justify-between text-xs py-0.5">
+                  <span class="font-mono" style:color="var(--color-danger)">{mode}</span>
+                  <span class="font-mono text-text-3" data-numeric>{count}</span>
+                </div>
+              {:else}
+                <span class="text-text-3 text-xs">—</span>
+              {/each}
+            </div>
+            <div class="rounded-lg border border-border bg-surface px-4 py-3">
+              <div class="text-text-3 text-xs mb-2">In B only</div>
+              {#each Object.entries(r.failure_modes.only_b) as [mode, count]}
+                <div class="flex items-center justify-between text-xs py-0.5">
+                  <span class="font-mono" style:color="var(--color-danger)">{mode}</span>
+                  <span class="font-mono text-text-3" data-numeric>{count}</span>
+                </div>
+              {:else}
+                <span class="text-text-3 text-xs">—</span>
+              {/each}
+            </div>
+            <div class="rounded-lg border border-border bg-surface px-4 py-3">
+              <div class="text-text-3 text-xs mb-2">In both</div>
+              {#each Object.entries(r.failure_modes.common) as [mode, counts]}
+                <div class="flex items-center justify-between text-xs py-0.5">
+                  <span class="font-mono text-text-2">{mode}</span>
+                  <span class="font-mono text-text-3" data-numeric>
+                    {counts[0]} → {counts[1]}
+                  </span>
+                </div>
+              {:else}
+                <span class="text-text-3 text-xs">—</span>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      </section>
+
+      <!-- Funnel diff (only when the run recorded a grader funnel) -->
+      {#if r.funnel_diff.length > 0}
+        <section class="mb-6">
+          <h2 class="text-xs uppercase tracking-wide text-text-3 mb-2">Funnel</h2>
+          <div class="border border-border rounded-lg overflow-hidden bg-surface">
+            <table class="w-full text-sm">
+              <thead class="bg-surface-2 text-text-3 text-xs uppercase tracking-wide">
+                <tr>
+                  <th class="text-left px-4 py-2.5 font-medium">Node</th>
+                  <th class="text-right px-4 py-2.5 font-medium">A score</th>
+                  <th class="text-right px-4 py-2.5 font-medium">B score</th>
+                  <th class="text-right px-4 py-2.5 font-medium">Δ</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-border">
+                {#each r.funnel_diff as row}
+                  <tr>
+                    <td class="px-4 py-2.5 font-mono text-text-2 text-xs">{row.path}</td>
+                    <td class="px-4 py-2.5 text-right font-mono" data-numeric>{fmtNumber(row.a)}</td>
+                    <td class="px-4 py-2.5 text-right font-mono" data-numeric>{fmtNumber(row.b)}</td>
+                    <td
+                      class="px-4 py-2.5 text-right font-mono text-xs"
+                      style:color={deltaColor(row.delta)}
+                      data-numeric
+                    >
+                      {fmtDelta(row.delta)}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      {/if}
     {/if}
   {:else if tab === 'funnel'}
     <div class="rounded-lg border border-border bg-surface">

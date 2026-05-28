@@ -18,6 +18,12 @@ from typing import Any
 from pydantic import BaseModel
 
 from selfevals.api.schemas import (
+    CompareFailureModes,
+    CompareFunnelRow,
+    CompareMetricRow,
+    CompareParamRow,
+    CompareRecommendation,
+    CompareResponse,
     ExperimentDetailResponse,
     ExperimentListPage,
     ExperimentSummary,
@@ -37,6 +43,7 @@ from selfevals.cli.commands import (
     _reconstruct_result,
 )
 from selfevals.reporter import render_json
+from selfevals.reporter.compare import compute_compare
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.iteration import DecisionRecord, IterationRecord
 from selfevals.schemas.trace import Trace
@@ -273,6 +280,84 @@ def load_iteration_funnel(
     funnel = it.metrics.funnel if it.metrics is not None else {}
     nodes = {k: FunnelNodeResponse.model_validate(v) for k, v in (funnel or {}).items()}
     return FunnelResponse(iteration_id=it.id, iteration=it.iteration, nodes=nodes)
+
+
+def load_compare(
+    storage: SQLiteStorage,
+    *,
+    workspace_id: str,
+    experiment_id: str,
+    a_id: str,
+    b_id: str,
+) -> CompareResponse | None:
+    """Structured diff of two IterationRecords (B3).
+
+    Mirrors the CLI's `cmd_compare` loading: open the workspace scope,
+    fetch both records by id. Returns None when either iteration is
+    missing (the handler maps that to 404). Raises ValueError when an
+    iteration belongs to a different experiment than the one in the path,
+    or when the two iterations belong to different experiments (the
+    handler maps that to 400). Delegates all comparison math to the
+    reporter's `compute_compare` — the single source of truth shared with
+    the CLI — then projects the frozen dataclass into pydantic here so the
+    reporter stays free of the web layer.
+
+    `holdout_status` is "unavailable": an `IterationRecord` carries no
+    split classification, so we do not fabricate a holdout number.
+    """
+    with storage.open(workspace_id) as scope:
+        try:
+            a = scope.get_entity(IterationRecord, a_id)
+            b = scope.get_entity(IterationRecord, b_id)
+        except Exception:
+            return None
+    assert isinstance(a, IterationRecord)
+    assert isinstance(b, IterationRecord)
+    if a.experiment_id != experiment_id or b.experiment_id != experiment_id:
+        raise ValueError(
+            "iterations must belong to the experiment in the path "
+            f"({experiment_id}); got A={a.experiment_id} B={b.experiment_id}"
+        )
+
+    result = compute_compare(a, b)
+    rec = result.recommendation
+    return CompareResponse(
+        a_id=result.a_id,
+        b_id=result.b_id,
+        a_iteration=result.a_iteration,
+        b_iteration=result.b_iteration,
+        a_created_at=result.a_created_at,
+        b_created_at=result.b_created_at,
+        a_decision=result.a_decision,
+        b_decision=result.b_decision,
+        proposal_diff=[
+            CompareParamRow(key=r.key, a=r.a, b=r.b, changed=r.changed)
+            for r in result.proposal_diff
+        ],
+        metrics_diff=[
+            CompareMetricRow(name=r.name, a=r.a, b=r.b, delta=r.delta) for r in result.metrics_diff
+        ],
+        failure_modes=CompareFailureModes(
+            only_a=dict(result.failure_modes.only_a),
+            only_b=dict(result.failure_modes.only_b),
+            common=dict(result.failure_modes.common),
+        ),
+        funnel_diff=[
+            CompareFunnelRow(path=r.path, a=r.a, b=r.b, delta=r.delta) for r in result.funnel_diff
+        ],
+        recommendation=CompareRecommendation(
+            kind=rec.kind,
+            winner=rec.winner,
+            metric_name=rec.metric_name,
+            a_metric_name=rec.a_metric_name,
+            b_metric_name=rec.b_metric_name,
+            a_value=rec.a_value,
+            b_value=rec.b_value,
+            delta=rec.delta,
+            new_failure_modes=list(rec.new_failure_modes),
+        ),
+        holdout_status="unavailable",
+    )
 
 
 def load_trace(storage: SQLiteStorage, *, workspace_id: str, trace_id: str) -> TraceResponse | None:
