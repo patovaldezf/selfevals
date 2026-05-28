@@ -20,7 +20,7 @@ from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 from selfevals.api.broker import get_broker
 from selfevals.api.queries import (
@@ -47,6 +47,8 @@ from selfevals.api.schemas import (
     WorkspaceResponse,
 )
 from selfevals.api.sse import stream_trace
+from selfevals.storage.errors import ObjectNotFoundError, PointerHashMismatchError
+from selfevals.storage.filesystem import FilesystemObjectStore, parse_pointer
 from selfevals.storage.sqlite import SQLiteStorage
 
 DEFAULT_DB_PATH = "./selfevals.sqlite"
@@ -66,6 +68,11 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     """Construct the FastAPI app, parameterized on the SQLite db path."""
     resolved = _resolve_db_path(db_path)
     Path(resolved).parent.mkdir(parents=True, exist_ok=True)
+    # Object store lives next to the SQLite file (same layout as
+    # `selfevals analyze` — see cli/analyze_commands.py:29). The store
+    # is process-local and cheap to construct, so we build one app-wide
+    # instance rather than per-request.
+    object_store = FilesystemObjectStore(Path(resolved).parent / "objects")
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -347,5 +354,72 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
             return anchor_set_history(storage, workspace_id=workspace_id)
         finally:
             storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/payloads",
+        tags=["traces"],
+        responses={
+            200: {
+                "description": "Resolved payload bytes (JSON when parseable, raw otherwise).",
+            },
+            400: {"description": "Invalid pointer or workspace mismatch."},
+            404: {"description": "Pointer not found in the object store."},
+        },
+    )
+    def resolve_payload(
+        workspace_id: str,
+        pointer: Annotated[
+            str,
+            Query(
+                description=(
+                    "Object-store pointer of the form `oss://<workspace_id>/sha256:<hex>`. "
+                    "Used to lazy-load LLM prompts, tool call args/results, and retrieval "
+                    "payloads in the trace viewer (the spans only carry the pointers + "
+                    "hashes; this endpoint resolves them on demand)."
+                ),
+            ),
+        ],
+        _user: UserHeader = None,
+    ) -> Response:
+        # Pointers carry their workspace inside; we still require the path
+        # workspace to match so a leaked pointer from one workspace can't be
+        # read via another workspace's URL. The same content_hash can appear
+        # in multiple workspaces (content-addressed), so cross-workspace
+        # reads via path-mismatch must 400, not 404.
+        try:
+            ptr_workspace, _ptr_hash = parse_pointer(pointer)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if ptr_workspace != workspace_id:
+            raise HTTPException(
+                status_code=400,
+                detail="pointer workspace does not match path workspace",
+            )
+        try:
+            data = object_store.get(pointer)
+        except ObjectNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="payload not found") from exc
+        except PointerHashMismatchError as exc:
+            # Stored content's hash no longer matches the pointer — surface
+            # loudly so the FE can show a corruption warning instead of
+            # silently rendering wrong bytes.
+            raise HTTPException(
+                status_code=500,
+                detail=f"stored payload hash mismatch: {exc}",
+            ) from exc
+        # Most LLM/tool payloads are JSON; serve as JSON when parseable so
+        # the FE can render them structurally. Fall back to text/plain for
+        # everything else (e.g. raw markdown). We deliberately don't expose
+        # arbitrary content-types — payloads in this store are always text.
+        try:
+            data.decode("utf-8")
+        except UnicodeDecodeError:
+            return Response(content=data, media_type="application/octet-stream")
+        # Cheap JSON sniff: don't parse, just check the first non-whitespace
+        # character. The FE will JSON.parse on its side if appropriate.
+        stripped = data.lstrip()
+        is_jsonish = stripped.startswith((b"{", b"[", b'"'))
+        media = "application/json" if is_jsonish else "text/plain; charset=utf-8"
+        return Response(content=data, media_type=media)
 
     return app
