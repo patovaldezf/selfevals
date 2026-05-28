@@ -28,6 +28,36 @@ def _req() -> AdapterRequest:
     )
 
 
+def test_get_model_param_returns_value_from_envelope() -> None:
+    req = AdapterRequest(
+        workspace_id=WS,
+        case_id="ec_x",
+        input={},
+        parameters={"model_params": {"level": 0.7}},
+    )
+    assert req.get_model_param("level", 0.0) == 0.7
+
+
+def test_get_model_param_returns_default_for_absent_key() -> None:
+    req = AdapterRequest(
+        workspace_id=WS,
+        case_id="ec_x",
+        input={},
+        parameters={"model_params": {"level": 0.7}},
+    )
+    assert req.get_model_param("missing", 0.0) == 0.0
+
+
+def test_get_model_param_returns_default_without_envelope() -> None:
+    req = AdapterRequest(
+        workspace_id=WS,
+        case_id="ec_x",
+        input={},
+        parameters={"temperature": 0.2},
+    )
+    assert req.get_model_param("level", 0.0) == 0.0
+
+
 @pytest.mark.asyncio
 async def test_embedded_invokes_sync_callable() -> None:
     def fn(req: AdapterRequest) -> AdapterResponse:
