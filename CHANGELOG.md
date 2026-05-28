@@ -7,6 +7,71 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Recall-based `must_include` grading (`Expected.min_recall`).** A new
+  optional `min_recall` float in `[0, 1]` on `EvalCase.expected`. When
+  set (and `must_include` is non-empty), the `DeterministicGrader` grades
+  `must_include` by *recall* — the fraction of required substrings that
+  appear in the response — instead of all-or-nothing: the grade is `pass`
+  iff `recall >= min_recall`, and `score` becomes the recall value
+  (exposed in `details["recall"]`). Missing substrings still emit their
+  `missing_required_substring` failure mode for diagnostics but no longer
+  force a FAIL on their own. Hard violations (`must_not_include`,
+  `required_tools`/`forbidden_tools`, `regex_match`, `structured_output`)
+  always take precedence: any hard violation still forces FAIL even when
+  recall clears the threshold. When `min_recall` is `None` (the default),
+  `must_include` stays all-or-nothing as before.
+- **Cache hit counts in the JSON report.** Each iteration in
+  `selfevals report --format json` (and the live `run --format json`) now
+  carries a `"cache": {"hits": N, "llm_calls": M}` object — the number of
+  cache-hit LLM spans and the total LLM-call spans across that iteration's
+  traces — so cost/throughput consumers can read cache effectiveness
+  without raw trace spelunking.
+- **Per-iteration failure rationales in the JSON report.** Each iteration
+  now carries a `"failure_reasons"` array: deduplicated grader rationales
+  for every non-passing grade, one entry per distinct
+  `(grader, label, reason)` with `score` and `failure_modes`. This lets a
+  downstream consumer see *why* a grader failed without reading SQLite.
+  (Populated on a live `run`; empty when an experiment is reconstructed
+  from storage, e.g. via `report` or the HTTP API — see
+  [`docs/json_report_schema.md`](docs/json_report_schema.md).)
+- **Thread viewer (web + API).** `GET /api/workspaces/{ws}/threads/{thread}`
+  (already shipped, now documented) assembles every `Trace` sharing a
+  `thread_id` into an ordered, turn-by-turn conversation (`ThreadResponse`),
+  each turn carrying its `primary_grade` and `grader_results`. New web
+  route `/[workspace]/threads/[thread]` renders the multi-turn conversation.
+- **Funnel drill-down (web + API).** New endpoint
+  `GET /api/workspaces/{ws}/iterations/{id}/funnel` returns the per-iteration
+  grader funnel (`FunnelResponse`, recursive `FunnelNodeResponse` nodes read
+  straight from `IterationRecord.metrics.funnel`). New "Funnel" tab on the
+  experiment-detail view renders it via the recursive `FunnelNode.svelte`
+  component. `nodes` is empty when no grader emitted a breakdown.
+- **Server-rendered iteration compare (web + API).** New endpoint
+  `GET /api/workspaces/{ws}/experiments/{id}/compare?a={itr}&b={itr}` returns
+  a structured `CompareResponse` (proposal diff, metrics diff, failure-mode
+  diff, funnel diff, winner recommendation, `holdout_status`) computed by the
+  reporter's `compute_compare` — the single source of truth shared with the
+  CLI `compare` command. Returns 404 when an iteration is unknown and 400
+  when the two iterations belong to different experiments. The web "Compare"
+  tab now renders this diff server-side instead of recomputing deltas in the
+  browser.
+
+### Documentation
+
+- New [`docs/api_reference.md`](docs/api_reference.md): the canonical HTTP
+  API reference — every endpoint, grouped by resource, with method, path,
+  params, response schema, and error codes.
+- New [`docs/eval_config.md`](docs/eval_config.md): the YAML eval-config
+  reference (top-level keys, `EvalCase`/`Expected` fields including
+  `min_recall`, graders, agent transports, proposers) with validating
+  snippets.
+- New [`docs/json_report_schema.md`](docs/json_report_schema.md): the
+  `report --format json` output shape, documenting every root and
+  per-iteration key (including the new `cache` and `failure_reasons`).
+- `docs/FRONTEND.md` §3/§5: the funnel, compare, and thread endpoints/views
+  are now documented as shipped.
+
 ## [0.3.0] - 2026-05-27
 
 ### Added
