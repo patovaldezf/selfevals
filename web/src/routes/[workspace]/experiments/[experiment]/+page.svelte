@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import DecisionBadge from '$lib/components/DecisionBadge.svelte';
   import MetricChip from '$lib/components/MetricChip.svelte';
   import Sparkline from '$lib/components/Sparkline.svelte';
@@ -6,6 +7,12 @@
   import type { PageData } from './$types';
 
   export let data: PageData;
+
+  // Workspace id from the route, used to build trace viewer hrefs from the
+  // iteration drawer ("see what the agent actually did"). The trace endpoint
+  // accepts both `tr_...` ids and `run_...` ids, so the run_ids on
+  // `IterationSummary.trace_run_ids` link straight through.
+  $: workspaceId = $page.params.workspace;
 
   type Tab = 'iterations' | 'compare' | 'decisions';
   let tab: Tab = 'iterations';
@@ -316,6 +323,41 @@
         <dd class="flex items-center gap-2">
           <DecisionBadge outcome={openIteration.decision_outcome} />
           <span class="text-text-2">{openIteration.decision_rationale ?? '—'}</span>
+        </dd>
+      </div>
+      <div>
+        <dt class="text-text-3 text-xs mb-1.5">
+          Traces
+          <span class="text-text-3 font-mono normal-case ml-1">
+            · {openIteration.trace_run_ids.length}
+          </span>
+        </dt>
+        <dd>
+          {#if openIteration.trace_run_ids.length === 0}
+            <span class="text-text-3 text-xs">No traces persisted for this iteration.</span>
+          {:else}
+            <ul class="space-y-1">
+              {#each openIteration.trace_run_ids as runId}
+                <li>
+                  <a
+                    href={`/${workspaceId}/traces/${runId}`}
+                    on:click={() => (openIteration = null)}
+                    class="group flex items-center justify-between gap-3 rounded border border-border bg-surface-2/40 hover:bg-surface-2 hover:border-text-3 px-2.5 py-1.5 transition-colors"
+                  >
+                    <span class="font-mono text-xs text-text-2 group-hover:text-text-1 truncate">
+                      {runId}
+                    </span>
+                    <span
+                      class="text-text-3 group-hover:text-text-1 text-xs shrink-0"
+                      aria-hidden="true"
+                    >
+                      →
+                    </span>
+                  </a>
+                </li>
+              {/each}
+            </ul>
+          {/if}
         </dd>
       </div>
       <div>
