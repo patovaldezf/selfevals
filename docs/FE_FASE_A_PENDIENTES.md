@@ -12,9 +12,10 @@ Para el plan completo, ver [FRONTEND_PRODUCT_PLAN.md](FRONTEND_PRODUCT_PLAN.md).
 | A1 | #16 los 3 bugs + plan | ✅ merged | — |
 | A2 | #17 link iter → traza | ✅ merged | — |
 | A3 | #18 resolver pointers | ✅ merged | — |
-| A4 | #19 selfevals serve | ✅ merged | — |
-| A5 | #20 identidad humana sobre ULID | 🟡 open | — |
-| A6 | span kind visible | ⏳ in progress | — |
+| A4 | #19 selfevals serve | ✅ merged | latente BUG-4 hasta este PR |
+| A5 | #20 identidad humana sobre ULID | ✅ merged | — |
+| A6 | #21 span kind visible + densidad | ✅ merged | QA visual destrabada al fix-ear BUG-4 |
+| **BUG-4** | proxy `/api` en `selfevals serve` | ✅ fixed este PR | hooks.server.ts + `SELFEVALS_API_BASE` |
 | A7 | a11y filas ([button]/[link]) | ⏳ pendiente | — |
 | A8 | paginación consistente + virtual scroll | ⏳ pendiente | — |
 
@@ -37,11 +38,11 @@ Para el plan completo, ver [FRONTEND_PRODUCT_PLAN.md](FRONTEND_PRODUCT_PLAN.md).
    el click. **Bloqueado por A7** (filas como `[button]`/`[link]`).
    Cuando A7 reescriba el row pattern, restaurar el chip ahí.
 
-3. **QA visual de los chips CopyableId.** En #20 se validó typecheck
-   + API (curl). El render visual (hover, tick `copied`, contraste,
-   stop-propagation en celdas clickeables) se difiere al dogfood
-   combinado con A6/A7. Si A6 o A7 introducen una vista nueva que
-   ya tenga los chips integrados, validar ahí.
+3. ~~**QA visual de los chips CopyableId.**~~ ✅ Desbloqueado con
+   BUG-4. Render visual confirmado en el trace viewer y experiment
+   detail vía `selfevals serve`. Hover, tick `copied`, y stop-propagation
+   en celdas clickeables siguen siendo verificación manual (no test
+   automatizado — vitest no está montado, ver A6).
 
 4. **Workspace ID en overview no es copiable.** El `/[workspace]/+page.svelte`
    muestra `workspace.slug` como chip y `workspace.name` como h1, pero
@@ -51,9 +52,10 @@ Para el plan completo, ver [FRONTEND_PRODUCT_PLAN.md](FRONTEND_PRODUCT_PLAN.md).
 
 ### De A6 (en progreso)
 
-1. **QA visual del trace tree.** Mismo punto que A5#3: typecheck + API
-   roundtrip verificados, render visual diferido (bloqueado por el
-   bug del proxy, ver "Bugs descubiertos" abajo).
+1. ~~**QA visual del trace tree.** Bloqueado por BUG-4.~~ ✅ Desbloqueado
+   con el fix de BUG-4. Dogfood: `curl :web_port/<ws>/traces/<run>`
+   muestra glyph ◆ + label "llm" + nombre "adapter_response", todo
+   renderizado correctamente.
 2. **Iconografía de spans.** Los glifos Unicode (`◆ ✦ ⚙ ◇ ▽ △ ◉ ↦
    ☞ ◈ ✕`) son funcionales pero no son SVGs. Si el set crece o el
    peso visual se queda corto, evaluar un set SVG inline (sin
@@ -79,7 +81,7 @@ _(pendiente)_
 
 ## Bugs/deuda fuera de Fase A descubiertos en el camino
 
-### BUG-4 (CRÍTICO, descubierto en A6): `selfevals serve` no proxya `/api` → web Node ve 404 en todo
+### BUG-4 ✅ FIXED — `selfevals serve` no proxya `/api` → web Node ve 404 en todo
 
 **Síntoma.** Con `selfevals serve` (modo producción, no `npm run dev`),
 toda ruta del web devuelve 404 o "Backend unreachable / API 404".
@@ -125,3 +127,19 @@ end-to-end y captura cualquier futuro retroceso del proxy.
 **Prioridad.** Alta. Bloquea QA visual de toda Fase A. Ir como PR
 propio (BUG-4), no enredarlo con A6/A7/A8. Idealmente antes de
 mergear A6.
+
+**Fix shipped (PR fix/bug-4-serve-api-proxy).** Opción 2:
+`web/src/hooks.server.ts` con un `handle` que intercepta `/api/*`,
+lee `SELFEVALS_API_BASE` y hace `fetch` al upstream FastAPI
+streameando body (importante para SSE: `/api/.../stream` es
+text/event-stream sin EOF). `cmd_serve` setea
+`SELFEVALS_API_BASE=http://host:api_port` en el subprocess Node.
+Dogfood end-to-end OK:
+`curl :web_port/<ws>/traces/<run_id>` ahora devuelve 200 con todo
+el render de Fase A (A5 nombre humano + A6 glyph + facts).
+
+**Pendiente.** Test integration con `node` real está fuera del PR
+(CI Python no tiene Node; CI Web no tiene Python). Unit test del env
+var en `test_serve_spawns_node_with_correct_env` cubre la mitad Python.
+Para el matrix completo, configurar un job de CI con Python + Node
+juntos — registrar como deuda separada cuando duela.

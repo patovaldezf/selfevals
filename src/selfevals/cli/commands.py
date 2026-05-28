@@ -732,11 +732,14 @@ def cmd_serve(args: argparse.Namespace) -> int:
     if web_dist is not None:
         web_env = os.environ.copy()
         web_env["PORT"] = str(web_port)
-        # The SvelteKit dev server proxies /api → 127.0.0.1:8000; the
-        # built server has no proxy, so the web side must call the API
-        # via absolute URLs. SvelteKit's `+page.server.ts` `fetch` runs
-        # in Node and respects `ORIGIN` for resolving relative URLs.
         web_env["ORIGIN"] = f"http://{args.host}:{web_port}"
+        # The SvelteKit dev server proxies /api → 127.0.0.1:8000 via
+        # vite.config.ts; the production build has no proxy, so without
+        # this env var every `fetch('/api/...')` in +page.server.ts
+        # would 404 against the Node server and the entire web becomes
+        # unreachable (BUG-4). The hooks.server.ts handle intercepts
+        # `/api/*` and forwards to this origin.
+        web_env["SELFEVALS_API_BASE"] = f"http://{args.host}:{args.port}"
         try:
             web_proc = subprocess.Popen(
                 ["node", str(web_dist / "index.js")],
