@@ -134,9 +134,42 @@ The declarative pass criteria consumed by the `DeterministicGrader`
 | `forbidden_tools` | list[str] | No tool may be invoked. (Must be disjoint from `required_tools`.) |
 | `required_citations` | list[str] | |
 | `policy_flags` | list[str] | |
-| `structured_output` | object \| null | When set, the adapter's structured output must equal this exactly. |
+| `structured_output` | object \| null | When set, the `DeterministicGrader` requires the adapter's structured output to equal this exactly. Also the **escape hatch** for custom expected fields — see below. |
 | `output_schema` | object \| null | |
 | `required_sections` | list[str] | Top-level keys an artifact must carry (consumed by `ArtifactCompletenessGrader`). |
+
+#### `structured_output` as the escape hatch for custom expected fields
+
+`Expected` has a **closed schema** (`extra="forbid"`): putting a field on
+`expected:` that isn't in the table above raises a validation error. That is
+intentional — it keeps the declarative contract tight.
+
+When your **custom grader** needs domain-specific expectations
+(`task_shape`, `must_include_slugs`, `layers_required`, …), put them inside
+`structured_output` (a free-form object) and read them in your grader via
+`context.case.expected.structured_output`:
+
+```yaml
+# in a case
+expected:
+  structured_output:
+    task_shape: decision
+    must_include_slugs: [seals, runway]
+    layers_required: [self_model, options]
+```
+
+```python
+# in your custom grader
+async def grade(self, context):
+    exp = (context.case.expected.structured_output or {})
+    want = exp.get("task_shape")
+    ...
+```
+
+Note: if you also set top-level `structured_output` for the built-in
+`deterministic` grader's exact-match check, that same object is what your
+custom grader reads — design the two uses to coexist (or use distinct
+graders/cases).
 
 #### `min_recall` (recall-based `must_include`)
 
@@ -224,6 +257,46 @@ built-in registered names are:
 > (`LLMJudgeGrader`, `JudgePanelGrader`) but are **not** auto-registered by
 > name; they are configured explicitly. The `judge_panel` grader is not yet
 > exposed through the YAML `graders:` block.
+
+### Custom graders
+
+You can supply your own grader without modifying selfevals. Two ways:
+
+**1. Dotted path (recommended — declarative, no side effects).** Reference
+your grader class directly in a case's `graders:` list as
+`"package.module:ClassName"` (note the `:`). It's imported on demand and
+instantiated — no registration call needed:
+
+```yaml
+# in a case
+graders:
+  - deterministic                       # built-in, by registered name
+  - my_pkg.graders:TaskShapeGrader      # custom, by dotted path
+```
+
+```python
+# my_pkg/graders.py
+from selfevals.graders.base import GradeLabel, Grader, GradeResult
+
+
+class TaskShapeGrader(Grader):
+    name = "task_shape"
+
+    async def grade(self, context):
+        ...
+        return GradeResult(grader=self.name, label=GradeLabel.PASS, reason="...")
+```
+
+The class must subclass `Grader` and be **constructible with no required
+arguments** (give any `__init__` parameters defaults). A built-in name and a
+dotted path can be mixed freely in the same `graders:` list.
+
+**2. Programmatic registration.** Call
+`selfevals.graders.registry.register_grader(name, factory)` at import time and
+then reference the grader by `name`. Registration is idempotent (last write
+wins). Use this when you want a short stable name instead of a dotted path, but
+it requires that your module is imported before grader resolution — the dotted
+path avoids that ordering concern.
 
 ### The `graders:` block
 
