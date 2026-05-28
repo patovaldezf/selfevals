@@ -7,6 +7,8 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-28
+
 ### Added
 
 - **Recall-based `must_include` grading (`Expected.min_recall`).** A new
