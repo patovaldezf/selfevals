@@ -104,6 +104,10 @@ def test_serve_spawns_node_with_correct_env(tmp_path: Path) -> None:
     env = call.kwargs["env"]
     assert env["PORT"] == "8001"
     assert env["ORIGIN"] == "http://127.0.0.1:8001"
+    # BUG-4: without this, the Node server has no /api/* routes and the
+    # hooks.server.ts proxy doesn't know where to forward. Test pins
+    # the contract so a future refactor of cmd_serve can't drop it.
+    assert env["SELFEVALS_API_BASE"] == "http://127.0.0.1:8000"
     # And the web subprocess gets terminated on shutdown.
     fake_popen.return_value.terminate.assert_called_once()
 
