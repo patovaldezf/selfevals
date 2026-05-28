@@ -9,7 +9,7 @@ from selfevals.reporter._metrics import CostTimeSummary, compute_cost_time_summa
 from selfevals.schemas.enums import DecisionOutcome
 
 if TYPE_CHECKING:
-    from selfevals.optimization.aggregator import IterationAggregate
+    from selfevals.optimization.aggregator import FunnelNode, IterationAggregate
     from selfevals.optimization.loop import IterationOutcome, OptimizationResult
 
 
@@ -96,6 +96,14 @@ def render_markdown(
         lines.extend(cost_time_lines)
         lines.append("")
 
+    funnel_source = best if best is not None else result.iterations[-1]
+    funnel_lines = _funnel_lines(funnel_source.aggregate)
+    if funnel_lines:
+        lines.append(f"## Funnel (iteration #{funnel_source.iteration})")
+        lines.append("")
+        lines.extend(funnel_lines)
+        lines.append("")
+
     failure_lines = _failure_mode_lines(
         (it.aggregate for it in result.iterations),
         top_n=top_failure_modes,
@@ -135,6 +143,35 @@ def _iteration_table(iterations: list[IterationOutcome]) -> list[str]:
         if baseline is None or primary > baseline:
             baseline = primary
     return rows
+
+
+def _funnel_lines(aggregate: IterationAggregate) -> list[str]:
+    """Render the rolled-up grader funnel as an indented bullet tree.
+
+    Returns `[]` when the iteration has no funnel data, so the caller omits
+    the whole section (mirroring Cost & Time / Top failure modes). Each node
+    shows its score, contribution count, weight, and any failure-mode tags;
+    children nest under their parent for the drill-down.
+    """
+    if not aggregate.funnel:
+        return []
+    out: list[str] = []
+    for key in sorted(aggregate.funnel):
+        _funnel_node_lines(aggregate.funnel[key], depth=0, out=out)
+    return out
+
+
+def _funnel_node_lines(node: FunnelNode, *, depth: int, out: list[str]) -> None:
+    indent = "  " * depth
+    score = "—" if node.mean_score is None else f"{node.mean_score:.4g}"
+    parts = [f"score={score}", f"n={node.count}", f"weight={node.total_weight:.4g}"]
+    if node.failure_mode_counts:
+        ranked = sorted(node.failure_mode_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        modes = ", ".join(f"{mode} x{count}" for mode, count in ranked)
+        parts.append(f"failures: {modes}")
+    out.append(f"{indent}- `{node.key}` — {' · '.join(parts)}")
+    for child_key in sorted(node.children):
+        _funnel_node_lines(node.children[child_key], depth=depth + 1, out=out)
 
 
 def _failure_mode_lines(aggregates: Iterable[IterationAggregate], *, top_n: int) -> list[str]:

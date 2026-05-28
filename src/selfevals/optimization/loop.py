@@ -367,6 +367,7 @@ class OptimizationLoop:
                 aggregate.total_duration_ms / 1000 if aggregate.total_duration_ms else None
             ),
             failure_mode_counts=dict(aggregate.failure_mode_counts),
+            funnel={key: node.to_dict() for key, node in aggregate.funnel.items()},
         )
         variant_id = new_prefixed_id("var")
         trace_run_ids = [rep.trace.run.run_id for run in case_runs for rep in run.repetitions]
@@ -432,6 +433,8 @@ def _to_trace_grader_result(grade: GradeResult) -> GraderResult:
     Carries the fields error analysis needs — grader, label, score, confidence,
     failure_modes. The free-text `reason` is dropped (the trace schema routes
     reasons through an object-store pointer, which the loop doesn't populate).
+    The optional funnel `breakdown` is serialized to a plain dict so it
+    persists alongside the result (additive; never changes the label/score).
     """
     return GraderResult(
         grader=grade.grader,
@@ -439,6 +442,7 @@ def _to_trace_grader_result(grade: GradeResult) -> GraderResult:
         score=grade.score,
         confidence=grade.confidence,
         failure_modes=list(grade.failure_modes),
+        breakdown=grade.breakdown.to_dict() if grade.breakdown is not None else None,
     )
 
 
