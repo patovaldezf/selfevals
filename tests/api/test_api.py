@@ -284,3 +284,36 @@ def test_span_summary_exposes_pointer_fields_to_fe() -> None:
     assert tsummary.detail.get("args_hash") == fake_hash
     assert tsummary.detail.get("result_pointer") == f"oss://{ws}/{fake_hash}"
     assert tsummary.detail.get("result_hash") == fake_hash
+
+
+def test_span_summary_exposes_perf_fields_to_fe() -> None:
+    """A6: the trace tree row renders TTFT / cache_hit / retries / tokens_per_second
+    as compact facts beside the span name. If `_span_summary` doesn't keep
+    those keys, the FE shows nothing and the tree stays opaque on "fast vs
+    slow" — Jensen's pet peeve from §3 of FRONTEND_PRODUCT_PLAN.md. This
+    pins the projection so a future refactor of `keep_keys` can't silently
+    drop them again."""
+    from datetime import UTC, datetime
+
+    from selfevals.api.queries import _span_summary
+    from selfevals.schemas.enums import SpanKind
+    from selfevals.schemas.trace import LLMCallSpan
+
+    t = datetime(2026, 5, 28, 0, 0, 0, tzinfo=UTC)
+    llm_span = LLMCallSpan(
+        id="sp_llm",
+        name="adapter_response",
+        kind=SpanKind.LLM_CALL,
+        started_at=t,
+        provider="anthropic",
+        model="claude-opus-4-7",
+        time_to_first_token_ms=240,
+        tokens_per_second=85.4,
+        cache_hit=True,
+        retries=1,
+    )
+    summary = _span_summary(llm_span)
+    assert summary.detail.get("time_to_first_token_ms") == 240
+    assert summary.detail.get("tokens_per_second") == 85.4
+    assert summary.detail.get("cache_hit") is True
+    assert summary.detail.get("retries") == 1

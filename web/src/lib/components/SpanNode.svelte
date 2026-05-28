@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { SpanSummary } from '$lib/api/client';
+  import { factsFor } from '$lib/spans/facts';
+  import { styleForKind } from '$lib/spans/kindStyle';
   import Self from './SpanNode.svelte';
 
   export let node: SpanSummary;
@@ -9,18 +11,13 @@
   export let setSelected: (s: SpanSummary) => void;
 
   $: children = tree.get(node.id) ?? [];
+  $: style = styleForKind(node.kind);
+  $: facts = factsFor(node);
 
-  const KIND_COLOR: Record<string, string> = {
-    agent_turn: 'var(--color-text-1)',
-    llm_call: '#1F1F1F',
-    tool_call: '#B45309',
-    retrieval: '#6B7280',
-    memory_read: '#6B7280',
-    memory_write: '#6B7280',
-    decision: '#0F7B3E',
-    guardrail_check: '#0F7B3E',
-    error: '#B91C1C'
-  };
+  function fmtDuration(ms: number): string {
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(2)}s`;
+  }
 </script>
 
 <li>
@@ -30,13 +27,29 @@
            {selected?.id === node.id ? 'bg-surface-2' : ''}"
     style:padding-left="{depth * 14 + 8}px"
     on:click={() => setSelected(node)}
+    aria-label="{style.label} span: {node.name}"
   >
     <span
-      class="inline-block h-1.5 w-1.5 rounded-full flex-shrink-0"
-      style="background: {KIND_COLOR[node.kind] ?? '#6B7280'};"
-    ></span>
-    <span class="font-mono text-xs truncate flex-1">{node.name}</span>
-    <span class="font-mono text-[10px] text-text-3" data-numeric>{node.duration_ms}ms</span>
+      class="inline-block text-[12px] leading-none flex-shrink-0 w-3 text-center"
+      style:color={style.color}
+      aria-hidden="true"
+      title={style.label}
+    >{style.glyph}</span>
+    <span class="font-mono text-xs truncate flex-1 min-w-0">{node.name}</span>
+    {#each facts as f (f.key)}
+      <span
+        class="font-mono text-[10px] text-text-3 hidden sm:inline-block whitespace-nowrap"
+        title={f.title ?? f.key}
+        data-numeric
+      >
+        {f.value}
+      </span>
+    {/each}
+    <span
+      class="font-mono text-[10px] text-text-3 whitespace-nowrap"
+      title="duration"
+      data-numeric
+    >{fmtDuration(node.duration_ms)}</span>
   </button>
   {#if children.length > 0}
     <ul>
