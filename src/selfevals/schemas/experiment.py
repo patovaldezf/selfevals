@@ -331,18 +331,19 @@ class Experiment(BaseEntity):
         return self
 
     @model_validator(mode="after")
-    def _proposer_strategy_implemented_in_mvp(self) -> Experiment:
-        # MVP only ships manual/grid/random; declaring a post-MVP strategy
-        # would silently no-op. Reject at schema time.
-        mvp_strategies = {
+    def _proposer_strategy_is_implemented(self) -> Experiment:
+        # Reject strategies we don't yet implement: declaring one would
+        # silently no-op. bayesian/bandit/evolutionary remain reserved.
+        implemented = {
             ProposerStrategy.MANUAL,
             ProposerStrategy.GRID,
             ProposerStrategy.RANDOM,
+            ProposerStrategy.LLM_PROPOSER,
         }
-        if self.proposer.strategy not in mvp_strategies:
+        if self.proposer.strategy not in implemented:
             raise ValueError(
-                f"proposer.strategy={self.proposer.strategy} is reserved for "
-                "post-MVP; use manual, grid, or random"
+                f"proposer.strategy={self.proposer.strategy} is not implemented; "
+                "use manual, grid, random, or llm_proposer"
             )
         return self
 

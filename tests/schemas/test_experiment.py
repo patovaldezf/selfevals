@@ -111,10 +111,23 @@ def test_canary_with_outcome_metrics_ok() -> None:
     assert exp.run.sandbox == SandboxMode.LIVE_CANARY
 
 
-def test_post_mvp_proposer_rejected() -> None:
+@pytest.mark.parametrize(
+    "strategy",
+    [
+        ProposerStrategy.BAYESIAN,
+        ProposerStrategy.BANDIT,
+        ProposerStrategy.EVOLUTIONARY,
+    ],
+)
+def test_unimplemented_proposer_rejected(strategy: ProposerStrategy) -> None:
     with pytest.raises(ValidationError) as exc:
-        _experiment(proposer=ProposerSpec(strategy=ProposerStrategy.BAYESIAN))
-    assert "post-MVP" in str(exc.value)
+        _experiment(proposer=ProposerSpec(strategy=strategy))
+    assert "not implemented" in str(exc.value)
+
+
+def test_llm_proposer_accepted() -> None:
+    exp = _experiment(proposer=ProposerSpec(strategy=ProposerStrategy.LLM_PROPOSER))
+    assert exp.proposer.strategy == ProposerStrategy.LLM_PROPOSER
 
 
 @pytest.mark.parametrize(
