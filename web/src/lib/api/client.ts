@@ -52,6 +52,7 @@ export type IterationSummary = {
   decision_rationale: string | null;
   cost_usd: number | null;
   duration_seconds: number | null;
+  trace_run_ids: string[];
   created_at: string;
 };
 
