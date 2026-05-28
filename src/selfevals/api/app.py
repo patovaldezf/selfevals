@@ -32,6 +32,7 @@ from selfevals.api.queries import (
     iteration_detail,
     list_experiments,
     list_workspaces,
+    load_iteration_funnel,
     load_thread,
     load_trace,
     workspace_detail,
@@ -40,6 +41,7 @@ from selfevals.api.schemas import (
     CreateWorkspaceRequest,
     ExperimentDetailResponse,
     ExperimentListPage,
+    FunnelResponse,
     HealthResponse,
     IterationListResponse,
     ThreadResponse,
@@ -285,6 +287,29 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
             if detail is None:
                 raise HTTPException(status_code=404, detail="iteration not found")
             return detail
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/iterations/{iteration_id}/funnel",
+        response_model=FunnelResponse,
+        tags=["experiments"],
+    )
+    def iterations_funnel(
+        workspace_id: str,
+        iteration_id: str,
+        storage: SQLiteStorage = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> FunnelResponse:
+        try:
+            funnel = load_iteration_funnel(
+                storage,
+                workspace_id=workspace_id,
+                iteration_id=iteration_id,
+            )
+            if funnel is None:
+                raise HTTPException(status_code=404, detail="iteration not found")
+            return funnel
         finally:
             storage.close()
 

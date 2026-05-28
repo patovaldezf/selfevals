@@ -167,3 +167,28 @@ class ThreadResponse(BaseModel):
     thread_id: str
     turn_count: int
     turns: list[ThreadTurn] = Field(default_factory=list)
+
+
+class FunnelNodeResponse(BaseModel):
+    """One rolled-up funnel node (recursive). Mirrors
+    aggregator.FunnelNode.to_dict() — additive, never affects decisions."""
+
+    key: str
+    count: int
+    mean_score: float | None = None
+    total_weight: float = 0.0
+    label_counts: dict[str, int] = Field(default_factory=dict)
+    failure_mode_counts: dict[str, int] = Field(default_factory=dict)
+    children: dict[str, FunnelNodeResponse] = Field(default_factory=dict)
+
+
+class FunnelResponse(BaseModel):
+    """Per-iteration grader funnel. `nodes` is empty when no grader
+    emitted a breakdown (the common case for the pingpong example)."""
+
+    iteration_id: str
+    iteration: int
+    nodes: dict[str, FunnelNodeResponse] = Field(default_factory=dict)
+
+
+FunnelNodeResponse.model_rebuild()  # explicit: resolve the recursive forward ref
