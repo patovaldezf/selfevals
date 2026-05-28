@@ -118,7 +118,10 @@ Retrieval: query/top_k/retrieved docs/reranker; Decision: chosen/alternatives/ra
 ## 3. Endpoints existentes
 
 Base `/api/`, sin prefijo de versión. CORS para `localhost:5173`. Header `X-SelfEvals-User`
-(def "local").
+(def "local"). OpenAPI en `/api/openapi.json`, docs interactivas en `/api/docs`.
+
+> Referencia HTTP canónica (cada endpoint con params, schema de respuesta y códigos de
+> error): [`docs/api_reference.md`](api_reference.md).
 
 ### Read-only (GET)
 | Endpoint | Devuelve | Filtros |
@@ -130,9 +133,12 @@ Base `/api/`, sin prefijo de versión. CORS para `localhost:5173`. Header `X-Sel
 | `/api/workspaces/{ws}/experiments/{id}` | ExperimentDetailResponse | — |
 | `/api/workspaces/{ws}/experiments/{id}/iterations` | IterationListResponse | — |
 | `/api/workspaces/{ws}/experiments/{id}/decisions` | list[dict] | — |
+| `/api/workspaces/{ws}/experiments/{id}/compare` | CompareResponse | `a`, `b` (ids de iteración, requeridos); 404 iteración desconocida, 400 cross-experiment |
 | `/api/workspaces/{ws}/iterations/{id}` | dict {iteration, decision} | — |
+| `/api/workspaces/{ws}/iterations/{id}/funnel` | FunnelResponse | — |
 | `/api/workspaces/{ws}/traces/{trace_id}` | TraceResponse | acepta run_id como fallback |
 | `/api/workspaces/{ws}/threads/{thread_id}` | ThreadResponse | — |
+| `/api/workspaces/{ws}/payloads` | bytes (JSON/text) | `pointer` (`oss://<ws>/sha256:<hex>`); 400 pointer inválido/mismatch, 404 no encontrado |
 | `/api/runs/active` | list[{workspace_id, run_id}] | — |
 | `/api/workspaces/{ws}/anchor-set` | list[AnchorPoint] | — |
 
@@ -158,16 +164,18 @@ Routing por archivos de SvelteKit. Cliente tipado en `lib/api/client.ts`; SSE he
 | `/` | ✅ funcional | Lista de workspaces; error si la API no responde. |
 | `/[workspace]` | ✅ funcional | Detalle: tabla de experimentos con sparkline de tendencia, chips (exp count, recent_health, anchor points), recientes. Secciones skeleton "failure clusters (soon)" + datasets. |
 | `/[workspace]/experiments` | 🟡 scaffolded | Lista completa de experimentos. |
-| `/[workspace]/experiments/[experiment]` | ✅ funcional | 3 tabs: **Iterations** (tabla hypothesis/params/metric/delta/decision/rationale), **Compare** (picker side-by-side con delta), **Decisions** (audit trail). Sidebar al clickear iteración: detalle completo. |
+| `/[workspace]/experiments/[experiment]` | ✅ funcional | 4 tabs: **Iterations** (tabla hypothesis/params/metric/delta/decision/rationale), **Compare** (diff server-rendered vía `GET .../compare?a&b` — params/métricas/failure-modes/funnel + recomendación), **Funnel** (drill-down por iteración vía `GET .../iterations/{id}/funnel`, render recursivo con `FunnelNode.svelte`), **Decisions** (audit trail). Sidebar al clickear iteración: detalle completo. |
 | `/[workspace]/anchor-set` | 🟡 skeletal | Vista longitudinal de anchor points. |
+| `/[workspace]/threads/[thread]` | ✅ funcional | Thread viewer: conversación multi-turno vía `GET .../threads/{thread_id}`, un turn por trace ordenado por thread_position; cada turn lleva primary_grade + grader_results + link al trace. |
 | `/[workspace]/traces/[trace]` | ✅ funcional + **live** | Inspector de trace. Sidebar izq: árbol de spans jerárquico. Main: detalle del span seleccionado con facetas kind-specific. **SSE**: actualiza el árbol en vivo, pill "live" mientras el stream está activo. |
 | `/[workspace]/clusters` | ❌ stub | Placeholder; necesita failure-clusters API (§7). |
 | `/[workspace]/datasets` | ❌ stub | Placeholder; necesita datasets + cases API (§7). |
 
 ### Componentes existentes
 `AppShell` (layout) · `DecisionBadge` (outcome → badge de color) · `MetricChip` (label+value,
-formato number/percent/plain) · `SpanNode` (nodo recursivo del árbol) · `Sparkline`
-(LayerCake) · `ActiveRunsPill` (indicador de runs en vivo).
+formato number/percent/plain) · `SpanNode` (nodo recursivo del árbol) · `FunnelNode` (nodo
+recursivo del funnel de grading) · `Sparkline` (LayerCake) · `ActiveRunsPill` (indicador de
+runs en vivo).
 
 ---
 
@@ -176,14 +184,19 @@ formato number/percent/plain) · `SpanNode` (nodo recursivo del árbol) · `Spar
 Cada vista nueva espeja una capacidad del [ROADMAP](ROADMAP.md). Marcadas con la capacidad
 backend de la que dependen.
 
-### 5.1 Funnel drill-down  · depende de #3 (breakdown)
-**Dónde:** dentro del trace viewer y del experiment detail.
+### 5.1 Funnel drill-down  · ✅ SHIPPED (tab "Funnel" en experiment detail)
+**Dónde:** tab **Funnel** del experiment detail (`/[workspace]/experiments/[experiment]`).
 **Qué:** un `GraderResult` con `breakdown: BreakdownNode` (árbol recursivo
-key/label/score/weight/children) se renderiza como **funnel**: por nivel, pass-rate +
-dónde se cae el flujo. En el experiment detail, agregado:
-`IterationAggregate.funnel` → tabla/barras por `key` ("routing 0.92 → tool_order 0.71 →
-final 0.65"). En el trace, el breakdown del grader de ese run.
-**Componente nuevo:** `FunnelBreakdown.svelte` (árbol indentado + barras LayerCake).
+key/label/score/weight/children) se agrega en `IterationAggregate.funnel` y se expone por
+`GET /api/workspaces/{ws}/iterations/{id}/funnel` (`FunnelResponse` → nodos recursivos
+`FunnelNodeResponse`: `key`, `count`, `mean_score`, `total_weight`, `label_counts`,
+`failure_mode_counts`, `children`). El tab lo carga lazy por iteración y lo renderiza con el
+componente recursivo `FunnelNode.svelte`. `nodes == {}` cuando ningún grader emitió breakdown
+(el caso común del ejemplo pingpong); eso es correcto, no un error. El endpoint lee la fuente
+de verdad persistida (`IterationRecord.metrics.funnel`) y por eso **no** depende del
+`result.funnel` del reporter (que queda vacío al reconstruir — ver
+[`docs/json_report_schema.md`](json_report_schema.md)).
+**Componente:** `FunnelNode.svelte` (nodo recursivo).
 
 ### 5.2 Trajectory viewer  · depende de #4 (TrajectoryGrader)
 **Dónde:** trace viewer, capa sobre el árbol de spans.
@@ -194,14 +207,15 @@ marcar el run como fail (la trayectoria es diagnóstica, no gate — ver ROADMAP
 horizontal de spans con duración (waterfall), badges de modo diagnóstico.
 **Componente nuevo:** `TrajectoryTimeline.svelte` (waterfall) + `DiagnosticBadge.svelte`.
 
-### 5.3 Thread viewer (multi-turno)  · depende de #2 (executor) — endpoint YA existe
-**Dónde:** ruta nueva `/[workspace]/threads/[thread]`.
-**Qué:** el endpoint `GET /threads/{thread_id}` (ThreadResponse) **ya existe**. Falta la
-**ruta web**. Renderiza la conversación turn-by-turn: cada turn = burbuja (user/assistant)
-con su trace enlazado, su primary_grade y grader_results. Por-turno: link al trace viewer.
-Cuando exista #2 (executor real) + #15 (simulador), distinguir turnos `user_simulator` de
-usuario real (tag en provider_metadata).
-**Componente nuevo:** `ThreadConversation.svelte` (burbujas) + `TurnGradeChip.svelte`.
+### 5.3 Thread viewer (multi-turno)  · ✅ SHIPPED (ruta `/[workspace]/threads/[thread]`)
+**Dónde:** ruta `/[workspace]/threads/[thread]`.
+**Qué:** el endpoint `GET /api/workspaces/{ws}/threads/{thread_id}` (`ThreadResponse`)
+ensambla cada `Trace` con el mismo `thread_id` en una conversación ordenada (`turns[]`,
+ordenadas por `thread_position` y luego `started_at`). Cada `ThreadTurn` lleva `trace_id`,
+`run_id`, `position`, `final_state`, timestamps, `primary_grade` (label del primer
+grader_result) y `grader_results[]`. La ruta web la renderiza turn-by-turn con link a cada
+trace. Cuando exista #2 (executor real) + #15 (simulador), distinguir turnos
+`user_simulator` de usuario real (tag en provider_metadata).
 
 ### 5.4 Judge panel / calibración  · depende de #17
 **Dónde:** dentro del trace viewer (cuando el grader es panel) + ruta nueva
@@ -301,8 +315,8 @@ Para mover el control del CLI a la web.
   final_state, span_kind, has_failure, limit, offset`. → list[TraceSummary].
 
 ### 7.5 Analytics / agregados
-- `GET /api/workspaces/{ws}/experiments/{id}/funnel` → agregado funnel por key (para §5.1).
-  Depende de #3.
+- ✅ **SHIPPED** `GET /api/workspaces/{ws}/iterations/{id}/funnel` → funnel por iteración
+  (`FunnelResponse`), para §5.1. (Por iteración, no agregado a nivel experimento.)
 - `GET /api/workspaces/{ws}/experiments/{id}/performance` → percentiles latencia + costo
   por iteración (para §5.7). Depende de #9/#14.
 - `GET /api/workspaces/{ws}/experiments/{id}/correlation` → correlación param↔metric.
@@ -412,8 +426,9 @@ capacidad backend.
 | `selfevals serve` | CLI | — | Alta (desbloquea todo lo embebido) |
 | Resolver pointers en trace viewer | FE | endpoint export §7.6 | Alta (debug real) |
 | Paginación de listas | API | ListFilter (existe) | Alta |
-| Thread viewer | FE | endpoint existe; #2 para datos ricos | Alta (rápido) |
-| Funnel drill-down | FE+API | #3 breakdown | Media |
+| Thread viewer | ✅ shipped | — | — |
+| Funnel drill-down | ✅ shipped | — | — |
+| Compare server-rendered | ✅ shipped | — | — |
 | Trajectory timeline | FE | #4 | Media |
 | Judge panel / calibración | FE+API | #17 | Media |
 | Datasets + cases browser | FE+API | endpoints §7.2 | Media |
