@@ -32,12 +32,14 @@ from selfevals.api.queries import (
     iteration_detail,
     list_experiments,
     list_workspaces,
+    load_compare,
     load_iteration_funnel,
     load_thread,
     load_trace,
     workspace_detail,
 )
 from selfevals.api.schemas import (
+    CompareResponse,
     CreateWorkspaceRequest,
     ExperimentDetailResponse,
     ExperimentListPage,
@@ -265,6 +267,40 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
                 workspace_id=workspace_id,
                 experiment_id=experiment_id,
             )
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/experiments/{experiment_id}/compare",
+        response_model=CompareResponse,
+        tags=["experiments"],
+    )
+    def experiments_compare(
+        workspace_id: str,
+        experiment_id: str,
+        a: Annotated[str, Query(description="Iteration A record id.")],
+        b: Annotated[str, Query(description="Iteration B record id.")],
+        storage: SQLiteStorage = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> CompareResponse:
+        try:
+            try:
+                result = load_compare(
+                    storage,
+                    workspace_id=workspace_id,
+                    experiment_id=experiment_id,
+                    a_id=a,
+                    b_id=b,
+                )
+            except ValueError as exc:
+                # Cross-experiment ids — not an apples-to-apples comparison.
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            if result is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="one or both iterations not found",
+                )
+            return result
         finally:
             storage.close()
 

@@ -192,3 +192,78 @@ class FunnelResponse(BaseModel):
 
 
 FunnelNodeResponse.model_rebuild()  # explicit: resolve the recursive forward ref
+
+
+# --- Compare (B3) -------------------------------------------------------
+#
+# Pydantic mirrors of the frozen dataclasses in
+# `selfevals.reporter.compare`. The reporter stays pydantic-free (it is
+# core and must not depend on the web layer); the dataclass→pydantic
+# projection happens in `selfevals.api.queries.load_compare`.
+
+
+class CompareMetricRow(BaseModel):
+    name: str
+    a: float | None
+    b: float | None
+    delta: float | None
+
+
+class CompareParamRow(BaseModel):
+    key: str
+    a: str
+    b: str
+    changed: bool
+
+
+class CompareFunnelRow(BaseModel):
+    path: str
+    a: float | None
+    b: float | None
+    delta: float | None
+
+
+class CompareFailureModes(BaseModel):
+    only_a: dict[str, int] = Field(default_factory=dict)
+    only_b: dict[str, int] = Field(default_factory=dict)
+    common: dict[str, tuple[int, int]] = Field(default_factory=dict)
+
+
+class CompareRecommendation(BaseModel):
+    kind: str
+    """One of: "winner" | "tie" | "different_metric" | "none"."""
+    winner: str | None = None
+    metric_name: str | None = None
+    a_metric_name: str | None = None
+    b_metric_name: str | None = None
+    a_value: float | None = None
+    b_value: float | None = None
+    delta: float | None = None
+    new_failure_modes: list[str] = Field(default_factory=list)
+
+
+class CompareResponse(BaseModel):
+    """Server-rendered structured diff of two IterationRecords.
+
+    Single source of truth: the reporter's `compute_compare`. The web UI
+    renders this directly instead of recomputing deltas client-side.
+    """
+
+    a_id: str
+    b_id: str
+    a_iteration: int
+    b_iteration: int
+    a_created_at: str
+    b_created_at: str
+    a_decision: str | None = None
+    b_decision: str | None = None
+    proposal_diff: list[CompareParamRow] = Field(default_factory=list)
+    metrics_diff: list[CompareMetricRow] = Field(default_factory=list)
+    failure_modes: CompareFailureModes
+    funnel_diff: list[CompareFunnelRow] = Field(default_factory=list)
+    recommendation: CompareRecommendation
+    holdout_status: str = "unavailable"
+    """Whether the diff is validated on a held-out split. `IterationRecord`
+    carries no split classification, so this is honestly "unavailable"
+    rather than a fabricated holdout number — the FE renders it as a
+    first-class caveat, never a fake metric."""

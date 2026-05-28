@@ -157,6 +157,67 @@ export type FunnelDetail = {
   nodes: Record<string, FunnelNode>;
 };
 
+// --- Compare (B3) -------------------------------------------------------
+// Mirrors `selfevals.api.schemas.CompareResponse`. The server is the single
+// source of truth for the diff math (the reporter's `compute_compare`); the
+// FE renders this directly instead of recomputing deltas client-side.
+
+export type CompareParamRow = {
+  key: string;
+  a: string;
+  b: string;
+  changed: boolean;
+};
+
+export type CompareMetricRow = {
+  name: string;
+  a: number | null;
+  b: number | null;
+  delta: number | null;
+};
+
+export type CompareFunnelRow = {
+  path: string;
+  a: number | null;
+  b: number | null;
+  delta: number | null;
+};
+
+export type CompareFailureModes = {
+  only_a: Record<string, number>;
+  only_b: Record<string, number>;
+  common: Record<string, [number, number]>;
+};
+
+export type CompareRecommendation = {
+  kind: 'winner' | 'tie' | 'different_metric' | 'none';
+  winner: string | null;
+  metric_name: string | null;
+  a_metric_name: string | null;
+  b_metric_name: string | null;
+  a_value: number | null;
+  b_value: number | null;
+  delta: number | null;
+  new_failure_modes: string[];
+};
+
+export type CompareResponse = {
+  a_id: string;
+  b_id: string;
+  a_iteration: number;
+  b_iteration: number;
+  a_created_at: string;
+  b_created_at: string;
+  a_decision: string | null;
+  b_decision: string | null;
+  proposal_diff: CompareParamRow[];
+  metrics_diff: CompareMetricRow[];
+  failure_modes: CompareFailureModes;
+  funnel_diff: CompareFunnelRow[];
+  recommendation: CompareRecommendation;
+  holdout_status: string;
+};
+
 export class ApiError extends Error {
   status: number;
   body: unknown;
@@ -318,6 +379,23 @@ export const api = {
   ) =>
     request<FunnelDetail>(
       `/api/workspaces/${workspaceId}/iterations/${iterationId}/funnel`,
+      { fetch }
+    ),
+
+  /**
+   * Server-rendered structured diff of two iterations (B3). The diff math
+   * (metric deltas, recommendation, failure-mode set arithmetic) lives in
+   * the backend reporter — the FE only renders the result.
+   */
+  compare: (
+    workspaceId: string,
+    experimentId: string,
+    a: string,
+    b: string,
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<CompareResponse>(
+      `/api/workspaces/${workspaceId}/experiments/${experimentId}/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`,
       { fetch }
     )
 };
