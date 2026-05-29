@@ -31,7 +31,7 @@ entre spec y código.
 ## Diferido a próxima vuelta (NO en este roadmap)
 
 Analítica en producción: online/shadow/canary runtime, muestreo de traces de prod →
-cases, CI regression gate. · Voice (streaming, TTFT en vivo, barge-in, ). ·
+cases, CI regression gate. · Voice (streaming, TTFT en vivo, barge-in). ·
 Code-editing proposer (`agent_loop`). · El **frontend completo** vive en su propio doc:
 [`docs/FRONTEND.md`](FRONTEND.md).
 
