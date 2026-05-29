@@ -201,6 +201,14 @@ class OptimizationLoop:
         baseline: IterationAggregate | None = None
         max_iter = self._experiment.run.max_iterations
         convergence = self._experiment.run.convergence
+        # Whether a convergence plateau may stop the run early. The default is
+        # proposer-aware: grid's contract is to enumerate the full cartesian
+        # product, so a mid-grid plateau must NOT skip the rest (the "converged
+        # after 4/6" trap — chunking x vector_weight combos went unprobed);
+        # open-ended proposers (random/llm) do early-stop. `convergence.early_stop`
+        # overrides either way. When early-stop is off, only the proposer's
+        # SearchSpaceExhaustedError or max_iterations terminates the run.
+        early_stop_enabled = _early_stop_enabled(convergence.early_stop, self._proposer)
         recent_primary: list[float] = []
         # Dominant failure modes carried from the prior iteration — the context
         # the proposer is "shown" so a hypothesis can target a specific mode (§7).
@@ -294,7 +302,9 @@ class OptimizationLoop:
             if baseline is None or aggregate.primary_value > baseline.primary_value:
                 baseline = aggregate
 
-            if _has_converged(recent_primary, convergence.min_delta, convergence.patience):
+            if early_stop_enabled and _has_converged(
+                recent_primary, convergence.min_delta, convergence.patience
+            ):
                 result.terminated_reason = "converged"
                 break
         else:
@@ -378,6 +388,7 @@ class OptimizationLoop:
             case_outcomes=case_outcomes,
             primary_metric=primary_metric,
             reliability_metrics=reliability_metrics,
+            primary_grader=self._experiment.target.primary_grader,
         )
         return aggregate, case_runs, per_case_grades
 
@@ -641,6 +652,19 @@ def _graders_for_case(graders: list[Grader], case: EvalCase) -> list[Grader]:
     # to the full list — this matches the prior behaviour (everything runs)
     # rather than silently producing zero grades.
     return filtered or graders
+
+
+def _early_stop_enabled(override: bool | None, proposer: Proposer) -> bool:
+    """Resolve whether a convergence plateau may stop the run early.
+
+    An explicit `convergence.early_stop` wins. Otherwise the default is
+    proposer-aware: the grid proposer enumerates a finite, fully-specified space
+    and must visit all of it (no early-stop), while open-ended proposers
+    (random / llm / manual) early-stop on a plateau as before.
+    """
+    if override is not None:
+        return override
+    return not isinstance(proposer, GridProposer)
 
 
 def _has_converged(values: Iterable[float], min_delta: float, patience: int) -> bool:

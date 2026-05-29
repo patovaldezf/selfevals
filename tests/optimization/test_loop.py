@@ -89,6 +89,7 @@ def _experiment(
     max_iterations: int = 4,
     search_space: dict[str, Any] | None = None,
     convergence: ConvergenceSpec | None = None,
+    proposer_strategy: ProposerStrategy = ProposerStrategy.GRID,
 ) -> Experiment:
     return Experiment(
         id=Experiment.make_id(),
@@ -108,7 +109,7 @@ def _experiment(
             agents=[EntityRef(id="ag_x")],
             datasets=[EntityRef(id="ds_y")],
         ),
-        proposer=ProposerSpec(strategy=ProposerStrategy.GRID),
+        proposer=ProposerSpec(strategy=proposer_strategy),
         run=RunSpec(
             sandbox=SandboxMode.MOCK,
             max_iterations=max_iterations,
@@ -245,6 +246,42 @@ async def test_loop_terminates_on_search_space_exhausted() -> None:
 async def test_loop_converges_when_no_improvement_for_patience() -> None:
     cases = [_case("pong")]
     # All proposals score the same (level=1.0 always → all pass).
+    # Use a non-grid proposer: grid now exhausts the full search space and
+    # never early-stops on convergence (see the exhaust test below), so the
+    # plateau cutoff is exercised here with a manual proposer that supplies
+    # more candidates than patience needs.
+    exp = _experiment(
+        max_iterations=10,
+        proposer_strategy=ProposerStrategy.MANUAL,
+        convergence=ConvergenceSpec(min_delta=0.01, patience=2),
+    )
+    executor = Executor(
+        adapter=_adapter_for("pong", level=1.0),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    loop = OptimizationLoop(
+        experiment=exp,
+        executor=executor,
+        proposer=ManualProposer(
+            [{"model_params": {"level": 1.0}} for _ in range(5)],
+        ),
+        graders=[DeterministicGrader()],
+        cases=cases,
+    )
+    result = await loop.run()
+    assert result.terminated_reason == "converged"
+    # patience=2 means we need >= 3 iters to detect convergence.
+    assert len(result.iterations) >= 3
+
+
+@pytest.mark.asyncio
+async def test_grid_exhausts_full_space_despite_plateau() -> None:
+    # Gap-1 fix: a plateau mid-grid must NOT cut the run short — grid's contract
+    # is to enumerate the full cartesian product. With a flat-scoring space and a
+    # tight convergence window that would trip a non-grid proposer, grid still
+    # visits every combination and terminates on search-space exhaustion.
+    cases = [_case("pong")]
     exp = _experiment(
         max_iterations=10,
         search_space={"level": [1.0, 1.0, 1.0, 1.0, 1.0]},
@@ -263,9 +300,66 @@ async def test_loop_converges_when_no_improvement_for_patience() -> None:
         cases=cases,
     )
     result = await loop.run()
+    assert result.terminated_reason.startswith("search_space_exhausted")
+    # All 5 grid combinations were visited — no early convergence cutoff.
+    assert len(result.iterations) == 5
+
+
+@pytest.mark.asyncio
+async def test_grid_early_stop_override_re_enables_convergence() -> None:
+    # The escape hatch: a caller who wants cheap hill-climbing over a large grid
+    # can opt back into the plateau cutoff with convergence.early_stop=True.
+    cases = [_case("pong")]
+    exp = _experiment(
+        max_iterations=10,
+        search_space={"level": [1.0, 1.0, 1.0, 1.0, 1.0]},
+        convergence=ConvergenceSpec(min_delta=0.01, patience=2, early_stop=True),
+    )
+    executor = Executor(
+        adapter=_adapter_for("pong", level=1.0),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    loop = OptimizationLoop(
+        experiment=exp,
+        executor=executor,
+        proposer=GridProposer(),
+        graders=[DeterministicGrader()],
+        cases=cases,
+    )
+    result = await loop.run()
     assert result.terminated_reason == "converged"
-    # patience=2 means we need >= 3 iters to detect convergence.
-    assert len(result.iterations) >= 3
+    # Cut short before all 5 combinations: plateau detected at patience=2.
+    assert len(result.iterations) < 5
+
+
+@pytest.mark.asyncio
+async def test_early_stop_false_forces_non_grid_to_exhaust() -> None:
+    # The other override direction: a manual proposer that would normally
+    # early-stop on a plateau is forced to run its whole list.
+    cases = [_case("pong")]
+    exp = _experiment(
+        max_iterations=10,
+        proposer_strategy=ProposerStrategy.MANUAL,
+        convergence=ConvergenceSpec(min_delta=0.01, patience=2, early_stop=False),
+    )
+    executor = Executor(
+        adapter=_adapter_for("pong", level=1.0),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    loop = OptimizationLoop(
+        experiment=exp,
+        executor=executor,
+        proposer=ManualProposer(
+            [{"model_params": {"level": 1.0}} for _ in range(4)],
+        ),
+        graders=[DeterministicGrader()],
+        cases=cases,
+    )
+    result = await loop.run()
+    assert result.terminated_reason.startswith("search_space_exhausted")
+    assert len(result.iterations) == 4
 
 
 @pytest.mark.asyncio

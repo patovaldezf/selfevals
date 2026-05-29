@@ -391,3 +391,71 @@ def test_aggregate_cache_counts_default_to_zero() -> None:
     agg = aggregate_iteration(case_outcomes=[_outcome([GradeLabel.PASS])])
     assert agg.cache_hit_count == 0
     assert agg.llm_call_count == 0
+
+
+def _grader_outcome(per_grader: dict[str, list[GradeLabel]]) -> CaseOutcome:
+    """A CaseOutcome carrying per-grader labels, with the worst-of collapse
+    computed the same way the live aggregator does (severity max per rep)."""
+    severity = {
+        GradeLabel.ERROR: 4,
+        GradeLabel.FAIL: 3,
+        GradeLabel.PARTIAL: 2,
+        GradeLabel.SKIPPED: 1,
+        GradeLabel.PASS: 0,
+    }
+    n_reps = max(len(v) for v in per_grader.values())
+    collapsed: list[GradeLabel] = []
+    for i in range(n_reps):
+        rep_labels = [v[i] for v in per_grader.values() if i < len(v)]
+        collapsed.append(max(rep_labels, key=lambda lbl: severity[lbl]))
+    return CaseOutcome(
+        case_id=f"ec_{hash(tuple(sorted(per_grader)))}",
+        per_repetition_label=collapsed,
+        per_repetition_score=[1.0 if lbl == GradeLabel.PASS else 0.0 for lbl in collapsed],
+        per_grader_label=per_grader,
+    )
+
+
+def test_per_grader_pass_rate_unmasks_worst_of() -> None:
+    # must_include passes on both cases; format fails one. Worst-of pass@1 reads
+    # 0.5, but the per-grader breakdown shows must_include=1.0, format=0.5.
+    outcomes = [
+        _grader_outcome({"must_include": [GradeLabel.PASS], "format": [GradeLabel.PASS]}),
+        _grader_outcome({"must_include": [GradeLabel.PASS], "format": [GradeLabel.FAIL]}),
+    ]
+    agg = aggregate_iteration(case_outcomes=outcomes)
+    assert agg.primary_value == 0.5  # worst-of: one case fails because format failed
+    assert agg.per_grader_pass_rate["must_include"] == pytest.approx(1.0)
+    assert agg.per_grader_pass_rate["format"] == pytest.approx(0.5)
+
+
+def test_primary_grader_scores_against_one_grader() -> None:
+    outcomes = [
+        _grader_outcome({"must_include": [GradeLabel.PASS], "format": [GradeLabel.PASS]}),
+        _grader_outcome({"must_include": [GradeLabel.PASS], "format": [GradeLabel.FAIL]}),
+    ]
+    # Optimizing toward must_include: both cases pass it → primary 1.0, not 0.5.
+    agg = aggregate_iteration(case_outcomes=outcomes, primary_grader="must_include")
+    assert agg.primary_value == pytest.approx(1.0)
+    assert agg.primary_grader == "must_include"
+    # The masked per-grader signal is still reported alongside.
+    assert agg.per_grader_pass_rate["format"] == pytest.approx(0.5)
+
+
+def test_primary_grader_denominator_excludes_cases_it_didnt_run() -> None:
+    # Grader "format" only ran on the second case; scoring against it must use a
+    # denominator of 1 (the case it graded), not 2.
+    outcomes = [
+        _grader_outcome({"must_include": [GradeLabel.FAIL]}),
+        _grader_outcome({"must_include": [GradeLabel.PASS], "format": [GradeLabel.PASS]}),
+    ]
+    agg = aggregate_iteration(case_outcomes=outcomes, primary_grader="format")
+    assert agg.primary_value == pytest.approx(1.0)  # 1 of 1 case format ran on
+
+
+def test_per_grader_pass_rate_empty_without_per_grader_labels() -> None:
+    # Outcomes built without per-grader labels (e.g. rehydrated from metrics)
+    # yield an empty per_grader_pass_rate rather than fabricating one.
+    agg = aggregate_iteration(case_outcomes=[_outcome([GradeLabel.PASS])])
+    assert agg.per_grader_pass_rate == {}
+    assert agg.primary_grader is None

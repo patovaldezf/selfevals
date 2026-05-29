@@ -164,6 +164,7 @@ def load_experiment_spec(
     cases = _build_cases(spec_path, raw, ws_id)
     agent = _build_agent_spec(spec_path, raw)
     graders = _build_grader_specs(spec_path, raw)
+    _validate_primary_grader(spec_path, experiment, graders, cases)
 
     return ExperimentSpec(
         workspace_id=ws_id,
@@ -315,6 +316,37 @@ def _build_grader_specs(spec_path: Path, raw: dict[str, Any]) -> list[GraderSpec
                 judge_entry = AgentEntrypoint(raw=judge_raw, module=module, attribute=attribute)
         specs.append(GraderSpec(type=type_, name=name, rubric=rubric, judge_entrypoint=judge_entry))
     return specs
+
+
+def _validate_primary_grader(
+    spec_path: Path,
+    experiment: Experiment,
+    graders: list[GraderSpec],
+    cases: list[EvalCase],
+) -> None:
+    """Ensure `target.primary_grader` names a grader that actually runs.
+
+    The set of grader names available at runtime is the union of: the
+    YAML-declared `graders:` specs, any grader a case references by name, and —
+    when nothing else is declared — the implicit default `deterministic` grader
+    the CLI falls back to (see `_resolve_case_graders`). Checking here (where
+    both the experiment and the graders are in hand) rather than inside the
+    `Experiment` model keeps the schema decoupled from the grader registry while
+    still failing fast on a typo'd primary_grader."""
+    primary = experiment.target.primary_grader
+    if primary is None:
+        return
+    names: set[str] = {g.name for g in graders}
+    for case in cases:
+        names.update(case.graders)
+    if not names:
+        # No graders declared anywhere -> the CLI runs the implicit default.
+        names.add("deterministic")
+    if primary not in names:
+        raise LoaderError(
+            f"{spec_path}: target.primary_grader {primary!r} is not a configured grader. "
+            f"Available: {sorted(names)}"
+        )
 
 
 _SUPPORTED_AGENT_TYPES = {"embedded", "cli", "http"}

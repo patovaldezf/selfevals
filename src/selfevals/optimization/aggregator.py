@@ -45,12 +45,30 @@ class CaseOutcome:
     """Flat list of every funnel `BreakdownNode` (one per grade that carried a
     breakdown, across all repetitions of this case). The aggregator rolls these
     up by `key` into `IterationAggregate.funnel`."""
+    per_grader_label: dict[str, list[GradeLabel]] = field(default_factory=dict)
+    """Per-grader labels, keyed by grader name, one entry per repetition (in rep
+    order). `per_repetition_label` is the worst-of collapse across graders; this
+    keeps each grader's verdict separate so the report can show a per-grader
+    pass-rate and `primary_grader` can score against a single grader instead of
+    the conjunctive worst-of. Empty for outcomes built without per-grader data
+    (e.g. rehydrated from persisted metrics)."""
 
     @property
     def pass_at_1(self) -> float:
         if not self.per_repetition_label:
             return 0.0
         return 1.0 if self.per_repetition_label[0] == GradeLabel.PASS else 0.0
+
+    def pass_at_1_for_grader(self, grader: str) -> float | None:
+        """pass@1 against a single grader's first-repetition label.
+
+        Returns `None` when this grader did not run on the case (so the caller
+        can exclude the case from that grader's denominator rather than counting
+        it as a failure). 1.0/0.0 when it did."""
+        labels = self.per_grader_label.get(grader)
+        if not labels:
+            return None
+        return 1.0 if labels[0] == GradeLabel.PASS else 0.0
 
     @property
     def consistency_rate(self) -> float:
@@ -122,6 +140,18 @@ class IterationAggregate:
     grader emitted a breakdown. Additive: the funnel never affects the
     primary/guardrail/reliability metrics or the decision — it is the
     drill-down the reporter and frontend render. See `_rollup_funnel`."""
+    per_grader_pass_rate: dict[str, float] = field(default_factory=dict)
+    """pass@1 of each grader on its own, keyed by grader name. The primary
+    metric collapses graders worst-of (a case passes only if every grader
+    passed); this surfaces the masked per-grader signal — e.g. "must_include
+    0.90, format 0.40" when the worst-of pass@1 reads 0.40. The denominator for
+    each grader is the cases that grader actually ran on. Additive and
+    informational; never changes the primary metric or the decision."""
+    primary_grader: str | None = None
+    """When set, the primary metric was scored against this single grader's
+    label instead of the conjunctive worst-of. Echoed here so the report and
+    decision trail can say which grader drove the number. `None` = worst-of
+    (the default, conjunctive pass@1)."""
 
     @property
     def fail_rate(self) -> float:
@@ -220,6 +250,7 @@ def _outcome_for(
     scores: list[float] = []
     failure_modes: list[str] = []
     breakdowns: list[BreakdownNode] = []
+    per_grader: dict[str, list[GradeLabel]] = {}
     for results in grade_results_per_rep:
         labels.append(_pick_label(results))
         scores.append(_pick_score(results))
@@ -227,6 +258,9 @@ def _outcome_for(
             failure_modes.extend(r.failure_modes)
             if r.breakdown is not None:
                 breakdowns.append(r.breakdown)
+            # Keep each grader's verdict separate, in rep order, so per-grader
+            # reporting and `primary_grader` scoring can bypass the worst-of.
+            per_grader.setdefault(r.grader, []).append(r.label)
     traces = [rep.trace for rep in case_run.repetitions]
     cost, duration = _trace_cost_and_duration(traces)
     llm_calls, cache_hits = _llm_call_and_cache_hit_count(traces)
@@ -240,6 +274,7 @@ def _outcome_for(
         cache_hit_count=cache_hits,
         llm_call_count=llm_calls,
         breakdowns=breakdowns,
+        per_grader_label=per_grader,
     )
 
 
@@ -312,15 +347,26 @@ def aggregate_iteration(
     case_outcomes: list[CaseOutcome],
     primary_metric: str = "pass@1",
     reliability_metrics: list[str] | None = None,
+    primary_grader: str | None = None,
 ) -> IterationAggregate:
-    """Roll per-case outcomes into a single IterationAggregate."""
+    """Roll per-case outcomes into a single IterationAggregate.
+
+    `primary_grader`, when set, scores the primary metric against that one
+    grader's label instead of the conjunctive worst-of across all graders.
+    Only `pass@1`/`pass@k`/`pass^k` honour it — those are the only metrics
+    expressed in terms of per-rep pass/fail. Reliability metrics always use the
+    worst-of labels (they measure cross-rep stability, not per-grader signal).
+    """
     reliability_metrics = reliability_metrics or []
     n = len(case_outcomes)
     if n == 0:
-        return IterationAggregate(primary_metric=primary_metric, primary_value=0.0)
+        return IterationAggregate(
+            primary_metric=primary_metric, primary_value=0.0, primary_grader=primary_grader
+        )
 
-    primary_value = _compute_metric(primary_metric, case_outcomes)
+    primary_value = _compute_metric(primary_metric, case_outcomes, primary_grader=primary_grader)
     reliability = {m: _compute_metric(m, case_outcomes) for m in reliability_metrics}
+    per_grader_pass_rate = _per_grader_pass_rate(case_outcomes)
     failure_counter: Counter[str] = Counter()
     for outcome in case_outcomes:
         for mode in outcome.failure_modes:
@@ -354,13 +400,45 @@ def aggregate_iteration(
         case_count=n,
         case_outcomes=case_outcomes,
         funnel=_rollup_funnel(case_outcomes),
+        per_grader_pass_rate=per_grader_pass_rate,
+        primary_grader=primary_grader,
     )
 
 
-def _compute_metric(metric: str, outcomes: list[CaseOutcome]) -> float:
-    """Compute pass@k / pass^k / consistency_rate against a case list."""
+def _per_grader_pass_rate(outcomes: list[CaseOutcome]) -> dict[str, float]:
+    """pass@1 of each grader on its own, across the cases it ran on.
+
+    Each grader's denominator is the cases where it produced a label (via
+    `pass_at_1_for_grader` returning non-None), so a grader scoped to a subset
+    of cases isn't penalised for cases it never graded. Empty when no outcome
+    carried per-grader labels (e.g. rehydrated-from-metrics aggregates)."""
+    sums: dict[str, float] = {}
+    counts: dict[str, int] = {}
+    for o in outcomes:
+        for grader in o.per_grader_label:
+            value = o.pass_at_1_for_grader(grader)
+            if value is None:
+                continue
+            sums[grader] = sums.get(grader, 0.0) + value
+            counts[grader] = counts.get(grader, 0) + 1
+    return {g: sums[g] / counts[g] for g in sums if counts[g] > 0}
+
+
+def _compute_metric(
+    metric: str, outcomes: list[CaseOutcome], *, primary_grader: str | None = None
+) -> float:
+    """Compute pass@k / pass^k / consistency_rate against a case list.
+
+    When `primary_grader` is set and `metric` is a pass-style metric, scoring
+    uses that grader's per-rep labels instead of the worst-of collapse. A case
+    the grader didn't run on is excluded from the denominator (it has no verdict
+    to contribute), matching `_per_grader_pass_rate`."""
     if not outcomes:
         return 0.0
+    if primary_grader is not None and (
+        metric == "pass@1" or metric.startswith(("pass@", "pass^"))
+    ):
+        return _compute_pass_metric_for_grader(metric, outcomes, primary_grader)
     n = len(outcomes)
     if metric == "pass@1":
         return sum(o.pass_at_1 for o in outcomes) / n
@@ -408,6 +486,33 @@ def _compute_metric(metric: str, outcomes: list[CaseOutcome]) -> float:
         )
         return recovered / denom
     raise ValueError(f"unsupported aggregate metric: {metric!r}")
+
+
+def _compute_pass_metric_for_grader(
+    metric: str, outcomes: list[CaseOutcome], grader: str
+) -> float:
+    """pass@1 / pass@k / pass^k scored against one grader's per-rep labels.
+
+    Mirrors the worst-of pass logic in `_compute_metric` but reads
+    `per_grader_label[grader]` instead of `per_repetition_label`. Cases the
+    grader never ran on are skipped (no verdict → not in the denominator); the
+    result is 0.0 when no case carries a label for this grader."""
+    windows: list[list[GradeLabel]] = [
+        o.per_grader_label[grader] for o in outcomes if o.per_grader_label.get(grader)
+    ]
+    if not windows:
+        return 0.0
+    n = len(windows)
+    if metric == "pass@1":
+        return sum(1 for w in windows if w[0] == GradeLabel.PASS) / n
+    if metric.startswith("pass@"):
+        k = int(metric.split("@", 1)[1])
+        return sum(1 for w in windows if GradeLabel.PASS in w[:k]) / n
+    # pass^k: all k reps pass (cases with fewer than k reps can't satisfy it).
+    k = int(metric.split("^", 1)[1])
+    return sum(
+        1 for w in windows if len(w) >= k and all(label == GradeLabel.PASS for label in w[:k])
+    ) / n
 
 
 class Aggregator:

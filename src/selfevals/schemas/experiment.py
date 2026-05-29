@@ -63,6 +63,13 @@ class TargetSpec(SelfEvalsModel):
 
     primary: MetricTarget
     guardrails: list[MetricTarget] = Field(default_factory=list)
+    primary_grader: str | None = None
+    """When set, the primary pass-style metric is scored against this single
+    grader's verdict instead of the conjunctive worst-of across all graders.
+    Lets one experiment optimize toward a specific grader (e.g. `must_include`)
+    while other graders still run and report their own pass-rate. `None` keeps
+    the default worst-of behaviour, where a case passes only if every grader
+    passed."""
 
 
 class EditableContract(SelfEvalsModel):
@@ -123,6 +130,21 @@ class ProposerSpec(SelfEvalsModel):
 class ConvergenceSpec(SelfEvalsModel):
     min_delta: float = Field(default=0.005, ge=0.0)
     patience: int = Field(default=3, ge=1)
+    early_stop: bool | None = None
+    """Whether the loop may stop early on a convergence plateau, overriding the
+    per-proposer default.
+
+    The default (`None`) is proposer-aware: open-ended proposers (random / llm)
+    early-stop on a plateau, but the **grid** proposer does NOT — enumerating the
+    full cartesian product is its whole contract, so a mid-grid plateau must not
+    skip the remaining combinations (the "converged after 4/6" trap, where
+    `chunking x vector_weight` combos went unprobed).
+
+    Set explicitly to override: `early_stop: true` re-enables the plateau cutoff
+    for grid (cheap hill-climbing over a large grid on a tight budget);
+    `early_stop: false` forces any proposer to exhaust its space (or hit
+    `max_iterations`) regardless of plateaus. `min_delta`/`patience` tune the
+    plateau test whenever early-stop is active."""
 
 
 class DatasetUsage(SelfEvalsModel):

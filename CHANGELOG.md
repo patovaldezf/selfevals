@@ -7,6 +7,33 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-28
+
+Per-grader optimization signal and proposer-aware convergence — both surfaced
+by the brain_os integration, where a conjunctive `pass@1` masked which grader
+drove the number and a grid sweep stopped 4/6 of the way through.
+
+### Added
+
+- **`TargetSpec.primary_grader`** (YAML: `target.primary_grader`). Scores the
+  primary pass-style metric against a single named grader instead of the
+  conjunctive worst-of across all graders, so an experiment can optimize toward
+  one grader (e.g. `must_include`) while the others still run and report. The
+  loader rejects a `primary_grader` that names no configured grader. `None`
+  (default) keeps the worst-of behaviour.
+- **`IterationAggregate.per_grader_pass_rate`** + **`CaseOutcome.per_grader_label`**.
+  Each grader's own `pass@1` is now reported alongside the worst-of primary
+  (in the JSON report under `metrics.per_grader_pass_rate` and in the markdown
+  report), unmasking the per-grader signal a conjunctive pass@1 hides. Each
+  grader's denominator is the cases it actually ran on.
+- **`ConvergenceSpec.early_stop`** (`bool | None`, YAML: `run.convergence.early_stop`).
+  Default `None` is proposer-aware: the **grid** proposer now exhausts its full
+  cartesian product (a mid-grid plateau no longer skips the remaining
+  combinations), while open-ended proposers (random / llm) still early-stop on a
+  plateau. Set `early_stop: true` to re-enable the cutoff for grid (cheap
+  hill-climbing over a large grid); set `early_stop: false` to force any proposer
+  to exhaust its space.
+
 ## [0.4.2] - 2026-05-28
 
 DX fixes surfaced by the brain_os integration (selfevals' first downstream
