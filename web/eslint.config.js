@@ -39,6 +39,15 @@ export default ts.config(
     }
   },
   {
-    ignores: ['build/', '.svelte-kit/', 'dist/', 'node_modules/', 'package-lock.json']
+    ignores: [
+      'build/',
+      '.svelte-kit/',
+      'dist/',
+      'node_modules/',
+      'package-lock.json',
+      'test-results/',
+      'playwright-report/',
+      'e2e/.fixtures/'
+    ]
   }
 );

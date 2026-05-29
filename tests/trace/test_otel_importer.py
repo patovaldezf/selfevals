@@ -53,7 +53,7 @@ def test_llm_span_recognized_via_gen_ai_attrs() -> None:
                     "gen_ai.usage.total_tokens": 180,
                     "gen_ai.response.finish_reasons": ["tool_use"],
                     "gen_ai.request.temperature": 0.2,
-                    "custom.tenant": "seals",
+                    "custom.tenant": "acme",
                 },
             }
         ]
@@ -70,7 +70,7 @@ def test_llm_span_recognized_via_gen_ai_attrs() -> None:
     assert s.tokens.total == 180
     assert s.output.stop_reason == StopReason.TOOL_USE
     assert s.params.get("temperature") == 0.2
-    assert s.provider_metadata == {"custom.tenant": "seals"}
+    assert s.provider_metadata == {"custom.tenant": "acme"}
 
 
 def test_tool_span_recognized() -> None:

@@ -36,7 +36,7 @@ def test_invalid_slugs_rejected(bad_slug: str) -> None:
         Workspace(id=ws_id, workspace_id=ws_id, slug=bad_slug, name="x")
 
 
-@pytest.mark.parametrize("good_slug", ["pato", "p", "ws-1", "ws_1", "seals-prod", "a" * 63])
+@pytest.mark.parametrize("good_slug", ["pato", "p", "ws-1", "ws_1", "acme-prod", "a" * 63])
 def test_valid_slugs_accepted(good_slug: str) -> None:
     ws_id = Workspace.make_id()
     ws = Workspace(id=ws_id, workspace_id=ws_id, slug=good_slug, name="x")

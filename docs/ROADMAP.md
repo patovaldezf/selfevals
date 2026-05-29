@@ -1,7 +1,7 @@
 # selfevals — Roadmap
 
-> Roadmap vivo del framework. Reemplaza `SEALS_100X_GAP_PLAN.md` (archivado en
-> `docs/archive/`), que estaba escrito alrededor de un producto específico. Este doc es
+> Roadmap vivo del framework. Reemplaza un plan interno previo que estaba escrito
+> alrededor de un producto específico. Este doc es
 > **agnóstico**: cada capacidad se justifica por la spec del framework
 > (`docs/spec/evals_framework.md`) y por best-practices públicas de la industria
 > (Anthropic, Sierra τ-bench, LangSmith, Hamel Husain), no por las necesidades de ningún
@@ -86,7 +86,7 @@ antes de `#15 simulador`.
   para F5.
 
 ### Fase 0 — Higiene de docs + superficie pública (S) · PR-0
-- Archivar `SEALS_100X_GAP_PLAN.md` → `docs/archive/`. Este `ROADMAP.md` lo reemplaza.
+- Retirar el plan interno previo. Este `ROADMAP.md` lo reemplaza.
 - Exportar desde `src/selfevals/__init__.py` el contrato de runtime: `AgentAdapter`,
   `AdapterRequest`, `AdapterResponse`, `AdapterToolUse`, `Grader`, `GraderContext`,
   `GradeResult`, `GradeLabel`. (Nota: `schemas/__init__.py` YA exporta el schema layer

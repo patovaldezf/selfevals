@@ -97,14 +97,14 @@ def test_end_to_end_chain_constructable() -> None:
         workspace_id=ws.id,
         agent_type=AgentType.SYSTEM_PROMPT,
         model=ModelRef(provider="anthropic", name="claude-sonnet-4-6"),
-        system_prompt_pointer="oss://prompts/seals-resolver-v1",
+        system_prompt_pointer="oss://prompts/acme-resolver-v1",
         tools=["tl_search"],
         features=["commerce.product_resolution"],
     )
     fleet = AgentFleet(
         id=AgentFleet.make_id(),
         workspace_id=ws.id,
-        name="seals-prod",
+        name="acme-prod",
         agents=[EntityRef(id=agent.id, version=agent.version)],
         features=["commerce.product_resolution"],
     )

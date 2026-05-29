@@ -154,7 +154,7 @@ When your **custom grader** needs domain-specific expectations
 expected:
   structured_output:
     task_shape: decision
-    must_include_slugs: [seals, runway]
+    must_include_slugs: [acme, runway]
     layers_required: [self_model, options]
 ```
 

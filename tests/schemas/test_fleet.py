@@ -99,7 +99,7 @@ def test_fleet_happy_with_feature_params() -> None:
     fleet = AgentFleet(
         id=AgentFleet.make_id(),
         workspace_id=WS,
-        name="seals-prod",
+        name="acme-prod",
         agents=[ref],
         features=["commerce.product_resolution", "support.escalation"],
         feature_params={
