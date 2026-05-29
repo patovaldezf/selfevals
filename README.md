@@ -9,13 +9,18 @@ configuration to keep. CLI-first, multi-tenant from day one, and agnostic
 to the agent framework underneath — selfevals never calls your provider;
 your agent does, and selfevals grades the result.
 
-> Status: **v0.3.0 — runtime functional.** The CLI works end-to-end:
+> Status: **v0.5.0 — runtime functional.** The CLI works end-to-end:
 > load an experiment spec → run cases through an adapter → grade traces →
 > persist iterations → render a report. Adapters and graders are async,
-> with concurrent repetitions and grading. See [`docs/spec/`](docs/spec/) for
-> the canonical and operational specs that drive design, and
-> [`docs/STATUS.md`](docs/STATUS.md) for an honest what-works / what-doesn't
-> snapshot.
+> with concurrent repetitions and grading. v0.5.0 adds **per-grader scoring**
+> (optimize against one named grader instead of a conjunctive worst-of, and
+> report each grader's own `pass@1`) and **proposer-aware convergence** (the
+> grid proposer now enumerates its full cartesian product instead of
+> early-stopping on a plateau). Both were surfaced by a real integration —
+> see [Case study](#case-study-brain_os-dogfooding-its-own-memory) below.
+> See [`docs/spec/`](docs/spec/) for the canonical and operational specs that
+> drive design, and [`docs/STATUS.md`](docs/STATUS.md) for an honest
+> what-works / what-doesn't snapshot.
 
 ## Install
 
@@ -162,6 +167,37 @@ open/axial coding and `analyze push`es the result back; a human promotes
 candidate modes via `failuremode promote`. The bundled
 [`error-analysis` skill](src/selfevals/.agents/skills/error-analysis/SKILL.md)
 (discoverable via `selfevals skills list`) encodes the method.
+
+## Case study: brain_os dogfooding its own memory
+
+selfevals isn't theoretical — it's used in production to grade a real agent.
+
+**brain_os** is a memory OS for AI agents: an append-only `event_log` of raw
+evidence, slowly distilled into `pages` by a *dream worker*, exposed to any
+agent (Claude Code, Codex, Cursor) over MCP. Its hardest problem is
+**retrieval** — given a query, surface the right pages — so it points
+selfevals at its own hybrid retriever (FTS5 keyword + named-entity + 1-hop
+graph, fused with RRF).
+
+The integration is real code: brain_os registers **5 deterministic graders**
+that extend selfevals' `Grader` contract (`task_shape_match`,
+`must_include_recall`, `must_not_include_violation`, `layers_overlap`,
+`citation_grounding`) and runs a parameter sweep over its retrieval config.
+On its golden set it measures **MRR 0.896 / Recall@8 1.0** (n=8 queries),
+with a CI regression gate at MRR ≥ 0.80.
+
+The interesting part is what the experiment found about **selfevals itself**.
+Running the sweep surfaced two framework limitations:
+
+1. The grid proposer was early-stopping on a plateau and never tried the
+   remaining `chunking × vector_weight` combinations.
+2. A conjunctive `pass@1` was masking each grader's individual signal.
+
+Those two complaints became the two headline features of **v0.5.0**:
+proposer-aware convergence and per-grader scoring. A self-improving evals
+framework improved by the agent it was grading — and the experiment also did
+its job, relocating brain_os's retrieval bottleneck to upstream task-shape
+classification *with evidence, not intuition*.
 
 ## Documentation
 
