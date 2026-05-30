@@ -53,6 +53,12 @@ data/
 
 # Agent worktrees
 .claude/
+# …but track the shared SessionStart hook + settings (web-session setup).
+!.claude/
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+.claude/settings.local.json
 
 # Secrets
 .env
