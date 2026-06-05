@@ -25,9 +25,10 @@ mutation. This is what makes background runs safe to overlap.
 from __future__ import annotations
 
 import inspect
+import os
 import threading
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from selfevals._errors import SelfEvalsUserError
 from selfevals.graders.base import Grader
@@ -80,6 +81,32 @@ if TYPE_CHECKING:
 # Serializes the register → resolve → unregister window so concurrent
 # `build_loop` calls cannot trample one another's grader registrations.
 _REGISTRY_LOCK = threading.Lock()
+
+_TRACE_SAMPLING_ENV = "SELFEVALS_TRACE_SAMPLING"
+# Tolerate both the FE's vocabulary (`all` / `failures-only`) and the spec's
+# (`all` / `failed` / `none`) — they mean the same persistence policy.
+_TRACE_SAMPLING_ALIASES: dict[str, Literal["none", "all", "failed"]] = {
+    "all": "all",
+    "failures-only": "failed",
+    "failures_only": "failed",
+    "failed": "failed",
+    "none": "none",
+}
+
+
+def trace_sampling_override() -> Literal["none", "all", "failed"] | None:
+    """Read `SELFEVALS_TRACE_SAMPLING` into a `persist_traces` value, or None.
+
+    Lets an operator force the trace-persistence policy process-wide without
+    editing every spec — the FE asked for this so it can run with `all` against a
+    server it doesn't author specs for. Accepts the FE's `failures-only` spelling
+    as well as the spec's `failed`. An unset or unrecognized value returns None
+    (the spec's own `persist_traces` wins). Precedence at the call sites is:
+    explicit request override > this env var > spec default."""
+    raw = os.environ.get(_TRACE_SAMPLING_ENV)
+    if raw is None:
+        return None
+    return _TRACE_SAMPLING_ALIASES.get(raw.strip().lower())
 
 
 def payload_router_for_db(db_path: str, workspace_id: str) -> PayloadRouter:

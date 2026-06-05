@@ -25,7 +25,12 @@ from selfevals.optimization.loop import (
 from selfevals.reporter import render_json, render_markdown
 from selfevals.reporter.compare import render_compare
 from selfevals.runner.executor import CaseRun, RepetitionResult
-from selfevals.runner.launch import build_loop, ensure_workspace, payload_router_for_db
+from selfevals.runner.launch import (
+    build_loop,
+    ensure_workspace,
+    payload_router_for_db,
+    trace_sampling_override,
+)
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.iteration import DecisionRecord, IterationRecord
 from selfevals.schemas.trace import Trace
@@ -421,8 +426,14 @@ def cmd_run(args: argparse.Namespace) -> int:
             raise CommandError("--max-iterations must be >= 1")
         spec.experiment.run.max_iterations = args.max_iterations
 
+    # Precedence: explicit --persist-traces flag > SELFEVALS_TRACE_SAMPLING env
+    # > spec default.
     if args.persist_traces is not None:
         spec.experiment.run.persist_traces = args.persist_traces
+    else:
+        env_policy = trace_sampling_override()
+        if env_policy is not None:
+            spec.experiment.run.persist_traces = env_policy
 
     storage = _storage(args) if not args.no_persist else None
     scope = None
