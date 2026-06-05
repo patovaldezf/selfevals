@@ -7,6 +7,45 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-05
+
+Cierra los gaps de datos que el FE reportó contra la API: resultados por caso,
+traces navegables con su contenido completo, y contabilidad de costo/modelo.
+
+### Added
+
+- **`GET /experiments/{id}/results`** — resultado por scenario del mejor
+  iteration: `expected` (la spec del case) vs `detected` (`content`,
+  `structured_output`, `tools_invoked` leídos del trace), `matched`, `score`,
+  `label`, `failure_modes` y `grader_results`, cada fila con `run_id`/`trace_id`.
+  Reemplaza el `failure_reasons` agregado que no decía qué caso falló.
+- **`CaseSummary.latest_run_id` / `latest_trace_id`** — cada case enlaza a su
+  trace más reciente para abrirlo desde el listado.
+- **Captura completa del trace** — el executor enruta prompt/mensajes, system
+  prompt y respuesta al object store (pointer resoluble vía `/payloads`) e
+  inlinea una vista (`messages_inline`, `system_prompt_inline`,
+  `content_inline`, ≤4KB) en el span; expone `provider_metadata` y
+  `model_version_pinned` en el `detail`. El trace muestra tokens, reasoning,
+  cost, modelo y metadata. Schema de trace 1.3.0 (aditivo).
+- **`agent.model: {provider, name}`** opcional en specs cli/http — permite
+  sellar el modelo real en el span y derivar el costo de los tokens reportados
+  cuando el agente no devuelve `cost_usd`. Sin él, el modelo queda "unknown" y
+  el costo solo proviene de un `cost_usd` que el agente reporte.
+- **`SELFEVALS_TRACE_SAMPLING`** (`all` | `failures-only` | `none`) — fuerza la
+  política de persistencia de traces a nivel proceso sin editar el spec.
+  Precedencia: request/flag explícito > env > spec.
+- **`FeatureRef`** — `CaseSummary.feature` ahora es un objeto
+  `{primary, secondary}`, alineando el OpenAPI con lo que la API serializa.
+
+### Fixed
+
+- **`/traces/{run_id}` ya no da 404** — `IterationRecord.trace_run_ids` lista
+  solo los traces efectivamente persistidos, no todas las reps. Con
+  `persist_traces="failed"` los casos que pasaban se anunciaban sin estar en
+  storage. `GET /traces/{id}` acepta `tr_…` o `run_…` y echo-ea ambos.
+- **Costo/llamadas LLM en cero** para agentes cli/http — sin un modelo conocido
+  el costo no se podía derivar de los tokens; ver `agent.model` arriba.
+
 ## [0.7.0] - 2026-06-05
 
 Conecta el streaming de traces en vivo (que no funcionaba para ninguna corrida)
