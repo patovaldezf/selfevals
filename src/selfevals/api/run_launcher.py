@@ -27,7 +27,7 @@ from selfevals.api.recorder_sink import BrokerSpanSink
 from selfevals.api.schemas import RunExperimentRequest, RunExperimentResponse
 from selfevals.cli import _friendly
 from selfevals.repo.loader import ExperimentSpec, LoaderError, build_spec_from_mapping
-from selfevals.runner.launch import build_loop, ensure_workspace
+from selfevals.runner.launch import build_loop, ensure_workspace, payload_router_for_db
 from selfevals.schemas.enums import ExperimentState
 from selfevals.schemas.experiment import Experiment
 from selfevals.storage.sqlite import SQLiteStorage
@@ -134,8 +134,15 @@ def _run_in_thread(*, db_path: str, spec: ExperimentSpec, reps: int) -> None:
     try:
         scope = storage.open(spec.workspace_id)
         span_sink = BrokerSpanSink(get_broker())
+        # Same object store the `/payloads` endpoint reads from, so trace
+        # prompts/responses offloaded here resolve there.
+        payload_router = payload_router_for_db(db_path, spec.workspace_id)
         loop = build_loop(
-            spec, scope=scope, repetitions_per_case=reps, span_sink=span_sink
+            spec,
+            scope=scope,
+            repetitions_per_case=reps,
+            span_sink=span_sink,
+            payload_router=payload_router,
         )
         asyncio.run(loop.run())
     except Exception:

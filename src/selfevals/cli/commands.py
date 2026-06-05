@@ -25,7 +25,7 @@ from selfevals.optimization.loop import (
 from selfevals.reporter import render_json, render_markdown
 from selfevals.reporter.compare import render_compare
 from selfevals.runner.executor import CaseRun, RepetitionResult
-from selfevals.runner.launch import build_loop, ensure_workspace
+from selfevals.runner.launch import build_loop, ensure_workspace, payload_router_for_db
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.iteration import DecisionRecord, IterationRecord
 from selfevals.schemas.trace import Trace
@@ -427,13 +427,23 @@ def cmd_run(args: argparse.Namespace) -> int:
     storage = _storage(args) if not args.no_persist else None
     scope = None
     try:
+        payload_router = None
         if storage is not None:
             ensure_workspace(storage, spec)
             scope = storage.open(spec.workspace_id)
+            # Object store next to the SQLite db, so large trace payloads
+            # (prompts/responses) offload to a pointer the `/payloads` endpoint
+            # resolves. Ephemeral `--no-persist` runs skip it (inline only).
+            payload_router = payload_router_for_db(args.db, spec.workspace_id)
         # `build_loop` owns adapter/proposer/grader wiring and persists the
         # experiment via `scope` — the same canonical path the HTTP
         # `experiments/run` endpoint uses, so the two never drift.
-        loop = build_loop(spec, scope=scope, repetitions_per_case=args.reps)
+        loop = build_loop(
+            spec,
+            scope=scope,
+            repetitions_per_case=args.reps,
+            payload_router=payload_router,
+        )
         result = asyncio.run(loop.run())
     finally:
         if scope is not None:

@@ -275,3 +275,60 @@ async def test_min_recall_set_with_empty_must_include_does_not_crash() -> None:
 def test_empty_grader_name_rejected() -> None:
     with pytest.raises(ValueError):
         DeterministicGrader(name="")
+
+
+# --- funnel breakdown (B2 drill-down): the grade carries a per-rule tree ---
+
+
+@pytest.mark.asyncio
+async def test_breakdown_drills_into_must_include_on_pass() -> None:
+    case = _case(Expected(must_include=["pong", "ack"]))
+    res = await DeterministicGrader().grade(_ctx(case, _trace(), content="pong ack"))
+    assert res.label == GradeLabel.PASS
+    bd = res.breakdown
+    assert bd is not None
+    assert bd.key == "deterministic"
+    # Authoritative label/score ride on the root, unchanged by the breakdown.
+    assert bd.label == GradeLabel.PASS
+    dims = {c.key: c for c in bd.children}
+    assert "must_include" in dims
+    leaves = {c.key: c for c in dims["must_include"].children}
+    assert set(leaves) == {"pong", "ack"}
+    assert all(leaf.label == GradeLabel.PASS for leaf in leaves.values())
+    # Children are advisory (weight 0) — they never move the score.
+    assert dims["must_include"].weight == 0.0
+
+
+@pytest.mark.asyncio
+async def test_breakdown_marks_failing_leaf() -> None:
+    case = _case(Expected(must_include=["pong", "absent"]))
+    res = await DeterministicGrader().grade(_ctx(case, _trace(), content="pong only"))
+    assert res.label == GradeLabel.FAIL
+    bd = res.breakdown
+    assert bd is not None
+    leaves = {c.key: c for c in next(c for c in bd.children if c.key == "must_include").children}
+    assert leaves["pong"].label == GradeLabel.PASS
+    assert leaves["absent"].label == GradeLabel.FAIL
+    assert "missing_required_substring" in leaves["absent"].failure_modes
+
+
+@pytest.mark.asyncio
+async def test_breakdown_has_one_branch_per_declared_dimension() -> None:
+    case = _case(
+        Expected(must_include=["a"], must_not_include=["bad"], required_tools=["search"])
+    )
+    res = await DeterministicGrader().grade(
+        _ctx(case, _trace(tool_uses=[("search", "toolu_1")]), content="a")
+    )
+    bd = res.breakdown
+    assert bd is not None
+    assert {c.key for c in bd.children} == {"must_include", "must_not_include", "required_tools"}
+
+
+@pytest.mark.asyncio
+async def test_no_breakdown_when_case_declares_no_rules() -> None:
+    # An Expected with no rules has nothing to decompose — the funnel stays
+    # honestly empty rather than showing a hollow root.
+    case = _case(Expected())
+    res = await DeterministicGrader().grade(_ctx(case, _trace(), content="whatever"))
+    assert res.breakdown is None

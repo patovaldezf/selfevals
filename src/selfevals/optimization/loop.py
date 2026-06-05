@@ -254,7 +254,7 @@ class OptimizationLoop:
             # applied (LLMProposer does). Persist those so they aren't re-offered.
             self._persist_consumed_hypotheses(pending)
 
-            aggregate, case_runs, _per_case_grades = await self._run_iteration(
+            aggregate, case_runs, _per_case_grades, persisted_run_ids = await self._run_iteration(
                 proposal, iteration=index
             )
             decision_outcome, rationale = self._evaluator.evaluate(
@@ -268,6 +268,7 @@ class OptimizationLoop:
                 proposal=proposal,
                 aggregate=aggregate,
                 case_runs=case_runs,
+                persisted_run_ids=persisted_run_ids,
                 decision_outcome=decision_outcome,
                 rationale=rationale,
                 baseline=baseline,
@@ -334,10 +335,14 @@ class OptimizationLoop:
 
     async def _run_iteration(
         self, proposal: Proposal, *, iteration: int
-    ) -> tuple[IterationAggregate, list[CaseRun], dict[str, list[list[GradeResult]]]]:
+    ) -> tuple[IterationAggregate, list[CaseRun], dict[str, list[list[GradeResult]]], list[str]]:
         case_runs: list[CaseRun] = []
         per_case_grades: dict[str, list[list[GradeResult]]] = {}
         case_outcomes: list[CaseOutcome] = []
+        # run_ids of traces actually written to storage this iteration, in
+        # case/rep order. Only these go onto the IterationRecord so the FE's
+        # `/traces/{run_id}` never 404s on an announced-but-unstored trace.
+        persisted_run_ids: list[str] = []
         sem = asyncio.Semaphore(self._grade_concurrency)
 
         async def _graded(grader: Grader, ctx: GraderContext) -> GradeResult:
@@ -389,7 +394,9 @@ class OptimizationLoop:
             case_run = replace(case_run, repetitions=stamped_reps)
             case_runs[-1] = case_run
             for rep, grades in zip(case_run.repetitions, grades_per_rep, strict=True):
-                self._maybe_persist_trace(rep, grades)
+                persisted_id = self._maybe_persist_trace(rep, grades)
+                if persisted_id is not None:
+                    persisted_run_ids.append(persisted_id)
             per_case_grades[case.id] = grades_per_rep
             # A conversation case produced one trace per turn; collapse the
             # turns of each thread into a single per-thread outcome (final turn
@@ -408,9 +415,11 @@ class OptimizationLoop:
             reliability_metrics=reliability_metrics,
             primary_grader=self._experiment.target.primary_grader,
         )
-        return aggregate, case_runs, per_case_grades
+        return aggregate, case_runs, per_case_grades, persisted_run_ids
 
-    def _maybe_persist_trace(self, rep: RepetitionResult, grades: list[GradeResult]) -> None:
+    def _maybe_persist_trace(
+        self, rep: RepetitionResult, grades: list[GradeResult]
+    ) -> str | None:
         """Persist this repetition's trace per `run.persist_traces` (§5).
 
         The rep's trace is already stamped with its grader results (see
@@ -418,16 +427,22 @@ class OptimizationLoop:
         the agent. `none` skips entirely; `failed` keeps only errored /
         failing-graded traces; `all` keeps them all. No-op without a scope
         (e.g. `--no-persist` runs).
+
+        Returns the persisted trace's `run_id` when it actually wrote one,
+        else None. The caller records only the persisted ids on the iteration's
+        `trace_run_ids` so the FE never sees a `run_id` that resolves to 404
+        (a trace that was announced but never stored — the prior bug).
         """
         mode = self._experiment.run.persist_traces
         if self._scope is None or mode == "none":
-            return
+            return None
         failed = rep.error is not None or any(
             g.label in (GradeLabel.FAIL, GradeLabel.ERROR, GradeLabel.PARTIAL) for g in grades
         )
         if mode == "failed" and not failed:
-            return
+            return None
         self._scope.put_entity(rep.trace)
+        return rep.trace.run.run_id
 
     def _build_iteration_record(
         self,
@@ -436,6 +451,7 @@ class OptimizationLoop:
         proposal: Proposal,
         aggregate: IterationAggregate,
         case_runs: list[CaseRun],
+        persisted_run_ids: list[str],
         decision_outcome: DecisionOutcome,
         rationale: str,
         baseline: IterationAggregate | None,
@@ -462,7 +478,10 @@ class OptimizationLoop:
             funnel={key: node.to_dict() for key, node in aggregate.funnel.items()},
         )
         variant_id = new_prefixed_id("var")
-        trace_run_ids = [rep.trace.run.run_id for run in case_runs for rep in run.repetitions]
+        # Only the traces actually written to storage (see `_maybe_persist_trace`).
+        # Announcing every rep's run_id — including the ones `persist_traces`
+        # chose not to store — made `/traces/{run_id}` 404 on the unstored ones.
+        trace_run_ids = list(persisted_run_ids)
         return IterationRecord(
             id=IterationRecord.make_id(),
             workspace_id=self._experiment.workspace_id,
@@ -588,16 +607,30 @@ def _collapse_conversation_turns(
         # per-turn funnel breakdown.
         synthetic: list[GradeResult] = []
         for g_index, final_grade in enumerate(final_grades):
-            children = [
-                BreakdownNode(
-                    key=f"turn_{position}",
-                    label=(turn_grades[g_index].label if g_index < len(turn_grades) else None),
-                    score=(turn_grades[g_index].score if g_index < len(turn_grades) else None),
-                    weight=0.0,
-                    reason="per-turn diagnostic (advisory)",
+            children = []
+            for position, (_, turn_grades) in enumerate(turns):
+                turn_grade = turn_grades[g_index] if g_index < len(turn_grades) else None
+                # Preserve the grader's own breakdown (e.g. the deterministic
+                # per-rule funnel) under each turn, so a conversation case keeps
+                # its rule-level drill-down instead of collapsing to a bare
+                # pass/fail per turn. The grade's breakdown already roots at the
+                # grader (`deterministic` → `must_include` → ...); we graft its
+                # children directly under `turn_N` to avoid a redundant level.
+                grader_children = (
+                    list(turn_grade.breakdown.children)
+                    if turn_grade is not None and turn_grade.breakdown is not None
+                    else []
                 )
-                for position, (_, turn_grades) in enumerate(turns)
-            ]
+                children.append(
+                    BreakdownNode(
+                        key=f"turn_{position}",
+                        label=turn_grade.label if turn_grade is not None else None,
+                        score=turn_grade.score if turn_grade is not None else None,
+                        weight=0.0,
+                        reason="per-turn diagnostic (advisory)",
+                        children=grader_children,
+                    )
+                )
             synthetic.append(
                 replace(
                     final_grade,

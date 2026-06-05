@@ -20,7 +20,13 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from selfevals.graders.base import GradeLabel, Grader, GraderContext, GradeResult
+from selfevals.graders.base import (
+    BreakdownNode,
+    GradeLabel,
+    Grader,
+    GraderContext,
+    GradeResult,
+)
 from selfevals.schemas.trace import LLMCallSpan, ToolCallSpan
 
 if TYPE_CHECKING:
@@ -55,6 +61,100 @@ def _tools_invoked(trace: Trace) -> list[str]:
 
 def _llm_call_count(trace: Trace) -> int:
     return sum(1 for s in trace.spans if isinstance(s, LLMCallSpan))
+
+
+def _leaf(key: str, *, passed: bool, reason: str, failure_mode: str | None = None) -> BreakdownNode:
+    """One rule-instance node (e.g. a single `must_include` substring).
+
+    `weight=0` so it is advisory: it drives the funnel drill-down without ever
+    affecting the authoritative top-level score (per `BreakdownNode` contract).
+    """
+    return BreakdownNode(
+        key=key,
+        label=GradeLabel.PASS if passed else GradeLabel.FAIL,
+        score=1.0 if passed else 0.0,
+        weight=0.0,
+        reason=reason,
+        failure_modes=[] if passed or failure_mode is None else [failure_mode],
+    )
+
+
+def _build_breakdown(
+    expected: Expected,
+    *,
+    label: GradeLabel,
+    score: float,
+    violated: set[str],
+) -> BreakdownNode | None:
+    """Decompose a deterministic grade into a funnel tree, one branch per rule
+    dimension the case actually declares.
+
+    `violated` is the set of `"{failure_mode}:{detail}"` keys that failed, so
+    each leaf knows its own verdict. The tree is purely additive — the root
+    carries the authoritative `label`/`score`; every dimension/leaf is advisory
+    (`weight=0`). Returns None when the case declares no rules (nothing to
+    decompose), so the funnel stays honestly empty rather than showing a hollow
+    root.
+    """
+    dimensions: list[BreakdownNode] = []
+
+    def _dimension(
+        key: str, items: list[str], failure_mode: str, *, present_is_pass: bool
+    ) -> None:
+        if not items:
+            return
+        leaves: list[BreakdownNode] = []
+        for item in items:
+            failed = f"{failure_mode}:{item}" in violated
+            leaves.append(
+                _leaf(
+                    item,
+                    passed=not failed,
+                    reason=f"{failure_mode.replace('_', ' ')}: {item}",
+                    failure_mode=failure_mode,
+                )
+            )
+        passed_count = sum(1 for n in leaves if n.label == GradeLabel.PASS)
+        dimensions.append(
+            BreakdownNode(
+                key=key,
+                label=GradeLabel.PASS if passed_count == len(leaves) else GradeLabel.FAIL,
+                score=passed_count / len(leaves),
+                weight=0.0,
+                reason=f"{passed_count}/{len(leaves)} satisfied",
+                children=leaves,
+            )
+        )
+
+    _dimension(
+        "must_include", list(expected.must_include), "missing_required_substring", present_is_pass=True
+    )
+    _dimension(
+        "must_not_include",
+        list(expected.must_not_include),
+        "forbidden_substring",
+        present_is_pass=False,
+    )
+    _dimension(
+        "required_tools", list(expected.required_tools), "missing_required_tool", present_is_pass=True
+    )
+    _dimension(
+        "forbidden_tools",
+        list(expected.forbidden_tools),
+        "forbidden_tool_invoked",
+        present_is_pass=False,
+    )
+
+    if not dimensions:
+        return None
+    return BreakdownNode(
+        key="deterministic",
+        label=label,
+        score=score,
+        weight=1.0,
+        reason="per-rule funnel; output-state authoritative",
+        children=dimensions,
+    )
 
 
 class DeterministicGrader(Grader):
@@ -126,6 +226,10 @@ class DeterministicGrader(Grader):
             "llm_call_count": _llm_call_count(context.trace),
         }
 
+        # Keys of the rules that failed, so the funnel breakdown can mark each
+        # leaf pass/fail. Built once and shared across all return paths.
+        violated = {f"{v.failure_mode}:{v.detail}" for v in violations}
+
         # Recall mode: when min_recall is set and there are must_include items,
         # the must_include dimension is graded by recall (fraction present) rather
         # than all-or-nothing. Missing substrings still emit their failure modes
@@ -151,6 +255,9 @@ class DeterministicGrader(Grader):
                     score=recall,
                     failure_modes=modes,
                     details=details,
+                    breakdown=_build_breakdown(
+                        expected, label=GradeLabel.PASS, score=recall, violated=violated
+                    ),
                 )
             modes = sorted({v.failure_mode for v in violations})
             if not recall_passes:
@@ -164,6 +271,9 @@ class DeterministicGrader(Grader):
                 score=recall,
                 failure_modes=modes,
                 details=details,
+                breakdown=_build_breakdown(
+                    expected, label=GradeLabel.FAIL, score=recall, violated=violated
+                ),
             )
 
         if not violations:
@@ -173,6 +283,9 @@ class DeterministicGrader(Grader):
                 reason="all deterministic rules satisfied",
                 score=1.0,
                 details=details,
+                breakdown=_build_breakdown(
+                    expected, label=GradeLabel.PASS, score=1.0, violated=violated
+                ),
             )
         modes = sorted({v.failure_mode for v in violations})
         reason = "; ".join(f"{v.failure_mode}:{v.detail}" for v in violations)
@@ -183,4 +296,7 @@ class DeterministicGrader(Grader):
             score=0.0,
             failure_modes=modes,
             details=details,
+            breakdown=_build_breakdown(
+                expected, label=GradeLabel.FAIL, score=0.0, violated=violated
+            ),
         )

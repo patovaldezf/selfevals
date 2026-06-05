@@ -301,3 +301,112 @@ async def test_executor_one_rep_errors_others_succeed() -> None:
     errored = [r for r in run.repetitions if r.error is not None]
     assert len(errored) == 1
     assert "boom" in errored[0].error  # type: ignore[operator]
+
+
+def _llm_span(rep: Any) -> LLMCallSpan:
+    spans = [s for s in rep.trace.spans if isinstance(s, LLMCallSpan)]
+    assert len(spans) == 1
+    return spans[0]
+
+
+def _router(tmp_path: Any) -> Any:
+    from selfevals.storage.filesystem import FilesystemObjectStore
+    from selfevals.trace.payload_router import PayloadRouter
+
+    store = FilesystemObjectStore(tmp_path / "objects")
+    return PayloadRouter(store, workspace_id=WS), store
+
+
+@pytest.mark.asyncio
+async def test_executor_inlines_small_prompt_and_response(tmp_path: Any) -> None:
+    """The whole 'lonche': a small prompt/response is inlined on the LLM span so
+    the trace viewer shows it without resolving a pointer."""
+    router, _store = _router(tmp_path)
+    executor = Executor(
+        adapter=EmbeddedAdapter(_ping, agent=_agent()),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+        payload_router=router,
+    )
+    rep = (await executor.run_case(_case())).repetitions[0]
+    span = _llm_span(rep)
+    # Response text inlined, no pointer needed (under the inline cap).
+    assert span.output.content_inline == "pong"
+    assert span.output.content_pointer is None
+    # Input messages inlined too.
+    assert span.messages_inline is not None
+    assert "hi" in span.messages_inline
+    # Model is real, not "unknown" (the agent record carries it).
+    assert span.model == "claude-sonnet-4-6"
+    assert span.provider == "anthropic"
+
+
+@pytest.mark.asyncio
+async def test_executor_offloads_large_response_to_pointer(tmp_path: Any) -> None:
+    """A response larger than the inline cap is offloaded to the object store and
+    referenced by a resolvable pointer."""
+    router, store = _router(tmp_path)
+    big = "x" * 9000
+
+    def _big(req: AdapterRequest) -> AdapterResponse:
+        return AdapterResponse(content=big, stop_reason="end_turn")
+
+    executor = Executor(
+        adapter=EmbeddedAdapter(_big, agent=_agent()),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+        payload_router=router,
+    )
+    rep = (await executor.run_case(_case(expected=Expected()))).repetitions[0]
+    span = _llm_span(rep)
+    assert span.output.content_pointer is not None
+    # The pointer resolves to the full content in the object store.
+    resolved = store.get(span.output.content_pointer).decode("utf-8")
+    assert resolved == big
+    # A truncated inline preview is still present for a cheap render.
+    assert span.output.content_inline is not None
+    assert len(span.output.content_inline) <= 4096
+
+
+@pytest.mark.asyncio
+async def test_executor_model_from_provider_metadata(tmp_path: Any) -> None:
+    """An embedded agent declares no model in its spec; the model it reports via
+    `provider_metadata` is what lands on the span (not 'unknown')."""
+
+    def _reports_model(req: AdapterRequest) -> AdapterResponse:
+        return AdapterResponse(
+            content="pong",
+            stop_reason="end_turn",
+            provider_metadata={"provider": "openai", "model": "gpt-5"},
+        )
+
+    executor = Executor(
+        adapter=EmbeddedAdapter(_reports_model),  # no agent attached
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    rep = (await executor.run_case(_case())).repetitions[0]
+    span = _llm_span(rep)
+    assert span.model == "gpt-5"
+    assert span.provider == "openai"
+
+
+@pytest.mark.asyncio
+async def test_executor_surfaces_structured_output(tmp_path: Any) -> None:
+    """A structured response is surfaced on the trace outputs so the FE can show
+    the detected structured payload."""
+
+    def _structured(req: AdapterRequest) -> AdapterResponse:
+        return AdapterResponse(
+            content=None,
+            structured_output={"intent": "buy", "sku": "ABC"},
+            stop_reason="end_turn",
+        )
+
+    executor = Executor(
+        adapter=EmbeddedAdapter(_structured, agent=_agent()),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    rep = (await executor.run_case(_case(expected=Expected()))).repetitions[0]
+    assert rep.trace.outputs.structured_output == {"intent": "buy", "sku": "ABC"}

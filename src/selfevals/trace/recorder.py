@@ -102,8 +102,10 @@ class _LLMSpanBuilder:
     provider_metadata: dict[str, Any] = field(default_factory=dict)
     system_prompt_pointer: str | None = None
     system_prompt_hash: str | None = None
+    system_prompt_inline: str | None = None
     messages_pointer: str | None = None
     messages_hash: str | None = None
+    messages_inline: str | None = None
     tools_offered: list[str] = field(default_factory=list)
     tools_offered_hash: str | None = None
     time_to_first_token_ms: int | None = None
@@ -115,12 +117,14 @@ class _LLMSpanBuilder:
         stop_reason: StopReason | None = None,
         content_pointer: str | None = None,
         content_hash: str | None = None,
+        content_inline: str | None = None,
         tool_use_requested: list[ToolUseRequest] | None = None,
     ) -> None:
         self.output = LLMOutput(
             stop_reason=stop_reason,
             content_pointer=content_pointer,
             content_hash=content_hash,
+            content_inline=content_inline,
             tool_use_requested=tool_use_requested or [],
         )
 
@@ -375,8 +379,10 @@ class TraceRecorder:
                 model_version_pinned=builder.model_version_pinned,
                 system_prompt_pointer=builder.system_prompt_pointer,
                 system_prompt_hash=builder.system_prompt_hash,
+                system_prompt_inline=builder.system_prompt_inline,
                 messages_pointer=builder.messages_pointer,
                 messages_hash=builder.messages_hash,
+                messages_inline=builder.messages_inline,
                 tools_offered=builder.tools_offered,
                 tools_offered_hash=builder.tools_offered_hash,
                 params=builder.params,

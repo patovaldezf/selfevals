@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from selfevals.api.schemas import (
     CaseListResponse,
+    CaseResultRow,
     CaseSummary,
     CompareFailureModes,
     CompareFunnelRow,
@@ -28,7 +29,9 @@ from selfevals.api.schemas import (
     CompareResponse,
     ExperimentDetailResponse,
     ExperimentListPage,
+    ExperimentResultsResponse,
     ExperimentSummary,
+    FeatureRef,
     FunnelNodeResponse,
     FunnelResponse,
     IterationSummary,
@@ -50,7 +53,7 @@ from selfevals.schemas.enums import ExperimentState
 from selfevals.schemas.eval_case import EvalCase
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.iteration import DecisionRecord, IterationRecord
-from selfevals.schemas.trace import Trace
+from selfevals.schemas.trace import LLMCallSpan, ToolCallSpan, Trace
 from selfevals.schemas.workspace import Workspace
 from selfevals.storage.interface import ListFilter
 from selfevals.storage.sqlite import SQLiteStorage
@@ -258,8 +261,9 @@ def experiment_cases(
             )
             if isinstance(c, EvalCase)
         ]
+        trace_refs = _latest_trace_per_case(scope, experiment_id)
     cases.sort(key=lambda c: c.name)
-    summaries = [_case_summary(c) for c in cases]
+    summaries = [_case_summary(c, trace_refs.get(c.id)) for c in cases]
     holdout_count = sum(1 for c in cases if c.holdout)
     return CaseListResponse(
         cases=summaries,
@@ -268,7 +272,38 @@ def experiment_cases(
     )
 
 
-def _case_summary(case: EvalCase) -> CaseSummary:
+def _latest_trace_per_case(scope: Any, experiment_id: str) -> dict[str, tuple[str, str]]:
+    """Map each eval_case_id → (run_id, trace_id) of its most recent persisted
+    trace in the experiment, so the cases list can link case → trace.
+
+    "Most recent" = highest `run.iteration`, then latest `environment.started_at`
+    as a tie-break across repetitions. Cases whose traces were never persisted
+    (e.g. they passed under `persist_traces="failed"`) simply don't appear in the
+    map → the summary's trace ids stay None (honest). One scan, same Trace filter
+    as `_load_case_runs`."""
+    traces = [
+        t
+        for t in scope.list_entities(
+            Trace, ListFilter(where={"run.experiment_id": experiment_id})
+        )
+        if isinstance(t, Trace)
+    ]
+    best: dict[str, tuple[int, datetime, str, str]] = {}
+    for t in traces:
+        case_id = t.run.eval_case_id
+        if case_id is None:
+            continue
+        iteration = t.run.iteration if t.run.iteration is not None else -1
+        key = (iteration, t.environment.started_at)
+        current = best.get(case_id)
+        if current is None or key > (current[0], current[1]):
+            best[case_id] = (iteration, t.environment.started_at, t.run.run_id, t.id)
+    return {case_id: (run_id, trace_id) for case_id, (_i, _s, run_id, trace_id) in best.items()}
+
+
+def _case_summary(case: EvalCase, trace_ref: tuple[str, str] | None = None) -> CaseSummary:
+    latest_run_id = trace_ref[0] if trace_ref is not None else None
+    latest_trace_id = trace_ref[1] if trace_ref is not None else None
     return CaseSummary(
         id=case.id,
         name=case.name,
@@ -278,12 +313,131 @@ def _case_summary(case: EvalCase) -> CaseSummary:
         graders=list(case.graders),
         holdout=case.holdout,
         is_conversation=case.is_conversation(),
-        feature=str(case.taxonomy.feature) if case.taxonomy.feature is not None else None,
+        latest_run_id=latest_run_id,
+        latest_trace_id=latest_trace_id,
+        feature=FeatureRef(
+            primary=str(case.taxonomy.feature.primary),
+            secondary=[str(s) for s in case.taxonomy.feature.secondary],
+        )
+        if case.taxonomy.feature is not None
+        else None,
         level=str(case.taxonomy.level) if case.taxonomy.level is not None else None,
         dataset_type=(
             str(case.taxonomy.dataset_type) if case.taxonomy.dataset_type is not None else None
         ),
     )
+
+
+def experiment_results(
+    storage: SQLiteStorage, *, workspace_id: str, experiment_id: str
+) -> ExperimentResultsResponse | None:
+    """Per-scenario results for the experiment's best iteration (the FE's
+    expected/detected/matched grid).
+
+    `best_iteration.failure_reasons` says *that* something failed but drops the
+    `case_id`, the expectation, and what was produced. This rebuilds the picture
+    per case: the best iteration is the one with the highest primary metric (same
+    rule as `OptimizationLoop.best_iteration`); we read its persisted traces
+    (grouped by `eval_case_id`, like `_load_case_runs`) for `detected` + the
+    graders' verdicts, and cross-reference the persisted `EvalCase` for
+    `expected`. Cases with no persisted trace (passing cases under
+    `persist_traces="failed"`) are still listed — `detected`/`matched` None — so
+    the set is honest, not silently trimmed to the failures.
+
+    Returns None for an unknown experiment (→ 404 at the route)."""
+    with storage.open(workspace_id) as scope:
+        try:
+            exp = scope.get_entity(Experiment, experiment_id)
+        except Exception:
+            return None
+        assert isinstance(exp, Experiment)
+        iterations = _experiment_iterations(scope, experiment_id)
+        if not iterations:
+            return ExperimentResultsResponse(experiment_id=experiment_id, iteration=None, cases=[], total=0)
+        best = max(
+            (it for it in iterations if it.metrics is not None),
+            key=lambda it: it.metrics.primary.value,  # type: ignore[union-attr]
+            default=None,
+        )
+        if best is None:
+            return ExperimentResultsResponse(experiment_id=experiment_id, iteration=None, cases=[], total=0)
+        best_iter = best.iteration
+        traces_by_case: dict[str, Trace] = {}
+        for t in scope.list_entities(
+            Trace,
+            ListFilter(where={"run.experiment_id": experiment_id, "run.iteration": best_iter}),
+        ):
+            if not isinstance(t, Trace) or t.run.eval_case_id is None:
+                continue
+            # First trace per case (rep 0) is representative for the grid view.
+            traces_by_case.setdefault(t.run.eval_case_id, t)
+        cases = {
+            c.id: c
+            for c in scope.list_entities(
+                EvalCase, ListFilter(where={"experiment_id": experiment_id})
+            )
+            if isinstance(c, EvalCase)
+        }
+
+    rows: list[CaseResultRow] = []
+    # Every case the experiment declared, whether or not its trace was kept.
+    for case_id in sorted(set(cases) | set(traces_by_case)):
+        case = cases.get(case_id)
+        trace = traces_by_case.get(case_id)
+        rows.append(_case_result_row(case_id, case, trace, best_iter))
+    return ExperimentResultsResponse(
+        experiment_id=experiment_id,
+        iteration=best_iter,
+        cases=rows,
+        total=len(rows),
+    )
+
+
+def _case_result_row(
+    case_id: str, case: EvalCase | None, trace: Trace | None, iteration: int
+) -> CaseResultRow:
+    expected = case.expected.model_dump(mode="json") if case is not None else None
+    case_name = case.name if case is not None else None
+    if trace is None:
+        return CaseResultRow(
+            case_id=case_id,
+            case_name=case_name,
+            iteration=iteration,
+            expected=expected,
+        )
+    primary = trace.grader_results[0] if trace.grader_results else None
+    matched = primary.label == "pass" if primary is not None else None
+    failure_modes = sorted({m for gr in trace.grader_results for m in gr.failure_modes})
+    return CaseResultRow(
+        case_id=case_id,
+        case_name=case_name,
+        run_id=trace.run.run_id,
+        trace_id=trace.id,
+        iteration=trace.run.iteration if trace.run.iteration is not None else iteration,
+        expected=expected,
+        detected=_detected_from_trace(trace),
+        matched=matched,
+        score=primary.score if primary is not None else None,
+        label=primary.label if primary is not None else None,
+        failure_modes=failure_modes,
+        grader_results=[gr.model_dump(mode="json") for gr in trace.grader_results],
+    )
+
+
+def _detected_from_trace(trace: Trace) -> dict[str, Any]:
+    """What the agent produced, read off the persisted trace: the response text
+    (inlined on the LLM span), the structured output, and the tools it invoked."""
+    content: str | None = None
+    for span in trace.spans:
+        if isinstance(span, LLMCallSpan) and span.output.content_inline is not None:
+            content = span.output.content_inline
+            break
+    tools_invoked = [s.tool_name for s in trace.spans if isinstance(s, ToolCallSpan)]
+    return {
+        "content": content,
+        "structured_output": trace.outputs.structured_output,
+        "tools_invoked": tools_invoked,
+    }
 
 
 def experiment_decisions(

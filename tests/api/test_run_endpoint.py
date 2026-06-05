@@ -157,9 +157,40 @@ def test_cases_endpoint_lists_persisted_cases(client: tuple[TestClient, str]) ->
     for key in ("id", "name", "task_type", "input", "graders", "holdout", "is_conversation"):
         assert key in first
     assert first["id"].startswith("ec_")
+    # `feature` is an object {primary, secondary}, not a stringified Pydantic repr
+    # (the OpenAPI contract now matches what's serialized).
+    assert isinstance(first["feature"], dict)
+    assert first["feature"]["primary"] == "commerce.product_resolution"
+    assert first["feature"]["secondary"] == []
     # Stable order by name.
     names = [c["name"] for c in body["cases"]]
     assert names == sorted(names)
+
+
+def test_cases_endpoint_links_case_to_trace(client: tuple[TestClient, str]) -> None:
+    """With persist_traces=all, each case exposes a resolvable latest trace —
+    the fix for "no se puede enlazar case → trace de forma fiable"."""
+    c, _ = client
+    res = c.post(
+        f"/api/workspaces/{WS}/experiments/run",
+        json={"spec_inline": _inline_spec(), "persist_traces": "all"},
+    )
+    assert res.status_code == 202
+    exp_id = res.json()["experiment_id"]
+    assert _poll_state(c, WS, exp_id) == "completed"
+
+    body = c.get(f"/api/workspaces/{WS}/experiments/{exp_id}/cases").json()
+    linked = [c2 for c2 in body["cases"] if c2["latest_trace_id"] is not None]
+    assert linked, "expected at least one case linked to a persisted trace"
+    for case in linked:
+        assert case["latest_run_id"] is not None
+        # Both the trace id and the run id resolve via the traces endpoint.
+        by_trace = c.get(f"/api/workspaces/{WS}/traces/{case['latest_trace_id']}")
+        assert by_trace.status_code == 200
+        by_run = c.get(f"/api/workspaces/{WS}/traces/{case['latest_run_id']}")
+        assert by_run.status_code == 200
+        # Same trace resolved either way.
+        assert by_trace.json()["id"] == by_run.json()["id"]
 
 
 def test_cases_endpoint_empty_for_unknown_experiment(client: tuple[TestClient, str]) -> None:
