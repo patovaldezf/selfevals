@@ -1,14 +1,16 @@
 # selfevals — Para sesiones de Claude
 
 ## Qué es / Stack
+
 Framework de evals AI-native auto-mejorante para agentes. Corre experimentos
 (search space x cases x reps) con grading concurrente, optimiza y reporta.
-Python >=3.12, uv, version 0.5.0. Layout `src/`, package `selfevals`.
+Python >=3.12, uv, version 0.6.0. Layout `src/`, package `selfevals`.
 Deps core mínimas (pydantic, pyyaml, httpx); extras opcionales por proveedor
 (`[anthropic]`, `[openai]`, `[telemetry]`, `[web]`...) que se lazy-importan.
 Repo: github.com/patovaldezf/selfevals.
 
 ## Arquitectura
+
 - NO hay `config/`. El authoring surface es YAML (`evals/experiments/*.yaml`);
   `repo/loader.py` lo hidrata a `ExperimentSpec` (Pydantic). El loader solo
   parsea/valida shape — la construcción real de adapters ocurre en `cli/commands.py`.
@@ -21,6 +23,7 @@ Repo: github.com/patovaldezf/selfevals.
   `SearchSpaceExhaustedError` (ver `optimization/proposers.py`).
 
 ## Convenciones
+
 - VERIFICAR reportes contra el código antes de arreglar. No asumas que un bug
   reportado es real sin leer el módulo; `docs/STATUS.md` es el snapshot honesto
   de qué funciona / qué no.
@@ -34,6 +37,7 @@ Repo: github.com/patovaldezf/selfevals.
   `filterwarnings=error` + `asyncio_mode=strict`.
 
 ## Comandos clave (verificados)
+
 ```bash
 uv sync --all-extras --dev          # setup
 uv run ruff check .                 # lint
@@ -43,10 +47,12 @@ uv run pytest --ignore=tests/api --ignore=tests/sdk \
   --ignore=tests/runner/test_otlp_receiver.py   # surface por defecto, sin extras
 uv run selfevals --help             # CLI (o `selfevals` con venv activo)
 ```
+
 CLI: `init`, `run`, `report`, `compare`, `estimate`, `analyze`, `experiment`,
 `iteration`, `workspace`, `failuremode`, `skills`, `examples`, `serve`.
 
 ## Subproyectos (DISTINTOS del core Python)
+
 - `web/` — Web UI, SvelteKit 5 + Vite + Tailwind 4, **npm** (package-lock.json).
   `cd web && npm ci && npm run check && npm run build`. Sirve junto a la API con
   `selfevals serve`.
@@ -54,6 +60,7 @@ CLI: `init`, `run`, `report`, `compare`, `estimate`, `analyze`, `experiment`,
   Separada del web UI; es solo marketing.
 
 ## Riesgos / gotchas
+
 - Default DB: `./selfevals.sqlite` (con `-shm`/`-wal`); flag global `--db`.
 - El sdist tiene allow-list explícita en pyproject para no barrer `web/node_modules`
   ni `*.sqlite`; al tocar packaging respeta `[tool.hatch.build...]`.

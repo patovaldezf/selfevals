@@ -7,6 +7,54 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-05
+
+Hardens the HTTP API into a stable frontier an external frontend can consume,
+and adds the first write endpoint — launching an experiment over HTTP.
+
+### Added
+
+- **`POST /api/workspaces/{ws}/experiments/run`** — launch an experiment over
+  HTTP. Non-blocking: validates and persists synchronously, returns `202`, and
+  runs the optimization loop on a background thread (own SQLite connection +
+  event loop, so the FastAPI loop is never blocked). Accepts either a
+  `spec_path` (YAML on the server) or an inline `spec_inline` (JSON object with
+  cases under `dataset.cases_inline`); the path workspace is authoritative.
+  `422` on an invalid/zero-case spec, `409` when the experiment already has an
+  active run, and the experiment moves to `aborted` if the run raises. Reuses
+  the exact canonical wiring `selfevals run` uses.
+- **Experiment list filters** — `GET .../experiments` now accepts `state`
+  (validated enum) and `feature` (membership in `taxonomy.target_features`).
+  Filters apply before pagination, so `total`/`has_more` describe the filtered
+  set.
+- **`selfevals.repo.loader.build_spec_from_mapping`** — hydrate a validated
+  `ExperimentSpec` from an already-parsed mapping (the inline-spec path), reusing
+  the same builders as the on-disk loader.
+- **`selfevals.runner.launch`** — the canonical spec→`OptimizationLoop` wiring,
+  shared by the CLI and the API so neither frontend imports the other. Grader
+  registration is now confined to a locked register→resolve→unregister window
+  inside `build_loop`, so concurrent runs cannot trample one another's graders.
+
+### Changed
+
+- **`GET /api/runs/active`** now returns a typed envelope
+  `{"runs": [...]}` (`ActiveRunsResponse`) instead of a bare array, consistent
+  with the other list endpoints. **Breaking** for clients that read the array
+  directly. **`/decisions`** is typed as `DecisionRecordResponse`.
+
+### Fixed
+
+- **Migrations are idempotent over a pre-existing database.** `apply_migrations`
+  backfills the tracking row when it finds the base schema (`entities`) present
+  but `_selfevalss_migrations` empty — databases created before the tracker, or
+  that tracked via the legacy `_bootstrap_migrations` table. Previously this
+  re-ran `m0001` and raised `table entities already exists`, 500-ing every
+  endpoint. `m0001` DDL also uses `IF NOT EXISTS` as defense in depth.
+- **The optimization loop persists the experiment's state.** `run()` transitioned
+  the experiment (`draft → running → completed`) in memory but never flushed the
+  row, so a reader saw it stuck at `draft`. It now persists on entering `running`
+  and on `completed`.
+
 ## [0.5.0] - 2026-05-28
 
 Per-grader optimization signal and proposer-aware convergence — both surfaced
@@ -58,7 +106,7 @@ user). Each one removes a workaround that user had to write.
   WARNING naming how many combos are skipped (and continues — it does not
   abort). When `sample_strategy` subsamples the pool (`random_subset` /
   `stratified`), `select_optimization_set` logs an INFO `subsampled N->M
-  cases`. `GridProposer.grid_size(experiment)` exposes the combo count.
+cases`. `GridProposer.grid_size(experiment)` exposes the combo count.
 - **Coroutine return errors hint at `await`.** `EmbeddedAdapter.invoke` and
   the CLI coercion path now append "did you forget to await?" when a coroutine
   reaches the type check, instead of the bare "returned coroutine".
@@ -103,7 +151,7 @@ user). Each one removes a workaround that user had to write.
 - **Recall-based `must_include` grading (`Expected.min_recall`).** A new
   optional `min_recall` float in `[0, 1]` on `EvalCase.expected`. When
   set (and `must_include` is non-empty), the `DeterministicGrader` grades
-  `must_include` by *recall* — the fraction of required substrings that
+  `must_include` by _recall_ — the fraction of required substrings that
   appear in the response — instead of all-or-nothing: the grade is `pass`
   iff `recall >= min_recall`, and `score` becomes the recall value
   (exposed in `details["recall"]`). Missing substrings still emit their
@@ -123,7 +171,7 @@ user). Each one removes a workaround that user had to write.
   now carries a `"failure_reasons"` array: deduplicated grader rationales
   for every non-passing grade, one entry per distinct
   `(grader, label, reason)` with `score` and `failure_modes`. This lets a
-  downstream consumer see *why* a grader failed without reading SQLite.
+  downstream consumer see _why_ a grader failed without reading SQLite.
   (Populated on a live `run`; empty when an experiment is reconstructed
   from storage, e.g. via `report` or the HTTP API — see
   [`docs/json_report_schema.md`](docs/json_report_schema.md).)
@@ -266,7 +314,7 @@ grouping, and trace message-content capture on top of the 0.1.0 runtime.
   - **Handshake** — `selfevals analyze pull <ws> <exp>` emits an
     `AnalysisBundle` (failed traces + live taxonomy) as JSON; `analyze push`
     ingests an `AnalysisResult` from stdin, validating-before-writing and
-    enforcing the assignment XOR (`mode_id` *or* `new_mode_slug`) and
+    enforcing the assignment XOR (`mode_id` _or_ `new_mode_slug`) and
     classify-don't-rename invariants. Re-proposing an existing slug doesn't
     duplicate it (discover-once, classify-thereafter).
   - **`failuremode` CLI** — `list / promote / retire / merge / edit` for
@@ -288,7 +336,7 @@ grouping, and trace message-content capture on top of the 0.1.0 runtime.
     invokes an agent. The pingpong example opts in.
   - **Bundled `error-analysis` skill** — ships inside the package
     (`selfevals/.agents/skills/`, FastAPI convention) so `pip install selfevals`
-    makes it discoverable. It encodes the *method* (open → axial coding,
+    makes it discoverable. It encodes the _method_ (open → axial coding,
     saturation, the handshake, the human gate), not intelligence. New
     `selfevals.skills` locator + `selfevals skills list / path` CLI.
   - 60+ new tests across schema round-trips, the push invariants, the
@@ -299,7 +347,7 @@ grouping, and trace message-content capture on top of the 0.1.0 runtime.
   OTel importer auto-detects the thread from `session.id` (OpenInference) or
   `gen_ai.conversation.id` (OTel GenAI), without overwriting an explicit
   caller-set `thread_id`. New read query `load_thread` + `GET
-  /workspaces/{ws}/threads/{thread_id}` return every trace sharing a thread,
+/workspaces/{ws}/threads/{thread_id}` return every trace sharing a thread,
   ordered by `thread_position` (falling back to `started_at`), each turn
   projected with its grader results so the per-turn grade is visible.
   `TraceResponse` now surfaces `thread_id` / `thread_position`. This closes the
@@ -327,6 +375,7 @@ Schema-wise compatible with `0.0.9`.
 ### Added — usable v1 surface
 
 Examples and quickstart:
+
 - `examples/hello_llm/` — a real Anthropic agent (with deterministic
   fakes when `ANTHROPIC_API_KEY` is unset) over 3 EvalCases:
   sentiment classification, structured extraction, open-ended support
@@ -338,6 +387,7 @@ Examples and quickstart:
   yet" to "runtime functional".
 
 CLI UX (Day 2):
+
 - Every subcommand (`init`, `workspace`, `experiment`, `iteration`,
   `report`, `run`, `compare`, `estimate`) now has a user-facing
   one-line description and a copy-paste `Example:` epilog. Helper
@@ -348,6 +398,7 @@ CLI UX (Day 2):
   table.
 
 Errors and hardening (Day 3):
+
 - `SelfEvalsError` / `SelfEvalsUserError` hierarchy. User-correctable
   failures exit with code 2 and a clean one-line message; internal
   errors keep their traceback.
@@ -367,6 +418,7 @@ Errors and hardening (Day 3):
   fixes.
 
 Reporter (Day 4):
+
 - `src/selfevals/reporter/_metrics.py` — pure helpers
   (`compute_total_cost`, `compute_total_time_seconds`, etc.) that
   return `None` when data is absent instead of misleading zeros.
@@ -404,8 +456,8 @@ Reporter (Day 4):
   (`uv sync --extra web`) to install FastAPI.
 - Failure modes do not yet survive persistence to SQLite — the
   compare and report tooling already handles their presence gracefully
-  for when the schema is extended. *(Resolved in [Unreleased]: error
-  analysis persists `failure_mode_counts`.)*
+  for when the schema is extended. _(Resolved in [Unreleased]: error
+  analysis persists `failure_mode_counts`.)_
 - `CliCommandAdapter` and `HttpEndpointAdapter` are not yet
   auto-wired from YAML; users instantiate them via a Python
   entrypoint. `docs/adapters.md` documents the workaround.
@@ -415,6 +467,7 @@ Reporter (Day 4):
 ### Added — MVP Block A: YAML loader + `selfevals run` end-to-end
 
 Repo loader (`src/selfevals/repo/`):
+
 - `load_experiment_spec(path)` parses `evals/experiments/<name>.yaml` →
   `(workspace_id, Experiment, [EvalCase], AgentEntrypoint)`. YAML keys
   are 1:1 with the Pydantic field names — no DSL translation; the
@@ -429,11 +482,12 @@ Repo loader (`src/selfevals/repo/`):
   resolution.
 
 CLI `selfevals run <yaml>`:
+
 - Loads spec → resolves agent callable → wraps as `EmbeddedAdapter`
   (str returns auto-coerced to `AdapterResponse`) → builds the
   proposer per `experiment.proposer.strategy` (grid / random /
   manual) → drives `OptimizationLoop` with `DecisionMatrixEvaluator`
-  + `DeterministicGrader` → emits markdown/JSON report.
+  - `DeterministicGrader` → emits markdown/JSON report.
 - Flags: `--workspace`, `--max-iterations`, `--reps`, `--format`,
   `--no-persist`.
 - Persists `Experiment` + `IterationRecord` + `DecisionRecord` to
@@ -442,12 +496,14 @@ CLI `selfevals run <yaml>`:
   missing-spec error, validation, str→AdapterResponse coercion.
 
 Example experiment:
+
 - `evals/experiments/example_pingpong.yaml` + `evals/datasets/pingpong.jsonl` +
   `selfevals.examples.pingpong` reference agent. Serves as smoke test
   and onboarding artifact. `uv run selfevals run evals/experiments/example_pingpong.yaml --no-persist`
   produces a clean report out of the box.
 
 Refactor:
+
 - `DecisionMatrixEvaluator` now inherits from `DecisionEvaluatorProtocol`
   so the type checker recognizes it as a valid argument to
   `OptimizationLoop(decision_evaluator=...)`.
@@ -475,6 +531,7 @@ dep: `pyyaml>=6,<7`.
 ### Added — PR 8 + PR 9: Reporter + CLI
 
 Reporter (`selfevals.reporter`):
+
 - `render_markdown(result)` produces a PR-comment-style summary:
   experiment header (name, goal, state, mode, proposer, iterations
   run, termination reason), target + guardrail spec line, best-
@@ -486,11 +543,12 @@ Reporter (`selfevals.reporter`):
 - `render_json(result)` emits a stable, machine-readable payload
   (`schema_version=1`) keyed on iteration index, with explicit
   best-iteration reference. JSON path is what the CLI's `--format
-  json` flag outputs.
+json` flag outputs.
 - Pure: no I/O, no global state — callers decide where the strings
   end up (stdout, a file, a GitHub PR comment).
 
 CLI (`selfevals` console script, argparse-only, zero new deps):
+
 - `selfevals init <slug>` — idempotent workspace seed via
   `seed_workspace`; prints workspace id + member count.
 - `selfevals workspace show <ws_id>` — workspace metadata +
@@ -507,7 +565,7 @@ CLI (`selfevals` console script, argparse-only, zero new deps):
   side primary metric diff between two iterations of the same
   experiment.
 - `selfevals estimate --cases N --space-size M --reps K
-  --cost-per-call X` — dry-run upper-bound on agent calls and
+--cost-per-call X` — dry-run upper-bound on agent calls and
   total USD cost before paying for a run.
 - All user-facing errors (missing entity, primary-metric mismatch,
   invalid numeric args) go through `CommandError` → `error: <msg>`
@@ -522,6 +580,7 @@ clean. Zero new runtime deps — argparse + stdlib.
 ### Added — PR 6 + PR 7: OptimizationLoop + Decision matrix
 
 Proposers:
+
 - `Proposer` ABC with `ProposerContext` (iteration index + history).
 - `ManualProposer`: walk a caller-supplied list of `Proposal` or
   parameter dicts; raises `SearchSpaceExhaustedError` when done.
@@ -535,6 +594,7 @@ Proposers:
   contract before being returned.
 
 Aggregator:
+
 - `aggregate_iteration(case_outcomes, primary_metric, reliability_metrics)`
   computes pass@1 / pass@k / pass^k / consistency_rate /
   stability_score / recovery_rate from per-case `CaseOutcome`s.
@@ -545,6 +605,7 @@ Aggregator:
   surfaced when traces report cost/duration.
 
 OptimizationLoop:
+
 - Transitions experiment state DRAFT → QUEUED → RUNNING → COMPLETED.
 - For each iteration: ask proposer for a Proposal, run cases through
   the Executor, score per-rep results with the configured graders,
@@ -555,6 +616,7 @@ OptimizationLoop:
   `min_delta` for `patience` consecutive iterations.
 
 Decision matrix (PR 7):
+
 - `evaluate_iteration` (pure) + `DecisionMatrixEvaluator` (object).
   Applies the §10 canonical subset that powers MVP optimization:
   guardrail check → first-iteration target check → improvement vs
@@ -642,7 +704,7 @@ Decision matrix (PR 7):
   the span ERROR with type+message. Exiting the context with an
   uncaught exception marks the trace ERRORED.
 - `import_otel_spans` — adapter from a flat list of OTel-style span
-  dicts (gen_ai.*, openinference.*) to a selfevals Trace. Classifies
+  dicts (gen_ai._, openinference._) to a selfevals Trace. Classifies
   spans by `openinference.span.kind` / `gen_ai.*` presence,
   normalizes finish reasons, preserves parent/child links, retains
   unknown attributes in `provider_metadata` or CustomSpan.payload.
@@ -697,6 +759,7 @@ Closed enums (`Role`, `Level`, `DatasetSource`, `GroundTruthMethod`,
 `GraderCardState`, `DecisionOutcome`, `IterationState`, `Modality`).
 
 Entities:
+
 - `Workspace`, `Member` — multi-tenant primitives; workspace is
   self-referential (its own workspace_id == id).
 - `Tool` — first-class entity needed for `editable.tool_code`.
@@ -729,10 +792,12 @@ Internal helpers: ULID + prefixed ULID id generation (stdlib only),
 canonical content_hash (sha256), tz-aware UTC time helpers.
 
 Tests: 197 unit tests covering every validator and enum; mypy strict
-+ ruff (E/W/F/I/B/UP/N/SIM/RUF) clean.
+
+- ruff (E/W/F/I/B/UP/N/SIM/RUF) clean.
 
 ## [0.0.1] - 2026-05-16
 
 ### Added
+
 - Initial repo scaffolding: `pyproject.toml`, ruff + mypy strict + pytest config.
 - `docs/spec/` with canonical eval framework spec, operational spec v0.1, taxonomy notes.
