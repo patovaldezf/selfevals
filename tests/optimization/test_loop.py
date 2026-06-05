@@ -90,6 +90,7 @@ def _experiment(
     search_space: dict[str, Any] | None = None,
     convergence: ConvergenceSpec | None = None,
     proposer_strategy: ProposerStrategy = ProposerStrategy.GRID,
+    persist_traces: str = "failed",
 ) -> Experiment:
     return Experiment(
         id=Experiment.make_id(),
@@ -114,6 +115,7 @@ def _experiment(
             sandbox=SandboxMode.MOCK,
             max_iterations=max_iterations,
             convergence=convergence or ConvergenceSpec(min_delta=1e-6, patience=2),
+            persist_traces=persist_traces,  # type: ignore[arg-type]
         ),
         search_space=SearchSpace(model_params=search_space or {}),
         reliability=ReliabilitySpec(metrics=["pass@1"]),
@@ -251,6 +253,93 @@ async def test_loop_persists_and_carries_grader_reason(tmp_path: Path) -> None:
     persisted = [gr for t in traces for gr in t.grader_results]
     assert persisted, "expected the failing trace to be persisted with grader results"
     assert all(gr.reason for gr in persisted)
+    storage.close()
+
+
+@pytest.mark.asyncio
+async def test_trace_run_ids_only_lists_persisted_traces(tmp_path: Path) -> None:
+    """`trace_run_ids` must announce only traces actually written to storage.
+
+    With `persist_traces="failed"` (default), a passing case's trace is never
+    stored — announcing its run_id made `/traces/{run_id}` 404. The record now
+    lists only persisted run_ids, and every one resolves to a stored Trace.
+    """
+    from selfevals.api.queries import load_trace
+    from selfevals.schemas.trace import Trace
+
+    # Same adapter emits "pong" for both cases (level 1.0). One case requires
+    # "pong" (passes, not persisted under "failed"); the other requires "zzz"
+    # (fails, persisted).
+    cases = [_case("pong"), _case("zzz")]
+    exp = _experiment(max_iterations=1, search_space={"level": [1.0]})
+    storage = SQLiteStorage(tmp_path / "db.sqlite")
+    ws = Workspace(id=WS, workspace_id=WS, slug="t", name="t")
+    with storage.open(WS) as scope:
+        scope.put_entity(ws)
+    scope = storage.open(WS)
+    executor = Executor(
+        adapter=_adapter_for("pong", level=1.0),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    loop = OptimizationLoop(
+        experiment=exp,
+        executor=executor,
+        proposer=GridProposer(),
+        graders=[DeterministicGrader()],
+        cases=cases,
+        scope=scope,
+    )
+    result = await loop.run()
+
+    record = result.iterations[0].iteration_record
+    announced = record.execution.trace_run_ids
+    # Only the failing case's trace was persisted → exactly one announced id.
+    assert len(announced) == 1
+    with storage.open(WS) as s:
+        stored = [t.run.run_id for t in s.list_entities(Trace)]
+    assert set(announced) == set(stored)
+    # Every announced run_id resolves (no 404).
+    for run_id in announced:
+        assert load_trace(storage, workspace_id=WS, trace_id=run_id) is not None
+    storage.close()
+
+
+@pytest.mark.asyncio
+async def test_trace_run_ids_lists_all_when_persist_all(tmp_path: Path) -> None:
+    """With `persist_traces="all"`, every rep's trace is stored and announced."""
+    from selfevals.schemas.trace import Trace
+
+    cases = [_case("pong"), _case("zzz")]
+    exp = _experiment(
+        max_iterations=1, search_space={"level": [1.0]}, persist_traces="all"
+    )
+    storage = SQLiteStorage(tmp_path / "db.sqlite")
+    ws = Workspace(id=WS, workspace_id=WS, slug="t", name="t")
+    with storage.open(WS) as scope:
+        scope.put_entity(ws)
+    scope = storage.open(WS)
+    executor = Executor(
+        adapter=_adapter_for("pong", level=1.0),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    loop = OptimizationLoop(
+        experiment=exp,
+        executor=executor,
+        proposer=GridProposer(),
+        graders=[DeterministicGrader()],
+        cases=cases,
+        scope=scope,
+    )
+    result = await loop.run()
+
+    announced = result.iterations[0].iteration_record.execution.trace_run_ids
+    with storage.open(WS) as s:
+        stored = [t.run.run_id for t in s.list_entities(Trace)]
+    # Both cases (1 rep each) stored and announced.
+    assert len(announced) == 2
+    assert set(announced) == set(stored)
     storage.close()
 
 
@@ -627,7 +716,7 @@ async def test_loop_grades_concurrently_and_preserves_order() -> None:
         grade_concurrency=8,
     )
     proposal = loop._proposer.propose(exp, ProposerContext(iteration_index=0, history=()))
-    _, _, per_case = await loop._run_iteration(proposal, iteration=0)
+    _, _, per_case, _persisted = await loop._run_iteration(proposal, iteration=0)
     # More than one grade task ran at the same time → concurrency is real.
     assert barrier["max"] > 1
     # Order preserved: grades within each rep are in grader order g0,g1,g2.
