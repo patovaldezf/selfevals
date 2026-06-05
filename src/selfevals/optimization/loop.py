@@ -588,16 +588,30 @@ def _collapse_conversation_turns(
         # per-turn funnel breakdown.
         synthetic: list[GradeResult] = []
         for g_index, final_grade in enumerate(final_grades):
-            children = [
-                BreakdownNode(
-                    key=f"turn_{position}",
-                    label=(turn_grades[g_index].label if g_index < len(turn_grades) else None),
-                    score=(turn_grades[g_index].score if g_index < len(turn_grades) else None),
-                    weight=0.0,
-                    reason="per-turn diagnostic (advisory)",
+            children = []
+            for position, (_, turn_grades) in enumerate(turns):
+                turn_grade = turn_grades[g_index] if g_index < len(turn_grades) else None
+                # Preserve the grader's own breakdown (e.g. the deterministic
+                # per-rule funnel) under each turn, so a conversation case keeps
+                # its rule-level drill-down instead of collapsing to a bare
+                # pass/fail per turn. The grade's breakdown already roots at the
+                # grader (`deterministic` → `must_include` → ...); we graft its
+                # children directly under `turn_N` to avoid a redundant level.
+                grader_children = (
+                    list(turn_grade.breakdown.children)
+                    if turn_grade is not None and turn_grade.breakdown is not None
+                    else []
                 )
-                for position, (_, turn_grades) in enumerate(turns)
-            ]
+                children.append(
+                    BreakdownNode(
+                        key=f"turn_{position}",
+                        label=turn_grade.label if turn_grade is not None else None,
+                        score=turn_grade.score if turn_grade is not None else None,
+                        weight=0.0,
+                        reason="per-turn diagnostic (advisory)",
+                        children=grader_children,
+                    )
+                )
             synthetic.append(
                 replace(
                     final_grade,

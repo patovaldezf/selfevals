@@ -178,6 +178,40 @@ async def test_collapse_turns_into_per_thread_funnel() -> None:
 
 
 @pytest.mark.asyncio
+async def test_collapse_preserves_grader_breakdown_under_turn() -> None:
+    """A grader's own breakdown (e.g. the deterministic per-rule funnel) must
+    survive the conversation collapse, grafted under its turn — otherwise a
+    conversation case loses its rule-level drill-down and the funnel shows
+    only bare per-turn pass/fail (the "Sin breakdown" regression)."""
+    from selfevals.graders.base import BreakdownNode, GradeLabel, GradeResult
+    from selfevals.optimization.loop import _collapse_conversation_turns
+
+    case = _conversation_case([{"role": "user", "content": "u1"}])
+    run = await _executor(_history_echo).run_case(case)
+    rule_tree = BreakdownNode(
+        key="deterministic",
+        label=GradeLabel.PASS,
+        score=1.0,
+        children=[
+            BreakdownNode(
+                key="must_include",
+                label=GradeLabel.PASS,
+                children=[BreakdownNode(key="pong", label=GradeLabel.PASS)],
+            )
+        ],
+    )
+    grades_per_turn = [
+        [GradeResult(grader="g", label=GradeLabel.PASS, reason="t0", score=1.0, breakdown=rule_tree)]
+    ]
+    _, collapsed_grades = _collapse_conversation_turns(run, grades_per_turn)
+    turn_0 = collapsed_grades[0][0].breakdown.children[0]
+    assert turn_0.key == "turn_0"
+    # The grader tree's children are grafted under the turn (root level dropped).
+    assert [c.key for c in turn_0.children] == ["must_include"]
+    assert turn_0.children[0].children[0].key == "pong"
+
+
+@pytest.mark.asyncio
 async def test_rejects_non_conversation_case() -> None:
     case = EvalCase(
         id=EvalCase.make_id(),
