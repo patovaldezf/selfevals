@@ -8,74 +8,16 @@ vary `state` and `taxonomy.target_features` independently of a real run.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from selfevals.api.app import build_app
-from selfevals.schemas._base import EntityRef
-from selfevals.schemas.enums import (
-    DatasetType,
-    ExperimentState,
-    Mode,
-    ProposerStrategy,
-    SandboxMode,
-)
-from selfevals.schemas.experiment import (
-    DatasetUsage,
-    EditableContract,
-    Experiment,
-    ExperimentTaxonomy,
-    FrozenSnapshot,
-    MetricTarget,
-    ProposerSpec,
-    RunSpec,
-    SearchSpace,
-    TargetSpec,
-)
+from selfevals.schemas.enums import ExperimentState
 from selfevals.storage.seed import seed_workspace
 from selfevals.storage.sqlite import SQLiteStorage
-
-TS = datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC)
-
-
-def _experiment(
-    *,
-    workspace_id: str,
-    name: str,
-    state: ExperimentState,
-    features: list[str],
-) -> Experiment:
-    exp = Experiment(
-        id=Experiment.make_id(),
-        workspace_id=workspace_id,
-        created_at=TS,
-        updated_at=TS,
-        name=name,
-        goal="g",
-        mode=Mode.HANDOFF,
-        taxonomy=ExperimentTaxonomy(
-            target_features=features,
-            dataset_types=[DatasetType.CAPABILITY],
-        ),
-        datasets=DatasetUsage(optimization=EntityRef(id="ds_x", version=1)),
-        target=TargetSpec(primary=MetricTarget(name="pass@1", operator=">=", value=0.85)),
-        editable=EditableContract(prompt=True, model_params=True),
-        frozen=FrozenSnapshot(
-            fleet=EntityRef(id="flt_x"),
-            agents=[EntityRef(id="ag_x")],
-            datasets=[EntityRef(id="ds_y")],
-        ),
-        proposer=ProposerSpec(strategy=ProposerStrategy.GRID),
-        run=RunSpec(sandbox=SandboxMode.DRY_RUN),
-        search_space=SearchSpace(),
-    )
-    # `state` is not a constructor kwarg we want to fight the state machine
-    # over — set it directly for the fixture.
-    exp.state = state
-    return exp
+from tests.api._experiment_factory import make_experiment
 
 
 @pytest.fixture
@@ -84,19 +26,19 @@ def client(tmp_path: Path) -> tuple[TestClient, str]:
     st = SQLiteStorage(str(db))
     ws = seed_workspace(st, slug="t", name="t", user_id="local").workspace
     experiments = [
-        _experiment(
+        make_experiment(
             workspace_id=ws.id,
             name="draft-resolution",
             state=ExperimentState.DRAFT,
             features=["commerce.product_resolution"],
         ),
-        _experiment(
+        make_experiment(
             workspace_id=ws.id,
             name="completed-resolution",
             state=ExperimentState.COMPLETED,
             features=["commerce.product_resolution"],
         ),
-        _experiment(
+        make_experiment(
             workspace_id=ws.id,
             name="completed-search",
             state=ExperimentState.COMPLETED,

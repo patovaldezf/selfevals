@@ -118,6 +118,15 @@ class ExperimentDetailResponse(BaseModel):
     summary: ExperimentSummary
     result: dict[str, Any] | None = None
     iterations: list[IterationSummary] = Field(default_factory=list)
+    best_iteration: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "The winning iteration (highest primary metric), lifted from "
+            "`result.best_iteration` to a first-class field so the FE need not "
+            "dig into the report JSON. Same per-iteration shape as the reporter "
+            "(`render_json`); `null` when the experiment has no iterations."
+        ),
+    )
 
 
 class SpanSummary(BaseModel):

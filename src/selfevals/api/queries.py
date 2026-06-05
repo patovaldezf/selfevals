@@ -217,10 +217,12 @@ def experiment_detail(
             result_dict = json.loads(render_json(result))
 
     summary = ExperimentSummary(**_experiment_summary_dict(exp, iteration_count=len(iterations)))
+    best_iteration = result_dict.get("best_iteration") if result_dict else None
     return ExperimentDetailResponse(
         summary=summary,
         result=result_dict,
         iterations=_iteration_summaries(iterations, decisions),
+        best_iteration=best_iteration,
     )
 
 

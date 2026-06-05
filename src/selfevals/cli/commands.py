@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from selfevals._errors import SelfEvalsUserError
 from selfevals.cli import _friendly
-from selfevals.optimization.aggregator import IterationAggregate
+from selfevals.optimization.aggregator import FunnelNode, IterationAggregate
 from selfevals.optimization.loop import (
     IterationOutcome,
     OptimizationResult,
@@ -379,6 +379,13 @@ def _reconstruct_result(
             total_cost_usd=record.metrics.cost_usd or 0.0,
             total_duration_ms=int((record.metrics.duration_seconds or 0.0) * 1000),
             case_count=int(record.execution.ran_against.get("case_count", 0)),
+            # Rehydrate the persisted funnel so a result reconstructed from
+            # storage carries the same grader breakdown a live run does — the
+            # reporter's `funnel` is no longer always empty here.
+            funnel={
+                key: FunnelNode.from_dict(node)
+                for key, node in record.metrics.funnel.items()
+            },
         )
         decision = decisions.get(record.iteration)
         if decision is None:
