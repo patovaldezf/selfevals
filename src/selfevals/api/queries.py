@@ -18,6 +18,8 @@ from typing import Any
 from pydantic import BaseModel
 
 from selfevals.api.schemas import (
+    CaseListResponse,
+    CaseSummary,
     CompareFailureModes,
     CompareFunnelRow,
     CompareMetricRow,
@@ -45,12 +47,14 @@ from selfevals.cli.commands import (
 from selfevals.reporter import render_json
 from selfevals.reporter.compare import compute_compare
 from selfevals.schemas.enums import ExperimentState
+from selfevals.schemas.eval_case import EvalCase
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.iteration import DecisionRecord, IterationRecord
 from selfevals.schemas.trace import Trace
 from selfevals.schemas.workspace import Workspace
 from selfevals.storage.interface import ListFilter
 from selfevals.storage.sqlite import SQLiteStorage
+from selfevals.trace.span_view import span_view
 
 
 class AnchorPoint(BaseModel):
@@ -233,6 +237,53 @@ def experiment_iterations(
         iterations = _experiment_iterations(scope, experiment_id)
         decisions = _experiment_decisions(scope, experiment_id)
     return _iteration_summaries(iterations, decisions)
+
+
+def experiment_cases(
+    storage: SQLiteStorage, *, workspace_id: str, experiment_id: str
+) -> CaseListResponse:
+    """List the eval cases persisted under an experiment.
+
+    Cases are written at launch time (`runner.launch._persist_cases`) stamped
+    with `experiment_id`, so the storage `where` filter (json_extract) scopes
+    them without a dedicated column. Holdout cases are included and flagged —
+    the set is reported honestly, not silently trimmed to the optimization
+    cases. Ordered by name for a stable, scannable list.
+    """
+    with storage.open(workspace_id) as scope:
+        cases = [
+            c
+            for c in scope.list_entities(
+                EvalCase, ListFilter(where={"experiment_id": experiment_id})
+            )
+            if isinstance(c, EvalCase)
+        ]
+    cases.sort(key=lambda c: c.name)
+    summaries = [_case_summary(c) for c in cases]
+    holdout_count = sum(1 for c in cases if c.holdout)
+    return CaseListResponse(
+        cases=summaries,
+        total=len(summaries),
+        holdout_count=holdout_count,
+    )
+
+
+def _case_summary(case: EvalCase) -> CaseSummary:
+    return CaseSummary(
+        id=case.id,
+        name=case.name,
+        task_type=case.task_type,
+        modalities=[str(m) for m in case.modalities],
+        input=case.input,
+        graders=list(case.graders),
+        holdout=case.holdout,
+        is_conversation=case.is_conversation(),
+        feature=str(case.taxonomy.feature) if case.taxonomy.feature is not None else None,
+        level=str(case.taxonomy.level) if case.taxonomy.level is not None else None,
+        dataset_type=(
+            str(case.taxonomy.dataset_type) if case.taxonomy.dataset_type is not None else None
+        ),
+    )
 
 
 def experiment_decisions(
@@ -577,73 +628,11 @@ def _iteration_summaries(
 
 
 def _span_summary(span: Any) -> SpanSummary:
-    """Project any Span subclass into the trimmed view shape.
+    """Project any Span subclass into the `SpanSummary` view model.
 
-    We surface kind + name + parent + timing on every span, and copy
-    the kind-specific high-value fields into `detail` for the trace
-    inspector to render without fetching the full payload.
+    Delegates the field selection to `trace.span_view.span_view`, the
+    shared projection the live SSE path also uses, so a persisted span and
+    its live twin render identically. This function only adapts that dict
+    into the Pydantic model for the REST snapshot.
     """
-    detail: dict[str, Any] = {}
-    payload = span.model_dump(mode="json")
-    keep_keys = {
-        "provider",
-        "model",
-        "params",
-        "tokens",
-        "cost_usd",
-        # Performance facets the tree node surfaces (A6). Jensen: TTFT
-        # and throughput are first-class for an agent debugger; hiding
-        # them in detail makes the tree blind to "fast but wrong".
-        "time_to_first_token_ms",
-        "tokens_per_second",
-        "cache_hit",
-        "retries",
-        "output",
-        "reasoning",
-        "tool_name",
-        "tool_use_id",
-        "status",
-        "error",
-        "retriever",
-        "top_k_requested",
-        "top_k_returned",
-        "retrieved",
-        "decision_type",
-        "chosen",
-        "alternatives_considered",
-        "guardrail",
-        "passed",
-        "error_type",
-        "message",
-        "recoverable",
-        # Pointer fields per kind (schemas/trace.py). The FE resolves these
-        # lazily via /payloads — without exposing them here, the trace
-        # viewer can never load the actual prompt/args/result bytes, even
-        # though the bytes are sitting in the object store.
-        "system_prompt_pointer",
-        "system_prompt_hash",
-        "messages_pointer",
-        "messages_hash",
-        "tools_offered",
-        "tools_offered_hash",
-        "args_pointer",
-        "args_hash",
-        "result_pointer",
-        "result_hash",
-        "query_pointer",
-        "query_hash",
-        "values_pointer",
-        "values_hash",
-    }
-    for key, value in payload.items():
-        if key in keep_keys:
-            detail[key] = value
-    return SpanSummary(
-        id=span.id,
-        parent_id=span.parent_id,
-        kind=str(span.kind),
-        name=span.name,
-        started_at=span.started_at,
-        duration_ms=span.duration_ms,
-        detail=detail,
-    )
+    return SpanSummary(**span_view(span))

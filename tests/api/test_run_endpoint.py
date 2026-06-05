@@ -137,6 +137,40 @@ def test_run_workspace_path_overrides_spec(client: tuple[TestClient, str]) -> No
     assert c.get(f"/api/workspaces/{other_ws}/experiments/{body['experiment_id']}").status_code == 200
 
 
+def test_cases_endpoint_lists_persisted_cases(client: tuple[TestClient, str]) -> None:
+    """After a run, GET .../cases lists the experiment's eval cases with their
+    navigable fields — the fix for "no hay forma de acceder a los cases"."""
+    c, _ = client
+    res = c.post(f"/api/workspaces/{WS}/experiments/run", json={"spec_inline": _inline_spec()})
+    assert res.status_code == 202
+    exp_id = res.json()["experiment_id"]
+    assert _poll_state(c, WS, exp_id) == "completed"
+
+    cases_res = c.get(f"/api/workspaces/{WS}/experiments/{exp_id}/cases")
+    assert cases_res.status_code == 200
+    body = cases_res.json()
+    assert body["total"] == 2
+    assert body["holdout_count"] == 0
+    assert len(body["cases"]) == 2
+    first = body["cases"][0]
+    # The navigable identity + facets the FE renders.
+    for key in ("id", "name", "task_type", "input", "graders", "holdout", "is_conversation"):
+        assert key in first
+    assert first["id"].startswith("ec_")
+    # Stable order by name.
+    names = [c["name"] for c in body["cases"]]
+    assert names == sorted(names)
+
+
+def test_cases_endpoint_empty_for_unknown_experiment(client: tuple[TestClient, str]) -> None:
+    """An experiment with no persisted cases returns an empty list, not 404 —
+    the FE shows an honest empty state."""
+    c, _ = client
+    res = c.get(f"/api/workspaces/{WS}/experiments/exp_DOESNOTEXIST/cases")
+    assert res.status_code == 200
+    assert res.json() == {"cases": [], "total": 0, "holdout_count": 0}
+
+
 def test_run_409_when_active(client: tuple[TestClient, str]) -> None:
     c, db = client
     # Seed an experiment that is already RUNNING, then POST a spec that reuses

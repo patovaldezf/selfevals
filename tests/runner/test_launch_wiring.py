@@ -53,6 +53,84 @@ def test_build_adapter_embedded_bad_entrypoint_is_user_error() -> None:
         build_adapter(EmbeddedAgentSpec(entrypoint=ep))
 
 
+def test_build_loop_persists_cases_stamped_with_experiment_id(tmp_path: object) -> None:
+    """build_loop must write the run's eval cases, stamped with experiment_id,
+    so `GET .../experiments/{id}/cases` has something to list. Authoring leaves
+    experiment_id None; persistence is where the link gets made."""
+    import json as _json
+    from pathlib import Path
+
+    import yaml
+
+    from selfevals.repo.loader import build_spec_from_mapping
+    from selfevals.runner.launch import build_loop, ensure_workspace
+    from selfevals.schemas.eval_case import EvalCase
+    from selfevals.storage.interface import ListFilter
+    from selfevals.storage.sqlite import SQLiteStorage
+
+    repo_root = Path(__file__).resolve().parents[2]
+    raw = yaml.safe_load((repo_root / "evals/experiments/example_pingpong.yaml").read_text())
+    rows = [
+        _json.loads(line)
+        for line in (repo_root / "evals/datasets/pingpong.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    raw["dataset"] = {"cases_inline": rows}
+    ws = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
+    spec = build_spec_from_mapping(raw, workspace_id=ws)
+
+    # Authoring: cases carry no experiment link yet.
+    assert all(c.experiment_id is None for c in spec.cases)
+
+    db = Path(str(tmp_path)) / "cases.sqlite"
+    storage = SQLiteStorage(str(db))
+    try:
+        ensure_workspace(storage, spec)
+        with storage.open(ws) as scope:
+            build_loop(spec, scope=scope, repetitions_per_case=1)
+        with storage.open(ws) as scope:
+            persisted = [
+                c
+                for c in scope.list_entities(
+                    EvalCase, ListFilter(where={"experiment_id": spec.experiment.id})
+                )
+                if isinstance(c, EvalCase)
+            ]
+    finally:
+        storage.close()
+
+    assert len(persisted) == len(spec.cases) == 2
+    assert {c.experiment_id for c in persisted} == {spec.experiment.id}
+    # The in-memory spec cases were stamped in place too (same objects).
+    assert all(c.experiment_id == spec.experiment.id for c in spec.cases)
+
+
+def test_build_loop_without_scope_does_not_persist_cases(tmp_path: object) -> None:
+    """An ephemeral run (`--no-persist`, scope=None) writes nothing — the cases
+    stay authoring-only and no storage is touched."""
+    import json as _json
+    from pathlib import Path
+
+    import yaml
+
+    from selfevals.repo.loader import build_spec_from_mapping
+    from selfevals.runner.launch import build_loop
+
+    repo_root = Path(__file__).resolve().parents[2]
+    raw = yaml.safe_load((repo_root / "evals/experiments/example_pingpong.yaml").read_text())
+    rows = [
+        _json.loads(line)
+        for line in (repo_root / "evals/datasets/pingpong.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    raw["dataset"] = {"cases_inline": rows}
+    spec = build_spec_from_mapping(raw, workspace_id="ws_01HZZZZZZZZZZZZZZZZZZZZZZZ")
+
+    build_loop(spec, scope=None, repetitions_per_case=1)
+    # No scope → no stamping, no writes.
+    assert all(c.experiment_id is None for c in spec.cases)
+
+
 def test_build_adapter_cli() -> None:
     spec = CliAgentSpec(command=["./bin/agent"], env={"TOKEN": "x"}, timeout_seconds=30.0)
     adapter = build_adapter(spec)
