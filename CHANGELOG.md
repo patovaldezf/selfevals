@@ -7,6 +7,31 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-05
+
+Conecta el streaming de traces en vivo (que no funcionaba para ninguna corrida)
+y expone los eval cases de un experimento como lista navegable.
+
+### Added
+
+- **Live trace streaming, in-process** — el `TraceRecorder` emite cada span a
+  un `SpanSink` inyectado al cerrarlo, en shape `SpanSummary`. No-op por default
+  (el CLI no paga overhead); bajo `selfevals serve` se inyecta un
+  `BrokerSpanSink` que publica al `SpanBroker`, y los runs F1 (background thread)
+  alimentan a los suscriptores de `/stream` vía `call_soon_threadsafe`. Antes la
+  infra (`SpanBroker`, `stream_trace`, `/stream`) existía pero nada conectaba el
+  productor, así que el live no funcionaba para ninguna corrida. Reemplaza la
+  ruta OTLP (separada e incompleta) para runs embedded. La proyección
+  span→`SpanSummary` se centraliza en `trace/span_view.py`, reusada por el
+  recorder y `api/queries` (antes duplicada).
+- **`GET /api/workspaces/{ws}/experiments/{id}/cases`** — lista los eval cases
+  que un experimento ejecutó. Los `EvalCase` ahora se persisten al lanzar un run
+  (antes solo vivían en el `ExperimentSpec` en memoria), estampados con
+  `experiment_id` en `runner.launch._persist_cases` (path compartido CLI + API).
+  El set se reporta completo, con holdout incluido y flaggeado, ordenado por
+  nombre; devuelve lista vacía (no `404`) para experimentos sin cases. Sin
+  migración: el filtro usa `json_extract(payload, '$.experiment_id')`.
+
 ## [0.6.0] - 2026-06-05
 
 Hardens the HTTP API into a stable frontier an external frontend can consume,
@@ -704,7 +729,7 @@ Decision matrix (PR 7):
   the span ERROR with type+message. Exiting the context with an
   uncaught exception marks the trace ERRORED.
 - `import_otel_spans` — adapter from a flat list of OTel-style span
-  dicts (gen_ai._, openinference._) to a selfevals Trace. Classifies
+  dicts (gen*ai.*, openinference.\_) to a selfevals Trace. Classifies
   spans by `openinference.span.kind` / `gen_ai.*` presence,
   normalizes finish reasons, preserves parent/child links, retains
   unknown attributes in `provider_metadata` or CustomSpan.payload.
