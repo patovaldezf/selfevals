@@ -31,7 +31,8 @@ from selfevals.schemas.eval_case import (
     SourceInfo,
 )
 from selfevals.schemas.fleet import Agent, ModelRef
-from selfevals.schemas.trace import LLMCallSpan, ToolCallSpan
+from selfevals.schemas.trace import AgentSnapshotRef, LLMCallSpan, RunInfo, ToolCallSpan
+from selfevals.trace.recorder import TraceRecorder
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
@@ -410,3 +411,61 @@ async def test_executor_surfaces_structured_output(tmp_path: Any) -> None:
     )
     rep = (await executor.run_case(_case(expected=Expected()))).repetitions[0]
     assert rep.trace.outputs.structured_output == {"intent": "buy", "sku": "ABC"}
+
+
+@pytest.mark.asyncio
+async def test_executor_derives_cost_from_declared_model(tmp_path: Any) -> None:
+    """A cli/http agent that returns tokens but no cost_usd gets priced from its
+    spec-declared `agent.model` — the fix for cost_usd always 0 (Gap 6)."""
+
+    def _tokens_no_cost(req: AdapterRequest) -> AdapterResponse:
+        return AdapterResponse(
+            content="ok",
+            tokens_input=1000,
+            tokens_output=500,
+            cost_usd=0.0,  # adapter reports no cost
+            stop_reason="end_turn",
+        )
+
+    adapter = EmbeddedAdapter(_tokens_no_cost)  # no Agent record (like http)
+    adapter.model = ModelRef(provider="anthropic", name="claude-sonnet-4-6")
+    executor = Executor(
+        adapter=adapter,
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    rep = (await executor.run_case(_case())).repetitions[0]
+    span = _llm_span(rep)
+    # 1000 in @ $3/Mtok + 500 out @ $15/Mtok = 0.003 + 0.0075 = 0.0105
+    assert span.cost_usd.total == pytest.approx(0.0105)
+    assert span.model == "claude-sonnet-4-6"
+    assert span.provider == "anthropic"
+    # Aggregated onto the trace metrics too.
+    assert rep.trace.metrics.total_cost_usd == pytest.approx(0.0105)
+    assert rep.trace.metrics.llm_call_count == 1
+
+
+def test_span_view_exposes_provider_metadata_and_accounting() -> None:
+    """The span detail surfaces the full accounting the FE wants to show:
+    tokens, cost, reasoning, provider_metadata, model."""
+    from selfevals.trace.span_view import span_view
+
+    rec = TraceRecorder(
+        workspace_id=WS,
+        run=RunInfo(run_id="run_x"),
+        agent=AgentSnapshotRef(agent_id="ag_x", agent_version=1),
+        framework_version="t",
+        runtime="python-3.12",
+        sandbox=SandboxMode.MOCK,
+    )
+    with rec, rec.agent_turn("t"), rec.llm_call("c", provider="openai", model="gpt-5") as llm:
+        llm.add_tokens(input=10, output=5, reasoning=3)
+        llm.provider_metadata = {"system_fingerprint": "fp_abc", "finish_reason": "stop"}
+    trace = rec.build()
+    llm_span = next(s for s in trace.spans if isinstance(s, LLMCallSpan))
+    detail = span_view(llm_span)["detail"]
+    assert detail["model"] == "gpt-5"
+    assert detail["provider"] == "openai"
+    assert detail["tokens"]["input"] == 10
+    assert detail["tokens"]["reasoning"] == 3
+    assert detail["provider_metadata"]["system_fingerprint"] == "fp_abc"

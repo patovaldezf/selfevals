@@ -25,9 +25,10 @@ mutation. This is what makes background runs safe to overlap.
 from __future__ import annotations
 
 import inspect
+import os
 import threading
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from selfevals._errors import SelfEvalsUserError
 from selfevals.graders.base import Grader
@@ -49,6 +50,7 @@ from selfevals.optimization.proposers import (
 )
 from selfevals.repo.loader import (
     AgentEntrypoint,
+    AgentModelDecl,
     AgentSpec,
     CliAgentSpec,
     EmbeddedAgentSpec,
@@ -69,6 +71,7 @@ from selfevals.runner.executor import Executor
 from selfevals.runner.sandbox import SandboxPolicy
 from selfevals.schemas.enums import ProposerStrategy
 from selfevals.schemas.experiment import Experiment
+from selfevals.schemas.fleet import ModelRef
 from selfevals.schemas.workspace import Workspace
 from selfevals.storage.interface import WorkspaceScope
 from selfevals.storage.sqlite import SQLiteStorage
@@ -80,6 +83,32 @@ if TYPE_CHECKING:
 # Serializes the register → resolve → unregister window so concurrent
 # `build_loop` calls cannot trample one another's grader registrations.
 _REGISTRY_LOCK = threading.Lock()
+
+_TRACE_SAMPLING_ENV = "SELFEVALS_TRACE_SAMPLING"
+# Tolerate both the FE's vocabulary (`all` / `failures-only`) and the spec's
+# (`all` / `failed` / `none`) — they mean the same persistence policy.
+_TRACE_SAMPLING_ALIASES: dict[str, Literal["none", "all", "failed"]] = {
+    "all": "all",
+    "failures-only": "failed",
+    "failures_only": "failed",
+    "failed": "failed",
+    "none": "none",
+}
+
+
+def trace_sampling_override() -> Literal["none", "all", "failed"] | None:
+    """Read `SELFEVALS_TRACE_SAMPLING` into a `persist_traces` value, or None.
+
+    Lets an operator force the trace-persistence policy process-wide without
+    editing every spec — the FE asked for this so it can run with `all` against a
+    server it doesn't author specs for. Accepts the FE's `failures-only` spelling
+    as well as the spec's `failed`. An unset or unrecognized value returns None
+    (the spec's own `persist_traces` wins). Precedence at the call sites is:
+    explicit request override > this env var > spec default."""
+    raw = os.environ.get(_TRACE_SAMPLING_ENV)
+    if raw is None:
+        return None
+    return _TRACE_SAMPLING_ALIASES.get(raw.strip().lower())
 
 
 def payload_router_for_db(db_path: str, workspace_id: str) -> PayloadRouter:
@@ -116,16 +145,26 @@ def build_adapter(agent: AgentSpec) -> AgentAdapter:
             raise SelfEvalsUserError(str(exc)) from exc
         return _wrap_user_callable(callable_obj, agent.entrypoint)
     if isinstance(agent, CliAgentSpec):
-        kwargs: dict[str, object] = {"env": agent.env}
+        kwargs: dict[str, object] = {"env": agent.env, "model": _model_ref(agent.model)}
         if agent.timeout_seconds is not None:
             kwargs["timeout_seconds"] = agent.timeout_seconds
         return CliCommandAdapter(agent.command, **kwargs)  # type: ignore[arg-type]
     if isinstance(agent, HttpAgentSpec):
-        http_kwargs: dict[str, object] = {"headers": agent.headers}
+        http_kwargs: dict[str, object] = {
+            "headers": agent.headers,
+            "model": _model_ref(agent.model),
+        }
         if agent.timeout_seconds is not None:
             http_kwargs["timeout_seconds"] = agent.timeout_seconds
         return HttpEndpointAdapter(agent.url, **http_kwargs)  # type: ignore[arg-type]
     raise SelfEvalsUserError(f"unsupported agent spec: {type(agent).__name__}")  # defensive
+
+
+def _model_ref(decl: AgentModelDecl | None) -> ModelRef | None:
+    """Lift the loader's `agent.model` declaration into a `ModelRef`, or None."""
+    if decl is None:
+        return None
+    return ModelRef(provider=decl.provider, name=decl.name)
 
 
 def build_proposer(experiment: Experiment) -> Proposer:

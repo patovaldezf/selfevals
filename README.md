@@ -190,6 +190,15 @@ selfevals serve --host 127.0.0.1 --port 8000 --db ./selfevals.sqlite
 next to it (use `--no-web` for API-only). Add `--reload` for auto-reload in
 development.
 
+**Trace persistence + id contract.** By default only failing traces are kept
+(`persist_traces: "failed"` in the spec). To navigate every case from the UI,
+keep all traces — either set `persist_traces: "all"` in the spec, pass
+`"persist_traces": "all"` in the run request, or export
+`SELFEVALS_TRACE_SAMPLING=all` to force it process-wide (precedence: request >
+env > spec). `GET /traces/{id}` accepts **either** a trace id (`tr_…`) or a run
+id (`run_…`) and echoes both on the response, so case→trace links never have to
+guess which id a given endpoint emits.
+
 **Launch an experiment over HTTP** (non-blocking — returns `202` immediately
 and runs in the background; poll the experiment to follow progress):
 

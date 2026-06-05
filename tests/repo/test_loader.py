@@ -296,6 +296,36 @@ def test_agent_type_http(tmp_path: Path) -> None:
     assert spec.agent.timeout_seconds == 12.5
 
 
+def test_agent_http_with_model_parsed(tmp_path: Path) -> None:
+    body = _body_with_agent(
+        {
+            "type": "http",
+            "url": "https://x/eval",
+            "model": {"provider": "openai", "name": "gpt-5"},
+        }
+    )
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    assert isinstance(spec.agent, HttpAgentSpec)
+    assert spec.agent.model is not None
+    assert spec.agent.model.provider == "openai"
+    assert spec.agent.model.name == "gpt-5"
+
+
+def test_agent_http_without_model_is_none(tmp_path: Path) -> None:
+    body = _body_with_agent({"type": "http", "url": "https://x/eval"})
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    assert isinstance(spec.agent, HttpAgentSpec)
+    assert spec.agent.model is None
+
+
+def test_agent_model_missing_provider_rejected(tmp_path: Path) -> None:
+    body = _body_with_agent(
+        {"type": "http", "url": "https://x/eval", "model": {"name": "gpt-5"}}
+    )
+    with pytest.raises(LoaderError, match=r"agent\.model\.provider"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
 def test_agent_unknown_type_rejected(tmp_path: Path) -> None:
     body = _body_with_agent({"type": "grpc", "url": "x"})
     with pytest.raises(LoaderError, match=r"agent\.type must be one of"):

@@ -27,6 +27,7 @@ _DETAIL_KEYS: frozenset[str] = frozenset(
     {
         "provider",
         "model",
+        "model_version_pinned",
         "params",
         "tokens",
         "cost_usd",
@@ -36,6 +37,7 @@ _DETAIL_KEYS: frozenset[str] = frozenset(
         "retries",
         "output",
         "reasoning",
+        "provider_metadata",
         "tool_name",
         "tool_use_id",
         "status",

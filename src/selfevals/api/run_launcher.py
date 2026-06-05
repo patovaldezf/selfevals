@@ -27,7 +27,12 @@ from selfevals.api.recorder_sink import BrokerSpanSink
 from selfevals.api.schemas import RunExperimentRequest, RunExperimentResponse
 from selfevals.cli import _friendly
 from selfevals.repo.loader import ExperimentSpec, LoaderError, build_spec_from_mapping
-from selfevals.runner.launch import build_loop, ensure_workspace, payload_router_for_db
+from selfevals.runner.launch import (
+    build_loop,
+    ensure_workspace,
+    payload_router_for_db,
+    trace_sampling_override,
+)
 from selfevals.schemas.enums import ExperimentState
 from selfevals.schemas.experiment import Experiment
 from selfevals.storage.sqlite import SQLiteStorage
@@ -110,8 +115,13 @@ def _load_spec(*, workspace_id: str, body: RunExperimentRequest) -> ExperimentSp
 def _apply_overrides(spec: ExperimentSpec, body: RunExperimentRequest) -> None:
     if body.max_iterations is not None:
         spec.experiment.run.max_iterations = body.max_iterations
+    # Precedence: explicit request field > SELFEVALS_TRACE_SAMPLING env > spec.
     if body.persist_traces is not None:
         spec.experiment.run.persist_traces = body.persist_traces
+    else:
+        env_policy = trace_sampling_override()
+        if env_policy is not None:
+            spec.experiment.run.persist_traces = env_policy
 
 
 def _run_in_thread(*, db_path: str, spec: ExperimentSpec, reps: int) -> None:

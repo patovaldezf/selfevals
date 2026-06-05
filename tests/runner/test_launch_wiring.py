@@ -30,6 +30,7 @@ from selfevals.runner.launch import (
     _agent_entrypoint_for_judge,
     _wrap_user_callable,
     build_adapter,
+    trace_sampling_override,
 )
 
 
@@ -256,3 +257,50 @@ def test_plain_wrong_type_has_no_await_hint() -> None:
         asyncio.run(adapter.invoke(_req()))
     assert "forget to await" not in str(exc.value)
     assert "returned int" in str(exc.value)
+
+
+def test_trace_sampling_override_unset_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SELFEVALS_TRACE_SAMPLING", raising=False)
+    assert trace_sampling_override() is None
+
+
+def test_trace_sampling_override_maps_fe_and_spec_vocabularies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # FE vocabulary
+    monkeypatch.setenv("SELFEVALS_TRACE_SAMPLING", "all")
+    assert trace_sampling_override() == "all"
+    monkeypatch.setenv("SELFEVALS_TRACE_SAMPLING", "failures-only")
+    assert trace_sampling_override() == "failed"
+    # Spec vocabulary + case-insensitive / whitespace-tolerant
+    monkeypatch.setenv("SELFEVALS_TRACE_SAMPLING", "  FAILED ")
+    assert trace_sampling_override() == "failed"
+    monkeypatch.setenv("SELFEVALS_TRACE_SAMPLING", "none")
+    assert trace_sampling_override() == "none"
+
+
+def test_trace_sampling_override_unknown_value_returns_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An unrecognized value falls through to the spec default, not an error.
+    monkeypatch.setenv("SELFEVALS_TRACE_SAMPLING", "sometimes")
+    assert trace_sampling_override() is None
+
+
+def test_build_adapter_http_passes_declared_model() -> None:
+    from selfevals.repo.loader import AgentModelDecl
+
+    spec = HttpAgentSpec(
+        url="https://x/eval", model=AgentModelDecl(provider="openai", name="gpt-5")
+    )
+    adapter = build_adapter(spec)
+    assert isinstance(adapter, HttpEndpointAdapter)
+    assert adapter.model is not None
+    assert adapter.model.provider == "openai"
+    assert adapter.model.name == "gpt-5"
+
+
+def test_build_adapter_http_without_model_is_none() -> None:
+    adapter = build_adapter(HttpAgentSpec(url="https://x/eval"))
+    assert isinstance(adapter, HttpEndpointAdapter)
+    assert adapter.model is None

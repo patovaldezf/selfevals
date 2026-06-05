@@ -71,8 +71,23 @@ class EmbeddedAgentSpec:
 
 
 @dataclass(frozen=True)
+class AgentModelDecl:
+    """Optional `agent.model: {provider, name}` for cli/http agents.
+
+    A cli/http agent is a black box — selfevals can't know which model it runs.
+    Declaring it here lets selfevals (a) stamp the real model on the trace's LLM
+    span instead of "unknown", and (b) price the run from reported tokens when
+    the agent doesn't return `cost_usd` itself. Purely advisory: omit it and the
+    behaviour is unchanged (model "unknown", cost only when the agent reports it).
+    """
+
+    provider: str
+    name: str
+
+
+@dataclass(frozen=True)
 class CliAgentSpec:
-    """`agent: {type: cli, command: [...], env?, timeout_seconds?}`.
+    """`agent: {type: cli, command: [...], env?, timeout_seconds?, model?}`.
 
     The CLI wires this into a `CliCommandAdapter` — no Python entrypoint
     proxy needed. `command` is the argv list spawned per case.
@@ -81,11 +96,12 @@ class CliAgentSpec:
     command: list[str]
     env: dict[str, str] | None = None
     timeout_seconds: float | None = None
+    model: AgentModelDecl | None = None
 
 
 @dataclass(frozen=True)
 class HttpAgentSpec:
-    """`agent: {type: http, url: "...", headers?, timeout_seconds?}`.
+    """`agent: {type: http, url: "...", headers?, timeout_seconds?, model?}`.
 
     The CLI wires this into an `HttpEndpointAdapter` — no Python
     entrypoint proxy needed.
@@ -94,6 +110,7 @@ class HttpAgentSpec:
     url: str
     headers: dict[str, str] | None = None
     timeout_seconds: float | None = None
+    model: AgentModelDecl | None = None
 
 
 AgentSpec = EmbeddedAgentSpec | CliAgentSpec | HttpAgentSpec
@@ -438,7 +455,10 @@ def _build_cli_agent_spec(spec_path: Path, agent_section: dict[str, Any]) -> Cli
         )
     env = _parse_str_map(spec_path, agent_section.get("env"), field_name="agent.env")
     timeout = _parse_timeout(spec_path, agent_section.get("timeout_seconds"))
-    return CliAgentSpec(command=[str(c) for c in command], env=env, timeout_seconds=timeout)
+    model = _parse_agent_model(spec_path, agent_section.get("model"))
+    return CliAgentSpec(
+        command=[str(c) for c in command], env=env, timeout_seconds=timeout, model=model
+    )
 
 
 def _build_http_agent_spec(spec_path: Path, agent_section: dict[str, Any]) -> HttpAgentSpec:
@@ -453,7 +473,25 @@ def _build_http_agent_spec(spec_path: Path, agent_section: dict[str, Any]) -> Ht
         )
     headers = _parse_str_map(spec_path, agent_section.get("headers"), field_name="agent.headers")
     timeout = _parse_timeout(spec_path, agent_section.get("timeout_seconds"))
-    return HttpAgentSpec(url=url, headers=headers, timeout_seconds=timeout)
+    model = _parse_agent_model(spec_path, agent_section.get("model"))
+    return HttpAgentSpec(url=url, headers=headers, timeout_seconds=timeout, model=model)
+
+
+def _parse_agent_model(spec_path: Path, value: Any) -> AgentModelDecl | None:
+    """Parse the optional `agent.model: {provider, name}` block."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise LoaderError(
+            f"{spec_path}: agent.model must be a mapping with `provider` and `name`; got {value!r}"
+        )
+    provider = value.get("provider")
+    name = value.get("name")
+    if not isinstance(provider, str) or not provider.strip():
+        raise LoaderError(f"{spec_path}: agent.model.provider must be a non-empty string")
+    if not isinstance(name, str) or not name.strip():
+        raise LoaderError(f"{spec_path}: agent.model.name must be a non-empty string")
+    return AgentModelDecl(provider=provider, name=name)
 
 
 def _parse_str_map(spec_path: Path, value: Any, *, field_name: str) -> dict[str, str] | None:
