@@ -187,6 +187,13 @@ class CaseSummary(BaseModel):
     feature: FeatureRef | None = None
     level: str | None = None
     dataset_type: str | None = None
+    latest_run_id: str | None = None
+    """run_id of this case's most recent persisted trace in the experiment, so
+    the FE can link case → trace inline. None when no trace was persisted for
+    this case (e.g. it passed under `persist_traces="failed"`)."""
+    latest_trace_id: str | None = None
+    """Entity id (`tr_...`) of that same most-recent trace. Either id resolves
+    via `GET .../traces/{id}`."""
 
 
 class CaseListResponse(BaseModel):

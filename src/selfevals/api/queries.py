@@ -259,8 +259,9 @@ def experiment_cases(
             )
             if isinstance(c, EvalCase)
         ]
+        trace_refs = _latest_trace_per_case(scope, experiment_id)
     cases.sort(key=lambda c: c.name)
-    summaries = [_case_summary(c) for c in cases]
+    summaries = [_case_summary(c, trace_refs.get(c.id)) for c in cases]
     holdout_count = sum(1 for c in cases if c.holdout)
     return CaseListResponse(
         cases=summaries,
@@ -269,7 +270,38 @@ def experiment_cases(
     )
 
 
-def _case_summary(case: EvalCase) -> CaseSummary:
+def _latest_trace_per_case(scope: Any, experiment_id: str) -> dict[str, tuple[str, str]]:
+    """Map each eval_case_id → (run_id, trace_id) of its most recent persisted
+    trace in the experiment, so the cases list can link case → trace.
+
+    "Most recent" = highest `run.iteration`, then latest `environment.started_at`
+    as a tie-break across repetitions. Cases whose traces were never persisted
+    (e.g. they passed under `persist_traces="failed"`) simply don't appear in the
+    map → the summary's trace ids stay None (honest). One scan, same Trace filter
+    as `_load_case_runs`."""
+    traces = [
+        t
+        for t in scope.list_entities(
+            Trace, ListFilter(where={"run.experiment_id": experiment_id})
+        )
+        if isinstance(t, Trace)
+    ]
+    best: dict[str, tuple[int, datetime, str, str]] = {}
+    for t in traces:
+        case_id = t.run.eval_case_id
+        if case_id is None:
+            continue
+        iteration = t.run.iteration if t.run.iteration is not None else -1
+        key = (iteration, t.environment.started_at)
+        current = best.get(case_id)
+        if current is None or key > (current[0], current[1]):
+            best[case_id] = (iteration, t.environment.started_at, t.run.run_id, t.id)
+    return {case_id: (run_id, trace_id) for case_id, (_i, _s, run_id, trace_id) in best.items()}
+
+
+def _case_summary(case: EvalCase, trace_ref: tuple[str, str] | None = None) -> CaseSummary:
+    latest_run_id = trace_ref[0] if trace_ref is not None else None
+    latest_trace_id = trace_ref[1] if trace_ref is not None else None
     return CaseSummary(
         id=case.id,
         name=case.name,
@@ -279,6 +311,8 @@ def _case_summary(case: EvalCase) -> CaseSummary:
         graders=list(case.graders),
         holdout=case.holdout,
         is_conversation=case.is_conversation(),
+        latest_run_id=latest_run_id,
+        latest_trace_id=latest_trace_id,
         feature=FeatureRef(
             primary=str(case.taxonomy.feature.primary),
             secondary=[str(s) for s in case.taxonomy.feature.secondary],
