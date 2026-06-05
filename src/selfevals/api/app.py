@@ -30,6 +30,7 @@ from selfevals.api.queries import (
     experiment_decisions,
     experiment_detail,
     experiment_iterations,
+    experiment_results,
     iteration_detail,
     list_experiments,
     list_workspaces,
@@ -49,6 +50,7 @@ from selfevals.api.schemas import (
     DecisionRecordResponse,
     ExperimentDetailResponse,
     ExperimentListPage,
+    ExperimentResultsResponse,
     FunnelResponse,
     HealthResponse,
     IterationListResponse,
@@ -311,6 +313,35 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
                 workspace_id=workspace_id,
                 experiment_id=experiment_id,
             )
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/experiments/{experiment_id}/results",
+        response_model=ExperimentResultsResponse,
+        tags=["experiments"],
+    )
+    def experiments_results(
+        workspace_id: str,
+        experiment_id: str,
+        storage: SQLiteStorage = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> ExperimentResultsResponse:
+        # Per-scenario expected/detected/matched for the best iteration. Cases
+        # whose traces weren't persisted are listed with detected/matched null
+        # rather than dropped, so the grid is honest.
+        try:
+            results = experiment_results(
+                storage,
+                workspace_id=workspace_id,
+                experiment_id=experiment_id,
+            )
+            if results is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"experiment {experiment_id} not found",
+                )
+            return results
         finally:
             storage.close()
 

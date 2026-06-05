@@ -207,6 +207,49 @@ class CaseListResponse(BaseModel):
     holdout_count: int
 
 
+class CaseResultRow(BaseModel):
+    """One scenario's outcome in the best iteration: what was expected, what the
+    agent produced, and whether it matched.
+
+    The fix for "best_iteration.failure_reasons dice que falló pero no cuál caso":
+    every row carries its `case_id`/`case_name`, the `expected` spec, the
+    `detected` output, the pass/fail `matched`, and the graders' verdicts —
+    plus `run_id`/`trace_id` so the FE opens the trace inline."""
+
+    case_id: str
+    case_name: str | None = None
+    run_id: str | None = None
+    trace_id: str | None = None
+    iteration: int
+    expected: dict[str, Any] | None = None
+    """The case's `Expected` spec (must_include, structured_output, …). None when
+    the experiment's cases are no longer on disk to cross-reference."""
+    detected: dict[str, Any] | None = None
+    """What the agent produced: `{content, structured_output, tools_invoked}`,
+    read off the persisted trace. None when no trace was persisted for this case
+    (e.g. it passed under `persist_traces="failed"`)."""
+    matched: bool | None = None
+    """Whether the primary grade passed. None when there's no persisted trace to
+    grade from."""
+    score: float | None = None
+    label: str | None = None
+    failure_modes: list[str] = Field(default_factory=list)
+    grader_results: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ExperimentResultsResponse(BaseModel):
+    """Per-scenario results for an experiment's best iteration.
+
+    Cases with no persisted trace are still listed (with `expected` and
+    `matched=None`) so the set is reported honestly — under `persist_traces`
+    other than `"all"`, passing cases have no trace to show."""
+
+    experiment_id: str
+    iteration: int | None = None
+    cases: list[CaseResultRow] = Field(default_factory=list)
+    total: int
+
+
 class ThreadTurn(BaseModel):
     """One trace within a thread, projected as a turn for the thread view."""
 
