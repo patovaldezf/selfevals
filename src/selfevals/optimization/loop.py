@@ -196,6 +196,13 @@ class OptimizationLoop:
                 f"OptimizationLoop.run() requires state in {{DRAFT, QUEUED, RUNNING}}; "
                 f"got {self._experiment.state}"
             )
+        # Persist the RUNNING transition so a reader sees the experiment as
+        # in-flight, not stuck at its pre-run state. The loop already writes
+        # iterations/decisions/traces through `scope`; the experiment row was
+        # the one thing that never got flushed (the CLI renders from the
+        # in-memory result, so it never noticed — but a polling HTTP client
+        # does). See the COMPLETED flush below for the terminal state.
+        self._persist_experiment()
 
         result = OptimizationResult(experiment=self._experiment)
         baseline: IterationAggregate | None = None
@@ -312,7 +319,18 @@ class OptimizationLoop:
 
         # Finish state machine. ABORTED is reserved for explicit caller action.
         self._experiment.transition_to(ExperimentState.COMPLETED)
+        self._persist_experiment()
         return result
+
+    def _persist_experiment(self) -> None:
+        """Flush the experiment row to storage if a scope is attached.
+
+        No-op for ephemeral runs (`scope is None`, e.g. CLI `--no-persist`).
+        Idempotent w.r.t. the rest of the loop's writes — it touches only the
+        experiment entity, whose version bumps on each put.
+        """
+        if self._scope is not None:
+            self._scope.put_entity(self._experiment)
 
     async def _run_iteration(
         self, proposal: Proposal, *, iteration: int
