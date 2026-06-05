@@ -1,9 +1,12 @@
 """GET /workspaces/{ws}/iterations/{itr}/funnel — the B2 drill-down.
 
-The funnel is persisted on `IterationRecord.metrics.funnel`; the endpoint
-reads it directly (bypassing `_reconstruct_result`, which never rehydrates
-the funnel). We seed an iteration with a real two-level funnel tree and assert
-it survives the round-trip, plus the empty and 404 paths.
+The funnel is persisted on `IterationRecord.metrics.funnel`; this endpoint
+reads it directly. We seed an iteration with a real two-level funnel tree and
+assert it survives the round-trip, plus the empty and 404 paths.
+
+The same seeded funnel also exercises `experiment_detail`: the reconstructed
+`result` now rehydrates the funnel (it used to come back empty there), and
+`best_iteration` is surfaced as a first-class field.
 """
 
 from __future__ import annotations
@@ -18,6 +21,8 @@ from selfevals.graders.base import BreakdownNode, GradeLabel
 from selfevals.optimization.aggregator import CaseOutcome, aggregate_iteration
 from selfevals.schemas.enums import DecisionOutcome, IterationState, ProposerStrategy
 from selfevals.schemas.iteration import (
+    DecisionRationale,
+    DecisionRecord,
     ExecutionInfo,
     IterationDecision,
     IterationMetrics,
@@ -138,3 +143,62 @@ def test_empty_funnel_returns_empty_nodes(client: TestClient, ws_id: str) -> Non
 def test_unknown_iteration_returns_404(client: TestClient, ws_id: str) -> None:
     res = client.get(f"/api/workspaces/{ws_id}/iterations/itr_does_not_exist/funnel")
     assert res.status_code == 404
+
+
+# --- experiment detail: best_iteration surfaced + funnel rehydrated in result ---
+
+
+@pytest.fixture
+def detail_client(tmp_path: Path) -> tuple[TestClient, str, str]:
+    """A workspace with one experiment and two iterations (one funnel, one not),
+    so `experiment_detail` reconstructs a real result. Returns (client, ws_id,
+    experiment_id)."""
+    from tests.api._experiment_factory import make_experiment
+
+    db = tmp_path / "selfevals.sqlite"
+    st = SQLiteStorage(str(db))
+    ws = seed_workspace(st, slug="t", name="t", user_id="local").workspace
+    exp = make_experiment(workspace_id=ws.id, id="exp_funnel", name="funnel exp")
+    with st.open(ws.id) as scope:
+        scope.put_entity(exp)
+        for i, funnel in ((0, {}), (1, _funnel_metrics())):
+            scope.put_entity(_iteration(ws.id, iteration=i, funnel=funnel))
+            # `_reconstruct_result` joins iterations to their DecisionRecord by
+            # iteration index, skipping any without one — so seed both.
+            scope.put_entity(
+                DecisionRecord(
+                    id=DecisionRecord.make_id(),
+                    workspace_id=ws.id,
+                    experiment_id=exp.id,
+                    iteration=i,
+                    variant_id="var_x",
+                    outcome=DecisionOutcome.KEEP_CANDIDATE,
+                    rationale=DecisionRationale(automated="r"),
+                )
+            )
+    st.close()
+    c = TestClient(build_app(db_path=str(db)))
+    c.headers.update({"X-SelfEvals-User": "local"})
+    return c, ws.id, exp.id
+
+
+def test_detail_surfaces_best_iteration(detail_client: tuple[TestClient, str, str]) -> None:
+    c, ws_id, exp_id = detail_client
+    detail = c.get(f"/api/workspaces/{ws_id}/experiments/{exp_id}").json()
+    best = detail["best_iteration"]
+    assert best is not None
+    # Both iterations report primary 0.5 here; best_iteration is a real
+    # per-iteration object, not null, and matches the reporter shape.
+    assert "iteration" in best
+    assert best["metrics"]["primary"]["name"] == "pass@1"
+
+
+def test_detail_result_rehydrates_funnel(detail_client: tuple[TestClient, str, str]) -> None:
+    # Regression: the funnel inside `result.iterations[].funnel` used to always
+    # be empty because `_reconstruct_result` did not rehydrate it. Now it does.
+    c, ws_id, exp_id = detail_client
+    detail = c.get(f"/api/workspaces/{ws_id}/experiments/{exp_id}").json()
+    iters = {it["iteration"]: it for it in detail["result"]["iterations"]}
+    assert iters[0]["funnel"] == {}  # the iteration we seeded without a funnel
+    assert "overall" in iters[1]["funnel"]  # the one with a funnel tree
+    assert set(iters[1]["funnel"]["overall"]["children"]) == {"retrieval", "answer"}

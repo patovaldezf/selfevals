@@ -1,0 +1,41 @@
+# Keep the build context small and the image clean. The API image needs only
+# pyproject.toml, uv.lock, README.md, and src/.
+
+.git
+.github
+.venv
+venv
+env
+
+# Python caches / build artifacts
+__pycache__
+*.py[cod]
+*.egg-info
+build
+dist
+.eggs
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.coverage*
+htmlcov
+
+# Local databases and object stores (never bake state into the image)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+objects/
+
+# The web dashboard is a separate Node process — not part of the API image.
+web
+landing
+node_modules
+
+# Tests, docs, and dev-only files
+tests
+docs
+*.md
+!README.md
+.env
+.env.*
+INTEGRATION_SEALS.md

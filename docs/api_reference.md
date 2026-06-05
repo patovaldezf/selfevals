@@ -194,11 +194,12 @@ Full experiment detail, including a reconstructed JSON report.
 
 **Response** (`ExperimentDetailResponse`):
 
-| Field        | Type                 | Notes                                                                                                                                                                                                                                      |
-| ------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `summary`    | `ExperimentSummary`  |                                                                                                                                                                                                                                            |
-| `result`     | object \| null       | The reporter's JSON shape (`render_json`, see [`json_report_schema.md`](json_report_schema.md)); `null` when the experiment has not run. Note: reconstructed from storage, so per-iteration `funnel` and `failure_reasons` are empty here. |
-| `iterations` | `IterationSummary[]` |                                                                                                                                                                                                                                            |
+| Field            | Type                 | Notes                                                                                                                                                                                                                           |
+| ---------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `summary`        | `ExperimentSummary`  |                                                                                                                                                                                                                                 |
+| `result`         | object \| null       | The reporter's JSON shape (`render_json`, see [`json_report_schema.md`](json_report_schema.md)); `null` when the experiment has not run. Reconstructed from storage, including each iteration's `funnel` and `failure_reasons`. |
+| `iterations`     | `IterationSummary[]` |                                                                                                                                                                                                                                 |
+| `best_iteration` | object \| null       | The winning iteration (highest primary metric), lifted from `result.best_iteration` to a first-class field. Same per-iteration shape as the reporter; `null` when the experiment has no iterations.                             |
 
 `IterationSummary`:
 

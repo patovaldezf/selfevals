@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 from statistics import mean
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from selfevals.graders.base import BreakdownNode, GradeLabel, GradeResult
 from selfevals.schemas.trace import LLMCallSpan
@@ -115,6 +115,26 @@ class FunnelNode:
             "failure_mode_counts": dict(self.failure_mode_counts),
             "children": {k: v.to_dict() for k, v in self.children.items()},
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> FunnelNode:
+        """Inverse of `to_dict` — rebuild a node (and its subtree) from storage.
+
+        `IterationRecord.metrics.funnel` persists the `to_dict` form; this
+        rehydrates it so a result reconstructed from storage carries the same
+        funnel a live run would. Tolerant of missing optional keys.
+        """
+        return cls(
+            key=str(data["key"]),
+            count=int(data.get("count", 0)),
+            mean_score=data.get("mean_score"),
+            total_weight=float(data.get("total_weight", 0.0)),
+            label_counts=dict(data.get("label_counts", {})),
+            failure_mode_counts=dict(data.get("failure_mode_counts", {})),
+            children={
+                k: cls.from_dict(v) for k, v in (data.get("children") or {}).items()
+            },
+        )
 
 
 @dataclass(frozen=True)

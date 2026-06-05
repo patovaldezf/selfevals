@@ -1,0 +1,45 @@
+# Fly.io config for the selfevals API.
+#
+# Single long-running machine with a persistent volume for the SQLite database.
+# Experiment runs execute on in-process threads, so the machine must NOT
+# scale-to-zero or get killed mid-run — hence `min_machines_running = 1` and
+# `auto_stop_machines = false`.
+#
+# Set `app` to your real Fly app name before `fly launch`/`fly deploy`
+# (or let `fly launch` generate it). Pick a region close to your users.
+
+app = "selfevals-api"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  SELFEVALS_DB = "/data/selfevals.sqlite"
+
+# Persistent volume for the SQLite file (+ -wal/-shm) and the object store.
+# Create it once with:
+#   fly volumes create selfevals_data --region iad --size 1
+[mounts]
+  source = "selfevals_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # SQLite is single-writer and the loop holds in-memory run state, so keep a
+  # single always-on machine rather than scaling out or to zero.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/api/health"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

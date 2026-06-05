@@ -9,6 +9,7 @@ from selfevals.graders.base import BreakdownNode, GradeLabel
 from selfevals.optimization.aggregator import (
     Aggregator,
     CaseOutcome,
+    FunnelNode,
     aggregate_iteration,
 )
 from selfevals.runner.executor import CaseRun, RepetitionResult
@@ -459,3 +460,29 @@ def test_per_grader_pass_rate_empty_without_per_grader_labels() -> None:
     agg = aggregate_iteration(case_outcomes=[_outcome([GradeLabel.PASS])])
     assert agg.per_grader_pass_rate == {}
     assert agg.primary_grader is None
+
+
+def test_funnel_node_dict_round_trips() -> None:
+    # `from_dict` is the inverse of `to_dict`, including the nested subtree —
+    # this is what lets a result reconstructed from storage carry the same
+    # funnel a live run produced.
+    node = FunnelNode(
+        key="root",
+        count=4,
+        mean_score=0.75,
+        total_weight=4.0,
+        label_counts={"pass": 3, "fail": 1},
+        failure_mode_counts={"fm_timeout": 1},
+        children={
+            "child": FunnelNode(key="child", count=2, mean_score=1.0, total_weight=2.0),
+        },
+    )
+    restored = FunnelNode.from_dict(node.to_dict())
+    assert restored == node
+
+
+def test_funnel_node_from_dict_tolerates_missing_optionals() -> None:
+    # A minimal persisted node (only `key`) rebuilds with the dataclass
+    # defaults rather than raising.
+    restored = FunnelNode.from_dict({"key": "k"})
+    assert restored == FunnelNode(key="k")

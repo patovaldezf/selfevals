@@ -245,8 +245,8 @@ Running the sweep surfaced two framework limitations:
 Those two complaints became the two headline features of **v0.5.0**:
 proposer-aware convergence and per-grader scoring. A self-improving evals
 framework improved by the agent it was grading — and the experiment also did
-its job, relocating brain_os's retrieval bottleneck to upstream task-shape
-classification _with evidence, not intuition_.
+its job, relocating brain*os's retrieval bottleneck to upstream task-shape
+classification \_with evidence, not intuition*.
 
 ## Documentation
 
@@ -258,6 +258,7 @@ classification _with evidence, not intuition_.
 | [`docs/adapters.md`](docs/adapters.md)                     | Adapter contract and per-transport YAML/code snippets.                                                                                                                     |
 | [`docs/FRONTEND.md`](docs/FRONTEND.md)                     | The web UI spec (views, endpoints, roadmap).                                                                                                                               |
 | [`docs/STATUS.md`](docs/STATUS.md)                         | Honest what-works / what-doesn't snapshot.                                                                                                                                 |
+| [`docs/deploy.md`](docs/deploy.md)                         | Deploying the API to Fly.io (Dockerfile + `fly.toml` + volume), and why a serverless host like Vercel does not fit.                                                        |
 
 ## Layout
 
