@@ -462,6 +462,22 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
         "/api/workspaces/{workspace_id}/traces/{trace_id}",
         response_model=TraceResponse,
         tags=["traces"],
+        summary="Get a trace by trace id (tr_…) or run id (run_…)",
+        description=(
+            "Resolves a Trace by **either** its entity id (`tr_…`) **or** its "
+            "`run_id` (`run_…`) — both forms are accepted and return the same "
+            "trace. This is the canonical id contract across endpoints:\n\n"
+            "- `iterations[].trace_run_ids` and `experiments/{id}/results[].run_id` "
+            "carry **run ids** (`run_…`).\n"
+            "- `experiments/{id}/cases[].latest_trace_id`, `results[].trace_id`, and "
+            "`threads[].turns[].trace_id` carry **trace ids** (`tr_…`); each turn also "
+            "exposes its `run_id`.\n\n"
+            "The response always echoes both `id` (`tr_…`) and `run_id` (`run_…`), so "
+            "either field can be used as the navigation key without guessing. Only "
+            "traces actually persisted are resolvable; with `persist_traces=\"failed\"` "
+            "passing cases have no trace (use `\"all\"` to keep them — see "
+            "`SELFEVALS_TRACE_SAMPLING`)."
+        ),
     )
     def traces_show(
         workspace_id: str,
