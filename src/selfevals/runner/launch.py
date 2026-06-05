@@ -27,6 +27,7 @@ from __future__ import annotations
 import inspect
 import threading
 from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING
 
 from selfevals._errors import SelfEvalsUserError
 from selfevals.graders.base import Grader
@@ -71,6 +72,9 @@ from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.workspace import Workspace
 from selfevals.storage.interface import WorkspaceScope
 from selfevals.storage.sqlite import SQLiteStorage
+
+if TYPE_CHECKING:
+    from selfevals.trace.span_sink import SpanSink
 
 # Serializes the register → resolve → unregister window so concurrent
 # `build_loop` calls cannot trample one another's grader registrations.
@@ -284,11 +288,32 @@ def ensure_workspace(storage: SQLiteStorage, spec: ExperimentSpec) -> None:
         s.put_entity(ws)
 
 
+def _persist_cases(scope: WorkspaceScope, spec: ExperimentSpec) -> None:
+    """Persist the run's eval cases, stamped with the experiment id.
+
+    Cases are an authoring-time construct (they live in the `ExperimentSpec`,
+    not storage) — so without this, a launched experiment leaves no trace of
+    *which* cases it ran, and `GET .../experiments/{id}/cases` has nothing to
+    list. We stamp `experiment_id` (the loader leaves it None) and persist
+    every case, holdout included: the cases endpoint reports the full set and
+    flags holdout, rather than hiding reserved cases.
+
+    Idempotent across reruns of the same experiment: `EvalCase` ids are stable
+    within a spec (the loader assigns them once), so `put_entity` updates the
+    existing row in place rather than duplicating.
+    """
+    for case in spec.cases:
+        if case.experiment_id != spec.experiment.id:
+            case.experiment_id = spec.experiment.id
+        scope.put_entity(case)
+
+
 def build_loop(
     spec: ExperimentSpec,
     *,
     scope: WorkspaceScope | None,
     repetitions_per_case: int = 1,
+    span_sink: SpanSink | None = None,
 ) -> OptimizationLoop:
     """Wire a validated spec into a runnable `OptimizationLoop`.
 
@@ -298,6 +323,11 @@ def build_loop(
     `scope` is the persistence target. Pass it (already opened on
     `spec.workspace_id`) to persist the experiment, iterations, and traces;
     pass None for an ephemeral, in-memory run (the CLI's `--no-persist`).
+
+    `span_sink` taps every span the run produces for live streaming (SSE).
+    Omit it (the CLI path) and the executor uses a no-op sink — zero overhead.
+    `selfevals serve` passes a broker-backed sink so `/stream` subscribers see
+    spans as they happen.
 
     The grader registry is touched only inside this call, under a lock: register
     the spec's graders, instantiate them, unregister. The returned loop holds
@@ -319,11 +349,13 @@ def build_loop(
 
     if scope is not None:
         scope.put_entity(spec.experiment)
+        _persist_cases(scope, spec)
 
     executor = Executor(
         adapter=adapter,
         sandbox=SandboxPolicy(spec.experiment.run.sandbox),
         workspace_id=spec.workspace_id,
+        span_sink=span_sink,
     )
     return OptimizationLoop(
         experiment=spec.experiment,

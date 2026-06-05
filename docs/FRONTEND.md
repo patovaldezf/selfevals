@@ -19,20 +19,20 @@ Fecha: 2026-05-27.
 
 ## 0. Stack (ya decidido — no relitigar)
 
-| Capa | Elección | Nota |
-|------|----------|------|
-| Framework | **SvelteKit 2.61 + Svelte 5.55** | `+page.server.ts` load encaja con superficies read-mostly. Mismo design language que `pato-os`. |
-| Deploy | Vercel (web) + FastAPI sidecar (Python API) | adapter-node hoy; Vercel adapter objetivo. |
-| API | REST plano + tipos TS espejo | Pydantic v2 es la fuente de verdad. OpenAPI gratis en `/api/openapi.json`; futuro `openapi-typescript` para codegen. |
-| Server-state | `@tanstack/svelte-query` | UI-state en stores nativos. Routing-state en URL params (`$page`). |
-| Tablas | `@tanstack/svelte-table` | columnas/sorting/filtering. |
-| Charts | LayerCake (D3-on-Svelte) | sparklines, anchor-set, barras de clusters. |
-| CSS | Tailwind v4 + shadcn-svelte/bits-ui | primitivos accesibles, skin propio vía design tokens. |
-| Fonts | Inter + JetBrains Mono (self-hosted) | tabular numerals en celdas mono. |
-| Auth | stub `X-SelfEvals-User: local` | sin auth real en MVP; el header viaja para enchufar auth después sin tocar pantallas. |
+| Capa         | Elección                                    | Nota                                                                                                                 |
+| ------------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Framework    | **SvelteKit 2.61 + Svelte 5.55**            | `+page.server.ts` load encaja con superficies read-mostly. Mismo design language que `pato-os`.                      |
+| Deploy       | Vercel (web) + FastAPI sidecar (Python API) | adapter-node hoy; Vercel adapter objetivo.                                                                           |
+| API          | REST plano + tipos TS espejo                | Pydantic v2 es la fuente de verdad. OpenAPI gratis en `/api/openapi.json`; futuro `openapi-typescript` para codegen. |
+| Server-state | `@tanstack/svelte-query`                    | UI-state en stores nativos. Routing-state en URL params (`$page`).                                                   |
+| Tablas       | `@tanstack/svelte-table`                    | columnas/sorting/filtering.                                                                                          |
+| Charts       | LayerCake (D3-on-Svelte)                    | sparklines, anchor-set, barras de clusters.                                                                          |
+| CSS          | Tailwind v4 + shadcn-svelte/bits-ui         | primitivos accesibles, skin propio vía design tokens.                                                                |
+| Fonts        | Inter + JetBrains Mono (self-hosted)        | tabular numerals en celdas mono.                                                                                     |
+| Auth         | stub `X-SelfEvals-User: local`              | sin auth real en MVP; el header viaja para enchufar auth después sin tocar pantallas.                                |
 
 **Nota de doc obsoleto:** `docs/web/decisions.md:72-78` lista "live trace streaming" y "SSE
-para run progress" como *out of scope v0*. **Ya están implementados** (`api/sse.py`,
+para run progress" como _out of scope v0_. **Ya están implementados** (`api/sse.py`,
 `api/broker.py`). Este doc es la fuente actualizada.
 
 ---
@@ -51,19 +51,27 @@ para run progress" como *out of scope v0*. **Ya están implementados** (`api/sse
                                          │ SQLite + filesystem store │
                                          │ (storage/)                │
                                          └────────────┬─────────────┘
-                                                      ▲ publish spans
-                          OTLP receiver (runner/) ────┘ (broker_bridge)
+                                                      ▲ publish spans (SpanSummary)
+              F1 run thread → TraceRecorder ──────────┘ BrokerSpanSink
+              (recorder_sink.py, in-process)
 ```
 
 - **Web y API son servicios desacoplados.** El CLI orquesta los runs (`selfevals run`); la
   web lee resultados terminados y traces en vivo cuando un run está en curso y emite spans
   vía el broker.
+- **Live streaming es in-process** (no OTLP). El run lanzado por `POST .../experiments/run`
+  corre en un thread daemon; su `TraceRecorder` emite cada span a un `SpanSink` inyectado
+  (`api/recorder_sink.py:BrokerSpanSink`), que publica al `SpanBroker` vía
+  `call_soon_threadsafe`. El CLI usa un sink no-op (cero overhead). El receiver OTLP
+  (`runner/otlp_receiver.py` + `broker_bridge.py`) es un path _separado e incompleto_ para
+  agentes que exporten spans por el wire — `serve` no lo arranca hoy (ver `broker_bridge.py`).
 - **Aislamiento por workspace** estructural en el storage (`storage/interface.py` —
   `WorkspaceScope`). Sin auth en la capa de storage; el caller garantiza el `workspace_id`.
 - **API hoy es read-mostly**: ~12 GET + 1 POST (crear workspace). Toda la mutación del
   lifecycle de experimentos pasa por el CLI.
 
 ### Cómo se arranca hoy
+
 `python -m selfevals.api` (uvicorn): `--host` (def 127.0.0.1), `--port` (def 8000),
 `--db` (def `./selfevals.sqlite`), `--reload`. Env `SELFEVALS_DB` como fallback.
 **No existe `selfevals serve`** (ver §6).
@@ -72,10 +80,11 @@ para run progress" como *out of scope v0*. **Ya están implementados** (`api/sse
 
 ## 2. Modelo de datos que el FE visualiza
 
-La API expone *view models* (denormalizados) en `api/schemas.py`. Las entidades canónicas
+La API expone _view models_ (denormalizados) en `api/schemas.py`. Las entidades canónicas
 viven en `src/selfevals/schemas/` (fuente de verdad). El FE consume las view shapes.
 
 ### Jerarquía
+
 ```
 Workspace
  └─ Experiment            (target, guardrails, editable, search_space, proposer, run, ...)
@@ -87,6 +96,7 @@ Workspace
 ```
 
 ### View models (api/schemas.py)
+
 - **WorkspaceSummary**: id, slug, name, owner_id, created_at, experiment_count, last_run_at.
 - **WorkspaceResponse**: + `recent_health` (fracción de iteraciones recientes en
   keep_candidate).
@@ -108,6 +118,7 @@ Workspace
   decision_outcome, created_at (vista longitudinal de tendencia por workspace).
 
 ### Span kinds (lo que el trace viewer debe renderizar)
+
 `AgentTurn · LLMCall · ToolCall · Retrieval · MemoryRead · MemoryWrite · Decision ·
 Handoff · HumanIntervention · GuardrailCheck · Error · Custom`. Cada uno con payload propio
 (LLMCall: tokens/cost/TTFT/reasoning; ToolCall: tool_use_id/args/result/status/sandboxed;
@@ -124,33 +135,36 @@ Base `/api/`, sin prefijo de versión. CORS para `localhost:5173`. Header `X-Sel
 > error): [`docs/api_reference.md`](api_reference.md).
 
 ### Read-only (GET)
-| Endpoint | Devuelve | Filtros |
-|----------|----------|---------|
-| `/api/health` | HealthResponse | — |
-| `/api/workspaces` | WorkspaceListResponse | — |
-| `/api/workspaces/{ws}` | WorkspaceResponse | — |
-| `/api/workspaces/{ws}/experiments` | list[ExperimentSummary] | limit (1–500, def 100) |
-| `/api/workspaces/{ws}/experiments/{id}` | ExperimentDetailResponse | — |
-| `/api/workspaces/{ws}/experiments/{id}/iterations` | IterationListResponse | — |
-| `/api/workspaces/{ws}/experiments/{id}/decisions` | list[dict] | — |
-| `/api/workspaces/{ws}/experiments/{id}/compare` | CompareResponse | `a`, `b` (ids de iteración, requeridos); 404 iteración desconocida, 400 cross-experiment |
-| `/api/workspaces/{ws}/iterations/{id}` | dict {iteration, decision} | — |
-| `/api/workspaces/{ws}/iterations/{id}/funnel` | FunnelResponse | — |
-| `/api/workspaces/{ws}/traces/{trace_id}` | TraceResponse | acepta run_id como fallback |
-| `/api/workspaces/{ws}/threads/{thread_id}` | ThreadResponse | — |
-| `/api/workspaces/{ws}/payloads` | bytes (JSON/text) | `pointer` (`oss://<ws>/sha256:<hex>`); 400 pointer inválido/mismatch, 404 no encontrado |
-| `/api/runs/active` | list[{workspace_id, run_id}] | — |
-| `/api/workspaces/{ws}/anchor-set` | list[AnchorPoint] | — |
+
+| Endpoint                                           | Devuelve                     | Filtros                                                                                  |
+| -------------------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------- |
+| `/api/health`                                      | HealthResponse               | —                                                                                        |
+| `/api/workspaces`                                  | WorkspaceListResponse        | —                                                                                        |
+| `/api/workspaces/{ws}`                             | WorkspaceResponse            | —                                                                                        |
+| `/api/workspaces/{ws}/experiments`                 | list[ExperimentSummary]      | limit (1–500, def 100)                                                                   |
+| `/api/workspaces/{ws}/experiments/{id}`            | ExperimentDetailResponse     | —                                                                                        |
+| `/api/workspaces/{ws}/experiments/{id}/iterations` | IterationListResponse        | —                                                                                        |
+| `/api/workspaces/{ws}/experiments/{id}/decisions`  | list[dict]                   | —                                                                                        |
+| `/api/workspaces/{ws}/experiments/{id}/compare`    | CompareResponse              | `a`, `b` (ids de iteración, requeridos); 404 iteración desconocida, 400 cross-experiment |
+| `/api/workspaces/{ws}/iterations/{id}`             | dict {iteration, decision}   | —                                                                                        |
+| `/api/workspaces/{ws}/iterations/{id}/funnel`      | FunnelResponse               | —                                                                                        |
+| `/api/workspaces/{ws}/traces/{trace_id}`           | TraceResponse                | acepta run_id como fallback                                                              |
+| `/api/workspaces/{ws}/threads/{thread_id}`         | ThreadResponse               | —                                                                                        |
+| `/api/workspaces/{ws}/payloads`                    | bytes (JSON/text)            | `pointer` (`oss://<ws>/sha256:<hex>`); 400 pointer inválido/mismatch, 404 no encontrado  |
+| `/api/runs/active`                                 | list[{workspace_id, run_id}] | —                                                                                        |
+| `/api/workspaces/{ws}/anchor-set`                  | list[AnchorPoint]            | —                                                                                        |
 
 ### Streaming (SSE)
-| Endpoint | Eventos |
-|----------|---------|
+
+| Endpoint                                      | Eventos                                                                                        |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `/api/workspaces/{ws}/traces/{run_id}/stream` | `snapshot` (trace completo) · `span` (uno) · `ping` (heartbeat 15s) · `complete` (final_state) |
 
 ### Write
-| Endpoint | Método | Body |
-|----------|--------|------|
-| `/api/workspaces` | POST | CreateWorkspaceRequest {slug, name?, description?} → 201 |
+
+| Endpoint          | Método | Body                                                     |
+| ----------------- | ------ | -------------------------------------------------------- |
+| `/api/workspaces` | POST   | CreateWorkspaceRequest {slug, name?, description?} → 201 |
 
 ---
 
@@ -159,19 +173,20 @@ Base `/api/`, sin prefijo de versión. CORS para `localhost:5173`. Header `X-Sel
 Routing por archivos de SvelteKit. Cliente tipado en `lib/api/client.ts`; SSE helper en
 `lib/api/sse.ts` (`openTraceStream(ws, runId, handlers)`).
 
-| Ruta | Estado | Qué hace |
-|------|--------|----------|
-| `/` | ✅ funcional | Lista de workspaces; error si la API no responde. |
-| `/[workspace]` | ✅ funcional | Detalle: tabla de experimentos con sparkline de tendencia, chips (exp count, recent_health, anchor points), recientes. Secciones skeleton "failure clusters (soon)" + datasets. |
-| `/[workspace]/experiments` | 🟡 scaffolded | Lista completa de experimentos. |
-| `/[workspace]/experiments/[experiment]` | ✅ funcional | 4 tabs: **Iterations** (tabla hypothesis/params/metric/delta/decision/rationale), **Compare** (diff server-rendered vía `GET .../compare?a&b` — params/métricas/failure-modes/funnel + recomendación), **Funnel** (drill-down por iteración vía `GET .../iterations/{id}/funnel`, render recursivo con `FunnelNode.svelte`), **Decisions** (audit trail). Sidebar al clickear iteración: detalle completo. |
-| `/[workspace]/anchor-set` | 🟡 skeletal | Vista longitudinal de anchor points. |
-| `/[workspace]/threads/[thread]` | ✅ funcional | Thread viewer: conversación multi-turno vía `GET .../threads/{thread_id}`, un turn por trace ordenado por thread_position; cada turn lleva primary_grade + grader_results + link al trace. |
-| `/[workspace]/traces/[trace]` | ✅ funcional + **live** | Inspector de trace. Sidebar izq: árbol de spans jerárquico. Main: detalle del span seleccionado con facetas kind-specific. **SSE**: actualiza el árbol en vivo, pill "live" mientras el stream está activo. |
-| `/[workspace]/clusters` | ❌ stub | Placeholder; necesita failure-clusters API (§7). |
-| `/[workspace]/datasets` | ❌ stub | Placeholder; necesita datasets + cases API (§7). |
+| Ruta                                    | Estado                  | Qué hace                                                                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                                     | ✅ funcional            | Lista de workspaces; error si la API no responde.                                                                                                                                                                                                                                                                                                                                                          |
+| `/[workspace]`                          | ✅ funcional            | Detalle: tabla de experimentos con sparkline de tendencia, chips (exp count, recent_health, anchor points), recientes. Secciones skeleton "failure clusters (soon)" + datasets.                                                                                                                                                                                                                            |
+| `/[workspace]/experiments`              | 🟡 scaffolded           | Lista completa de experimentos.                                                                                                                                                                                                                                                                                                                                                                            |
+| `/[workspace]/experiments/[experiment]` | ✅ funcional            | 4 tabs: **Iterations** (tabla hypothesis/params/metric/delta/decision/rationale), **Compare** (diff server-rendered vía `GET .../compare?a&b` — params/métricas/failure-modes/funnel + recomendación), **Funnel** (drill-down por iteración vía `GET .../iterations/{id}/funnel`, render recursivo con `FunnelNode.svelte`), **Decisions** (audit trail). Sidebar al clickear iteración: detalle completo. |
+| `/[workspace]/anchor-set`               | 🟡 skeletal             | Vista longitudinal de anchor points.                                                                                                                                                                                                                                                                                                                                                                       |
+| `/[workspace]/threads/[thread]`         | ✅ funcional            | Thread viewer: conversación multi-turno vía `GET .../threads/{thread_id}`, un turn por trace ordenado por thread_position; cada turn lleva primary_grade + grader_results + link al trace.                                                                                                                                                                                                                 |
+| `/[workspace]/traces/[trace]`           | ✅ funcional + **live** | Inspector de trace. Sidebar izq: árbol de spans jerárquico. Main: detalle del span seleccionado con facetas kind-specific. **SSE**: actualiza el árbol en vivo, pill "live" mientras el stream está activo.                                                                                                                                                                                                |
+| `/[workspace]/clusters`                 | ❌ stub                 | Placeholder; necesita failure-clusters API (§7).                                                                                                                                                                                                                                                                                                                                                           |
+| `/[workspace]/datasets`                 | ❌ stub                 | Placeholder; necesita datasets + cases API (§7).                                                                                                                                                                                                                                                                                                                                                           |
 
 ### Componentes existentes
+
 `AppShell` (layout) · `DecisionBadge` (outcome → badge de color) · `MetricChip` (label+value,
 formato number/percent/plain) · `SpanNode` (nodo recursivo del árbol) · `FunnelNode` (nodo
 recursivo del funnel de grading) · `Sparkline` (LayerCake) · `ActiveRunsPill` (indicador de
@@ -184,7 +199,8 @@ runs en vivo).
 Cada vista nueva espeja una capacidad del [ROADMAP](ROADMAP.md). Marcadas con la capacidad
 backend de la que dependen.
 
-### 5.1 Funnel drill-down  · ✅ SHIPPED (tab "Funnel" en experiment detail)
+### 5.1 Funnel drill-down · ✅ SHIPPED (tab "Funnel" en experiment detail)
+
 **Dónde:** tab **Funnel** del experiment detail (`/[workspace]/experiments/[experiment]`).
 **Qué:** un `GraderResult` con `breakdown: BreakdownNode` (árbol recursivo
 key/label/score/weight/children) se agrega en `IterationAggregate.funnel` y se expone por
@@ -198,7 +214,8 @@ de verdad persistida (`IterationRecord.metrics.funnel`) y por eso **no** depende
 [`docs/json_report_schema.md`](json_report_schema.md)).
 **Componente:** `FunnelNode.svelte` (nodo recursivo).
 
-### 5.2 Trajectory viewer  · depende de #4 (TrajectoryGrader)
+### 5.2 Trajectory viewer · depende de #4 (TrajectoryGrader)
+
 **Dónde:** trace viewer, capa sobre el árbol de spans.
 **Qué:** visualiza la **secuencia** de tool calls / decisiones (no solo el árbol jerárquico).
 Resalta failure modes diagnósticos (`wrong_tool_order`, `tool_loop_overrun`,
@@ -207,7 +224,8 @@ marcar el run como fail (la trayectoria es diagnóstica, no gate — ver ROADMAP
 horizontal de spans con duración (waterfall), badges de modo diagnóstico.
 **Componente nuevo:** `TrajectoryTimeline.svelte` (waterfall) + `DiagnosticBadge.svelte`.
 
-### 5.3 Thread viewer (multi-turno)  · ✅ SHIPPED (ruta `/[workspace]/threads/[thread]`)
+### 5.3 Thread viewer (multi-turno) · ✅ SHIPPED (ruta `/[workspace]/threads/[thread]`)
+
 **Dónde:** ruta `/[workspace]/threads/[thread]`.
 **Qué:** el endpoint `GET /api/workspaces/{ws}/threads/{thread_id}` (`ThreadResponse`)
 ensambla cada `Trace` con el mismo `thread_id` en una conversación ordenada (`turns[]`,
@@ -217,7 +235,8 @@ grader_result) y `grader_results[]`. La ruta web la renderiza turn-by-turn con l
 trace. Cuando exista #2 (executor real) + #15 (simulador), distinguir turnos
 `user_simulator` de usuario real (tag en provider_metadata).
 
-### 5.4 Judge panel / calibración  · depende de #17
+### 5.4 Judge panel / calibración · depende de #17
+
 **Dónde:** dentro del trace viewer (cuando el grader es panel) + ruta nueva
 `/[workspace]/judges`.
 **Qué:** para un `JudgePanelGrader`: mostrar el **consenso** (majority/unanimous/weighted),
@@ -227,7 +246,8 @@ y la cola de human spot-check (`Annotation` stubs pendientes de revisar).
 **Componentes nuevos:** `JudgeConsensus.svelte` (votos + consenso) · `CalibrationMatrix.svelte`
 (confusion + métricas) · `SpotCheckQueue.svelte` (cola de anotación).
 
-### 5.5 Failure clusters dashboard  · depende de error-analysis API (§7)
+### 5.5 Failure clusters dashboard · depende de error-analysis API (§7)
+
 **Dónde:** ruta `/[workspace]/clusters` (hoy stub).
 **Qué:** taxonomía de failure modes del workspace (entidad `FailureMode`, lifecycle
 CANDIDATE→OFFICIAL→RETIRED). Por modo: frecuencia, tendencia entre iteraciones, severidad,
@@ -236,7 +256,8 @@ CLI (`selfevals failuremode`, `analyze pull/push`) — falta exponerlo por API.
 **Componentes nuevos:** `FailureModeTable.svelte` · `ModeTrend.svelte` (LayerCake) ·
 `ModeLifecycleControls.svelte`.
 
-### 5.6 Datasets + cases browser  · depende de datasets API (§7)
+### 5.6 Datasets + cases browser · depende de datasets API (§7)
+
 **Dónde:** ruta `/[workspace]/datasets` (hoy stub).
 **Qué:** lista de datasets (smoke/golden/regression/capability/...), su SplitAllocation
 (optimization/holdout/reliability), statistics (by_level/feature/source/pii, holdout_count),
@@ -246,14 +267,16 @@ datasets/cases** (la promesa §11). Edición de cases es post-MVP.
 **Componentes nuevos:** `DatasetList.svelte` · `CaseTable.svelte` (TanStack Table,
 filtros por taxonomy) · `CaseDetail.svelte` · `SplitAllocationBar.svelte`.
 
-### 5.7 Latencia / costo dashboard  · depende de #9, #14
+### 5.7 Latencia / costo dashboard · depende de #9, #14
+
 **Dónde:** experiment detail (tab nuevo "Performance") + trace viewer (por LLM span).
 **Qué:** TTFT, p50/p95/p99 latency, tokens-per-sec, costo por caso/iteración/experimento.
 Series por iteración (¿mejoró accuracy pero empeoró p95?). En el trace: TTFT y tokens/sec
 por LLM call (los campos ya existen en `LLMCallSpan`, se poblarán con #9).
 **Componentes nuevos:** `LatencyPercentiles.svelte` · `CostBreakdownChart.svelte`.
 
-### 5.8 Live run control  · depende de serve (§6)
+### 5.8 Live run control · depende de serve (§6)
+
 **Dónde:** shell global + ruta `/[workspace]/runs`.
 **Qué:** hoy `/runs/active` lista pares (ws, run_id) y el `ActiveRunsPill` los muestra. Falta:
 **lanzar/pausar/abortar runs desde la web** (hoy solo CLI). Requiere endpoints de mutación de
@@ -265,14 +288,23 @@ run en vivo (iteración actual, casos completados, métrica parcial).
 
 ## 6. El gap `selfevals serve`
 
-**No existe `serve` en el CLI.** Hoy API y web se levantan por separado. Un `selfevals serve`
-debería montar en un solo proceso:
+> **Estado (2026-06): mayormente cerrado.** `selfevals serve` ya existe (`cli/commands.py:cmd_serve`):
+> monta FastAPI + (opcional) web SvelteKit en un proceso, y los runs se lanzan desde la web vía
+> `POST .../experiments/run` (F1). El live tracing también funciona ya — pero **in-process**, no por
+> el OTLP receiver: el thread del run alimenta el `SpanBroker` vía `BrokerSpanSink`
+> (`api/recorder_sink.py`), así que los puntos 3-5 de abajo quedaron resueltos por una ruta más
+> directa que la planeada. Lo que sigue pendiente es el **control** de lifecycle desde la web
+> (pausar/abortar, §5.8 + §7.1).
 
-1. **FastAPI app** — ya construida, solo instanciar.
-2. **Web UI** — build de SvelteKit (adapter-node) servido como estático o vía el adapter.
-3. **OTLP receiver** (`runner/otlp_receiver.py`) — escuchar spans de evals corriendo.
-4. **SpanBroker** singleton — para el live tracing (SSE).
-5. **Optimization loop** (futuro) — para lanzar runs desde la web, no solo CLI.
+Plan original — un `selfevals serve` que montara en un solo proceso:
+
+1. **FastAPI app** — ✅ instanciada por `cmd_serve`.
+2. **Web UI** — ✅ build de SvelteKit (adapter-node) como child process.
+3. ~~**OTLP receiver** (`runner/otlp_receiver.py`)~~ — innecesario para el live de runs embedded;
+   el live corre in-process. El receiver queda como path opt-in para agentes que exporten OTLP
+   por el wire (incompleto end-to-end, ver `broker_bridge.py`).
+4. **SpanBroker** singleton — ✅ vivo; alimentado por `BrokerSpanSink` desde el run thread.
+5. **Optimization loop** — ✅ se lanza desde la web (F1); falta solo el control de lifecycle.
 
 **Contrato propuesto:** `selfevals serve --host --port --db [--web-dist path] [--no-web]`.
 Arranca API + (opcional) web + OTLP receiver + broker en un event loop. El loop de
@@ -283,7 +315,9 @@ optimización se integra cuando existan los endpoints de mutación (§7.1).
 ## 7. Endpoints faltantes (con contrato)
 
 ### 7.1 Mutación de lifecycle de experimentos
+
 Para mover el control del CLI a la web.
+
 - `POST /api/workspaces/{ws}/experiments` — crear experiment desde spec YAML/JSON.
   Body: el spec del experimento. → ExperimentSummary (201).
 - `POST /api/workspaces/{ws}/experiments/{id}/runs` — lanzar un run (dispara el optimization
@@ -295,6 +329,7 @@ Para mover el control del CLI a la web.
   overrides_automated}. → DecisionRecord.
 
 ### 7.2 Datasets + cases (para §5.6)
+
 - `GET /api/workspaces/{ws}/datasets` → list[DatasetSummary] (id, name, dataset_type, status,
   statistics, split_allocation).
 - `GET /api/workspaces/{ws}/datasets/{id}` → DatasetDetail + cases refs.
@@ -304,6 +339,7 @@ Para mover el control del CLI a la web.
   failure_weights, metadata).
 
 ### 7.3 Failure modes + error analysis (para §5.5)
+
 - `GET /api/workspaces/{ws}/failure-modes` → list[FailureMode] (slug, name, lifecycle,
   frequency, severity).
 - `GET /api/workspaces/{ws}/failure-modes/{slug}/trend` → series por iteración.
@@ -311,10 +347,12 @@ Para mover el control del CLI a la web.
 - `GET /api/workspaces/{ws}/analysis/staging` → bundles staged pendientes de coding.
 
 ### 7.4 Traces filtrables (hoy solo por id)
+
 - `GET /api/workspaces/{ws}/traces` — list. Filtros: `experiment_id, iteration,
-  final_state, span_kind, has_failure, limit, offset`. → list[TraceSummary].
+final_state, span_kind, has_failure, limit, offset`. → list[TraceSummary].
 
 ### 7.5 Analytics / agregados
+
 - ✅ **SHIPPED** `GET /api/workspaces/{ws}/iterations/{id}/funnel` → funnel por iteración
   (`FunnelResponse`), para §5.1. (Por iteración, no agregado a nivel experimento.)
 - `GET /api/workspaces/{ws}/experiments/{id}/performance` → percentiles latencia + costo
@@ -322,11 +360,13 @@ Para mover el control del CLI a la web.
 - `GET /api/workspaces/{ws}/experiments/{id}/correlation` → correlación param↔metric.
 
 ### 7.6 Export
+
 - `GET /api/workspaces/{ws}/experiments/{id}/export?format=csv|json` — iteraciones/resultados.
 - `GET /api/workspaces/{ws}/traces/{id}/export?format=json` — trace completo con payloads
   resueltos (del object store).
 
 ### 7.7 Paginación (deuda transversal)
+
 Los endpoints de lista no tienen paginación real (limit hardcoded 100; sorting/limit en
 Python en `queries.py`). Añadir `limit`/`offset`/`order_by` consistentes — el `ListFilter`
 del storage (`storage/interface.py`) ya lo soporta, falta exponerlo en la API.
@@ -340,6 +380,7 @@ El `seed_workspace()` ya crea **member roles** por defecto — la base de datos 
 membresía (entidad workspace member / `Role`).
 
 **Diseño futuro (la promesa §10/§11 "usuarios con roles, permisos configurables"):**
+
 - **AuthN**: enchufar OIDC/sesión donde hoy va el header stub. Cero cambio en pantallas (el
   header ya viaja en cada request del cliente).
 - **AuthZ por workspace**: roles (owner/editor/viewer). Viewer = solo GET. Editor = mutación
@@ -358,6 +399,7 @@ validan rol server-side, y el FE solo refleje permisos (ocultar botones).
 ## 9. UX por pantalla (principios + por-vista)
 
 **Principios transversales** (densos, read-mostly, técnicos):
+
 - Tabular numerals en toda celda numérica (JetBrains Mono). Métricas alineadas a la derecha.
 - Color semántico consistente vía `DecisionBadge`: keep_candidate=verde, reject=rojo,
   investigate=ámbar, tradeoff_review=morado, spawn_subexperiment=azul.
@@ -367,6 +409,7 @@ validan rol server-side, y el FE solo refleje permisos (ocultar botones).
 - Live: pill "live" pulsante mientras hay SSE activo; degradar a "finished" al `complete`.
 
 **Por vista:**
+
 - **Workspace list (`/`)**: cards o tabla con name, exp count, recent_health (anillo de
   color), last_run_at relativo. CTA crear workspace.
 - **Workspace detail (`/[ws]`)**: hero con chips (exp count, health, anchor points). Tabla de
@@ -395,25 +438,30 @@ El FE sigue al backend del [ROADMAP](ROADMAP.md). Una vista no se construye ante
 capacidad backend.
 
 ### FE-Fase 0 — Pulir lo existente + serve (S–M)
+
 - `selfevals serve` (§6): un comando levanta API + web + OTLP + broker.
 - Completar rutas scaffolded: `/[ws]/experiments` y `/[ws]/anchor-set` a funcional.
 - Paginación consistente en endpoints de lista (§7.7).
 - Resolver pointers en el trace viewer (mostrar prompts/args/results reales).
 
 ### FE-Fase 1 — Multi-turno + funnel (M) — tras backend #2, #3
+
 - **Thread viewer** (§5.3) — endpoint ya existe, solo falta la ruta.
 - **Funnel drill-down** (§5.1) — tras #3 (breakdown) + endpoint funnel (§7.5).
 
 ### FE-Fase 2 — Trayectoria + jueces (M) — tras backend #4, #17
+
 - **Trajectory timeline** (§5.2) — tras #4.
 - **Judge panel / calibración** (§5.4) — tras #17.
 
 ### FE-Fase 3 — Datasets + clusters + performance (M–L) — tras endpoints §7.2/§7.3/§7.5
+
 - **Datasets + cases browser** (§5.6) + versionado.
 - **Failure clusters dashboard** (§5.5).
 - **Latencia/costo dashboard** (§5.7) — tras #9/#14.
 
 ### FE-Fase 4 — Control de runs + auth (L) — tras serve + mutación §7.1
+
 - **Live run control** (§5.8): lanzar/pausar/abortar desde la web.
 - **Auth real + roles/permisos** (§8): gating de acciones escribientes.
 
@@ -421,19 +469,19 @@ capacidad backend.
 
 ## 11. Resumen de gaps (qué falta, priorizado)
 
-| Gap FE | Tipo | Depende de | Prioridad |
-|--------|------|-----------|-----------|
-| `selfevals serve` | CLI | — | Alta (desbloquea todo lo embebido) |
-| Resolver pointers en trace viewer | FE | endpoint export §7.6 | Alta (debug real) |
-| Paginación de listas | API | ListFilter (existe) | Alta |
-| Thread viewer | ✅ shipped | — | — |
-| Funnel drill-down | ✅ shipped | — | — |
-| Compare server-rendered | ✅ shipped | — | — |
-| Trajectory timeline | FE | #4 | Media |
-| Judge panel / calibración | FE+API | #17 | Media |
-| Datasets + cases browser | FE+API | endpoints §7.2 | Media |
-| Failure clusters | FE+API | endpoints §7.3 (CLI ya tiene) | Media |
-| Latencia/costo dashboard | FE+API | #9, #14 | Media |
-| Mutación lifecycle (crear/lanzar/abortar) | API | serve | Media-Baja |
-| Auth + roles | API+FE | — | Baja (MVP sin auth) |
-| Export CSV/JSON | API+FE | — | Baja |
+| Gap FE                                    | Tipo       | Depende de                    | Prioridad                          |
+| ----------------------------------------- | ---------- | ----------------------------- | ---------------------------------- |
+| `selfevals serve`                         | CLI        | —                             | Alta (desbloquea todo lo embebido) |
+| Resolver pointers en trace viewer         | FE         | endpoint export §7.6          | Alta (debug real)                  |
+| Paginación de listas                      | API        | ListFilter (existe)           | Alta                               |
+| Thread viewer                             | ✅ shipped | —                             | —                                  |
+| Funnel drill-down                         | ✅ shipped | —                             | —                                  |
+| Compare server-rendered                   | ✅ shipped | —                             | —                                  |
+| Trajectory timeline                       | FE         | #4                            | Media                              |
+| Judge panel / calibración                 | FE+API     | #17                           | Media                              |
+| Datasets + cases browser                  | FE+API     | endpoints §7.2                | Media                              |
+| Failure clusters                          | FE+API     | endpoints §7.3 (CLI ya tiene) | Media                              |
+| Latencia/costo dashboard                  | FE+API     | #9, #14                       | Media                              |
+| Mutación lifecycle (crear/lanzar/abortar) | API        | serve                         | Media-Baja                         |
+| Auth + roles                              | API+FE     | —                             | Baja (MVP sin auth)                |
+| Export CSV/JSON                           | API+FE     | —                             | Baja                               |

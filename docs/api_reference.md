@@ -226,6 +226,38 @@ Full experiment detail, including a reconstructed JSON report.
 
 **Response** (`IterationListResponse`): `{ "iterations": IterationSummary[] }`.
 
+### `GET /api/workspaces/{workspace_id}/experiments/{experiment_id}/cases`
+
+The eval cases the experiment ran, persisted at launch and stamped with the
+`experiment_id`. Holdout cases are included and flagged (`holdout: true`) — the
+set is reported in full, not trimmed to the optimization cases. Ordered by
+`name`. Returns an empty list (not `404`) for an experiment with no persisted
+cases (e.g. one that predates case persistence).
+
+**Response** (`CaseListResponse`):
+
+| Field           | Type            | Notes                            |
+| --------------- | --------------- | -------------------------------- |
+| `cases`         | `CaseSummary[]` | The cases, ordered by name.      |
+| `total`         | int             | `len(cases)`.                    |
+| `holdout_count` | int             | How many of `cases` are holdout. |
+
+Each `CaseSummary`:
+
+| Field             | Type           | Notes                                                           |
+| ----------------- | -------------- | --------------------------------------------------------------- |
+| `id`              | string         | Case id (`ec_...`) — navigable.                                 |
+| `name`            | string         |                                                                 |
+| `task_type`       | string         |                                                                 |
+| `modalities`      | string[]       |                                                                 |
+| `input`           | object         | Raw payload fed to the agent. The FE renders it directly.       |
+| `graders`         | string[]       | Grader names applied to this case (empty = experiment default). |
+| `holdout`         | bool           | Reserved from proposers when true.                              |
+| `is_conversation` | bool           | True when `input` carries a `messages` key (multi-turn).        |
+| `feature`         | string \| null | Taxonomy target feature.                                        |
+| `level`           | string \| null | Taxonomy level.                                                 |
+| `dataset_type`    | string \| null | Taxonomy dataset type.                                          |
+
 ### `GET /api/workspaces/{workspace_id}/experiments/{experiment_id}/decisions`
 
 The decision audit trail, one entry per iteration that has a decision,

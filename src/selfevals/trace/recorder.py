@@ -30,7 +30,7 @@ threadsafe: one recorder per execution.
 from __future__ import annotations
 
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Self
@@ -72,6 +72,8 @@ from selfevals.schemas.trace import (
     TraceMetrics,
     TraceOutputs,
 )
+from selfevals.trace.span_sink import NO_OP_SINK, SpanSink
+from selfevals.trace.span_view import span_view
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -200,6 +202,7 @@ class TraceRecorder:
         sandbox: SandboxMode,
         environment_started_at: datetime | None = None,
         payload_router: PayloadRouter | None = None,
+        span_sink: SpanSink | None = None,
     ) -> None:
         if not workspace_id:
             raise ValueError("workspace_id must be non-empty")
@@ -212,6 +215,10 @@ class TraceRecorder:
         self._env_started_at = environment_started_at or utc_now()
         self._env_ended_at: datetime | None = None
         self._payload_router = payload_router
+        # Live span fan-out. NO_OP by default so non-serve runs pay nothing;
+        # `selfevals serve` injects a broker-backed sink. The sink is called
+        # from this (possibly background) thread and must be non-blocking.
+        self._span_sink = span_sink or NO_OP_SINK
         self._spans: list[Span] = []
         self._open_parents: list[str] = []
         self._grader_results: list[GraderResult] = []
@@ -234,6 +241,11 @@ class TraceRecorder:
         return self._payload_router
 
     def __enter__(self) -> Self:
+        # Open the live channel up front so the "live" pill lights the moment
+        # a run starts — before the first span finishes.
+        self._sink_call(
+            self._span_sink.on_trace_started, self._workspace_id, self._run.run_id
+        )
         return self
 
     def __exit__(
@@ -248,6 +260,36 @@ class TraceRecorder:
             else:
                 self._final_state = FinalState(status=TraceState.COMPLETED)
         self._env_ended_at = utc_now()
+        self._sink_call(
+            self._span_sink.on_trace_finished,
+            self._workspace_id,
+            self._run.run_id,
+            str(self._final_state.status),
+        )
+
+    def _record(self, span: Span) -> None:
+        """Append a finished span and fan it out to the live sink.
+
+        Every span the recorder produces flows through here so the live
+        stream sees exactly what `build()` will persist — in the same
+        `SpanSummary` view shape the REST snapshot uses.
+        """
+        self._spans.append(span)
+        self._sink_call(
+            self._span_sink.on_span_finished,
+            self._workspace_id,
+            self._run.run_id,
+            span_view(span),
+        )
+
+    def _sink_call(self, fn: Any, *args: Any) -> None:
+        """Invoke a sink callback, swallowing any error.
+
+        The live stream is best-effort (SQLite is the source of truth); a
+        broken or slow subscriber must never fail or stall a run.
+        """
+        with suppress(Exception):
+            fn(*args)
 
     def complete(self) -> None:
         self._final_state = FinalState(status=TraceState.COMPLETED)
@@ -282,7 +324,7 @@ class TraceRecorder:
         finally:
             self._open_parents.pop()
             duration_ms = int((time.perf_counter() - t0) * 1000)
-            self._spans.append(
+            self._record(
                 AgentTurnSpan(
                     id=span_id,
                     parent_id=parent,
@@ -348,7 +390,7 @@ class TraceRecorder:
                 cache_hit=builder.cache_hit,
                 provider_metadata=builder.provider_metadata,
             )
-            self._spans.append(span)
+            self._record(span)
             self._llm_call_count += 1
             self._tokens_in += span.tokens.input + span.tokens.input_cache_read
             self._tokens_out += span.tokens.output
@@ -383,7 +425,7 @@ class TraceRecorder:
         finally:
             self._open_parents.pop()
             duration_ms = int((time.perf_counter() - t0) * 1000)
-            self._spans.append(
+            self._record(
                 ToolCallSpan(
                     id=span_id,
                     parent_id=parent,
@@ -418,7 +460,7 @@ class TraceRecorder:
         query_hash: str | None = None,
     ) -> None:
         retrieved = retrieved or []
-        self._spans.append(
+        self._record(
             RetrievalSpan(
                 id=_new_span_id(),
                 parent_id=self._current_parent(),
@@ -435,7 +477,7 @@ class TraceRecorder:
         )
 
     def add_memory_read(self, name: str, *, store: str, hits: list[str], misses: list[str]) -> None:
-        self._spans.append(
+        self._record(
             MemoryReadSpan(
                 id=_new_span_id(),
                 parent_id=self._current_parent(),
@@ -448,7 +490,7 @@ class TraceRecorder:
         )
 
     def add_memory_write(self, name: str, *, store: str, keys: list[str]) -> None:
-        self._spans.append(
+        self._record(
             MemoryWriteSpan(
                 id=_new_span_id(),
                 parent_id=self._current_parent(),
@@ -468,7 +510,7 @@ class TraceRecorder:
         alternatives: list[str] | None = None,
         confidence: float | None = None,
     ) -> None:
-        self._spans.append(
+        self._record(
             DecisionSpan(
                 id=_new_span_id(),
                 parent_id=self._current_parent(),
@@ -482,7 +524,7 @@ class TraceRecorder:
         )
 
     def add_handoff(self, name: str, *, target: str) -> None:
-        self._spans.append(
+        self._record(
             HandoffSpan(
                 id=_new_span_id(),
                 parent_id=self._current_parent(),
@@ -493,7 +535,7 @@ class TraceRecorder:
         )
 
     def add_human_intervention(self, name: str, *, actor: str, action: str) -> None:
-        self._spans.append(
+        self._record(
             HumanInterventionSpan(
                 id=_new_span_id(),
                 parent_id=self._current_parent(),
@@ -505,7 +547,7 @@ class TraceRecorder:
         )
 
     def add_guardrail_check(self, name: str, *, guardrail: str, passed: bool) -> None:
-        self._spans.append(
+        self._record(
             GuardrailCheckSpan(
                 id=_new_span_id(),
                 parent_id=self._current_parent(),
@@ -519,7 +561,7 @@ class TraceRecorder:
     def add_error(
         self, name: str, *, error_type: str, message: str, recoverable: bool = False
     ) -> None:
-        self._spans.append(
+        self._record(
             ErrorSpan(
                 id=_new_span_id(),
                 parent_id=self._current_parent(),

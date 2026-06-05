@@ -26,6 +26,7 @@ from selfevals.api.broker import get_broker
 from selfevals.api.queries import (
     AnchorPoint,
     anchor_set_history,
+    experiment_cases,
     experiment_decisions,
     experiment_detail,
     experiment_iterations,
@@ -42,6 +43,7 @@ from selfevals.api.run_launcher import launch_experiment_run
 from selfevals.api.schemas import (
     ActiveRun,
     ActiveRunsResponse,
+    CaseListResponse,
     CompareResponse,
     CreateWorkspaceRequest,
     DecisionRecordResponse,
@@ -284,6 +286,30 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
                     workspace_id=workspace_id,
                     experiment_id=experiment_id,
                 )
+            )
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/experiments/{experiment_id}/cases",
+        response_model=CaseListResponse,
+        tags=["experiments"],
+    )
+    def experiments_cases(
+        workspace_id: str,
+        experiment_id: str,
+        storage: SQLiteStorage = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> CaseListResponse:
+        # The eval cases a run executed, persisted at launch. Holdout cases are
+        # included and flagged. Empty list (not 404) for an experiment that
+        # predates case persistence or has no cases yet — the FE renders an
+        # honest empty state rather than an error.
+        try:
+            return experiment_cases(
+                storage,
+                workspace_id=workspace_id,
+                experiment_id=experiment_id,
             )
         finally:
             storage.close()

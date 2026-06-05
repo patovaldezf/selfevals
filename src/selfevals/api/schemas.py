@@ -154,6 +154,40 @@ class TraceResponse(BaseModel):
     metrics: dict[str, Any]
 
 
+class CaseSummary(BaseModel):
+    """An eval case as persisted under an experiment, shaped for the cases list.
+
+    Surfaces the navigable identity (`id`, `name`, `input`) plus the facets the
+    UI needs to make sense of the set: graders applied, the taxonomy target,
+    and `holdout` (so reserved cases are flagged, not hidden). `input` is the
+    raw payload fed to the agent — the FE renders it (and detects conversations
+    via a `messages` key) without a second round-trip.
+    """
+
+    id: str
+    name: str
+    task_type: str
+    modalities: list[str] = Field(default_factory=list)
+    input: dict[str, Any] = Field(default_factory=dict)
+    graders: list[str] = Field(default_factory=list)
+    holdout: bool = False
+    is_conversation: bool = False
+    feature: str | None = None
+    level: str | None = None
+    dataset_type: str | None = None
+
+
+class CaseListResponse(BaseModel):
+    """The full case set of an experiment, holdout cases included and flagged.
+
+    `holdout_count` lets the FE show "N cases (M held out)" without re-counting.
+    """
+
+    cases: list[CaseSummary] = Field(default_factory=list)
+    total: int
+    holdout_count: int
+
+
 class ThreadTurn(BaseModel):
     """One trace within a thread, projected as a turn for the thread view."""
 

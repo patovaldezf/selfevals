@@ -177,6 +177,13 @@ class ConversationInput(SelfEvalsModel):
 class EvalCase(BaseEntity):
     _id_prefix: ClassVar[str] = "ec"
 
+    experiment_id: NonEmptyStr | None = None
+    """The experiment this case was persisted under, stamped when a run is
+    launched (`runner.launch.build_loop`). `None` during authoring/validation
+    — the loader builds cases before any experiment context. Storage filters
+    on it (`json_extract`) so `GET .../experiments/{id}/cases` can list a run's
+    cases without a schema migration."""
+
     name: NonEmptyStr
     task_type: NonEmptyStr
     modalities: list[Modality] = Field(default_factory=lambda: [Modality.TEXT], min_length=1)

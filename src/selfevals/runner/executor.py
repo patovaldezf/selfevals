@@ -31,11 +31,13 @@ from selfevals.schemas.trace import (
     Trace,
 )
 from selfevals.trace.recorder import TraceRecorder
+from selfevals.trace.span_sink import NO_OP_SINK
 
 if TYPE_CHECKING:
     from selfevals.runner.adapters import AdapterResponse, AgentAdapter
     from selfevals.schemas.eval_case import EvalCase
     from selfevals.trace.payload_router import PayloadRouter
+    from selfevals.trace.span_sink import SpanSink
 
 
 @dataclass(frozen=True)
@@ -112,6 +114,7 @@ class Executor:
         runtime: str = "python-3.12",
         payload_router: PayloadRouter | None = None,
         concurrency: int = 8,
+        span_sink: SpanSink | None = None,
     ) -> None:
         if not workspace_id:
             raise ValueError("workspace_id must be non-empty")
@@ -124,6 +127,9 @@ class Executor:
         self._runtime = runtime
         self._payload_router = payload_router
         self._concurrency = concurrency
+        # Live span fan-out, threaded through to every per-rep TraceRecorder.
+        # NO_OP by default (CLI runs); `selfevals serve` injects a broker sink.
+        self._span_sink = span_sink or NO_OP_SINK
         sandbox.ensure_runnable()
 
     @property
@@ -194,6 +200,7 @@ class Executor:
             sandbox=self._sandbox.mode,
             environment_started_at=started_at,
             payload_router=self._payload_router,
+            span_sink=self._span_sink,
         )
 
         adapter_request = AdapterRequest(

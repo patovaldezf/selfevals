@@ -22,6 +22,8 @@ import threading
 from fastapi import HTTPException
 
 from selfevals._errors import SelfEvalsUserError
+from selfevals.api.broker import get_broker
+from selfevals.api.recorder_sink import BrokerSpanSink
 from selfevals.api.schemas import RunExperimentRequest, RunExperimentResponse
 from selfevals.cli import _friendly
 from selfevals.repo.loader import ExperimentSpec, LoaderError, build_spec_from_mapping
@@ -119,12 +121,22 @@ def _run_in_thread(*, db_path: str, spec: ExperimentSpec, reps: int) -> None:
     persists the experiment row at each transition via its `scope`, so a polling
     `GET` follows progress without anything extra here. On failure we still move
     it to `aborted` ourselves (the loop has no failure transition).
+
+    Live streaming: we attach a `BrokerSpanSink` so every span the run produces
+    is fanned out to `/stream` subscribers as it happens. The sink publishes via
+    `call_soon_threadsafe` onto FastAPI's loop (bound at app startup), so it
+    crosses from this worker thread into the SSE loop without blocking either.
+    The broker is a process-wide singleton; if `serve` never bound a loop (e.g.
+    a bare run with no SSE consumers) the sink degrades to a silent no-op.
     """
     storage = SQLiteStorage(db_path)
     scope = None
     try:
         scope = storage.open(spec.workspace_id)
-        loop = build_loop(spec, scope=scope, repetitions_per_case=reps)
+        span_sink = BrokerSpanSink(get_broker())
+        loop = build_loop(
+            spec, scope=scope, repetitions_per_case=reps, span_sink=span_sink
+        )
         asyncio.run(loop.run())
     except Exception:
         logger.exception("experiment run failed: %s", spec.experiment.id)
