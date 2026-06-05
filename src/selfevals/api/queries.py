@@ -44,6 +44,7 @@ from selfevals.cli.commands import (
 )
 from selfevals.reporter import render_json
 from selfevals.reporter.compare import compute_compare
+from selfevals.schemas.enums import ExperimentState
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.iteration import DecisionRecord, IterationRecord
 from selfevals.schemas.trace import Trace
@@ -141,14 +142,24 @@ def list_experiments(
     workspace_id: str,
     limit: int = 100,
     offset: int = 0,
+    state: ExperimentState | None = None,
+    feature: str | None = None,
 ) -> ExperimentListPage:
-    """Paginated experiments listing (A8).
+    """Paginated experiments listing (A8), with optional filters.
 
     `ListFilter` already supports limit/offset; we expose it here and
     return a `total` so the FE can show "X of N" without a second
     round-trip. The iteration-count subquery is intentionally a
     full-scan per experiment — at the volumes we're targeting
     (Fase A: <100 experiments), this is correct-and-cheap.
+
+    Filters are applied in memory *before* pagination so `total`/`has_more`
+    describe the filtered set, not the whole workspace. `state` could ride
+    `ListFilter.where` (it is a scalar `json_extract`), but `feature` is
+    membership in the nested `taxonomy.target_features` list, which the
+    scalar `where` cannot express — so both filter here, keeping the logic
+    in one place. If volumes grow, `state` is the field to promote to a real
+    column (same note as m0001), and `target_features` to a join/`json_each`.
     """
     with storage.open(workspace_id) as scope:
         all_experiments = [
@@ -156,6 +167,12 @@ def list_experiments(
             for e in scope.list_entities(Experiment, ListFilter(order_by="updated_at"))
             if isinstance(e, Experiment)
         ]
+        if state is not None:
+            all_experiments = [e for e in all_experiments if e.state == state]
+        if feature is not None:
+            all_experiments = [
+                e for e in all_experiments if feature in e.taxonomy.target_features
+            ]
         total = len(all_experiments)
         page = all_experiments[offset : offset + limit]
         all_iterations = [

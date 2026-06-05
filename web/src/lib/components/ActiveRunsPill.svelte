@@ -12,7 +12,8 @@
         headers: { 'X-SelfEvals-User': 'local' }
       });
       if (!res.ok) return;
-      runs = await res.json();
+      const body = await res.json();
+      runs = body.runs ?? [];
     } catch {
       /* keep the last known state; failures here aren't user-facing */
     }

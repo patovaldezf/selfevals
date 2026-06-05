@@ -32,7 +32,7 @@ The distribution is `selfevals`; the import name and the CLI command are
 both `selfevals` (`import selfevals`, `selfevals --help`).
 
 To run or trace an agent backed by a real provider, install the matching
-**extra** — each one bundles the provider's SDK *and* the tracing
+**extra** — each one bundles the provider's SDK _and_ the tracing
 integration, so a single install is enough:
 
 ```bash
@@ -57,7 +57,7 @@ selected, and a top failure-modes table — end-to-end in under a second
 against the bundled `EmbeddedAdapter` echo agent. No API key needed.
 
 To persist results to SQLite and inspect them afterwards (note: `--db` is a
-**global** flag, so it goes *before* the subcommand):
+**global** flag, so it goes _before_ the subcommand):
 
 ```bash
 selfevals --db ./selfevals.sqlite run evals/experiments/example_pingpong.yaml
@@ -72,13 +72,13 @@ follow-up commands.
 
 The five nouns you'll meet everywhere:
 
-| Term | What it is |
-|------|------------|
-| **EvalCase** | One test: an input (a validated multi-turn `messages` conversation, or any opaque payload), the expected outcome, and which graders apply. |
-| **Adapter** | The bridge to your agent — embedded callable, CLI subprocess, or HTTP endpoint. selfevals calls *it*, never the provider directly. |
-| **Grader** | Scores a trace. `DeterministicGrader` (rules: substrings, tools, JSON schema) or `LLMJudgeGrader` (a rubric-driven judge). |
-| **Proposer** | Picks the next parameter configuration to try — `manual`, `grid`, or `random`. |
-| **DecisionMatrix** | Turns each iteration's metrics into a verdict: keep, reject, investigate, spawn sub-experiment, or require a tradeoff review. |
+| Term               | What it is                                                                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **EvalCase**       | One test: an input (a validated multi-turn `messages` conversation, or any opaque payload), the expected outcome, and which graders apply. |
+| **Adapter**        | The bridge to your agent — embedded callable, CLI subprocess, or HTTP endpoint. selfevals calls _it_, never the provider directly.         |
+| **Grader**         | Scores a trace. `DeterministicGrader` (rules: substrings, tools, JSON schema) or `LLMJudgeGrader` (a rubric-driven judge).                 |
+| **Proposer**       | Picks the next parameter configuration to try — `manual`, `grid`, or `random`.                                                             |
+| **DecisionMatrix** | Turns each iteration's metrics into a verdict: keep, reject, investigate, spawn sub-experiment, or require a tradeoff review.              |
 
 An **experiment** is a YAML spec wiring these together; a **run** executes
 it, producing **iterations** the reporter ranks.
@@ -140,23 +140,72 @@ YAML/code snippets, and a comparison table.
 `selfevals --help` lists every command; `selfevals <command> --help` shows
 its arguments. The surface:
 
-| Command | Purpose |
-|---------|---------|
-| `init <slug>` | Create a workspace and seed the default failure-mode taxonomy. |
-| `run <spec.yaml>` | Run an experiment spec end-to-end. |
-| `report <ws> <exp>` | Render a stored experiment as markdown (`--format json` for JSON; the JSON now includes per-iteration `cache` hit counts and deduplicated `failure_reasons`). |
-| `compare <ws> <itr_a> <itr_b>` | Diff two iterations side by side. |
-| `estimate` | Dry-run cost estimate for a search space × cases × reps. |
-| `workspace show <ws>` | Inspect a workspace. |
-| `experiment list/show <ws> [exp]` | List or inspect experiments. |
-| `iteration list <ws> <exp>` | List recorded iterations. |
-| `analyze pull/push <ws> <exp>` | The error-analysis handshake (see below). |
-| `failuremode list/promote/retire/merge/edit` | Manage the failure-mode taxonomy. |
-| `skills list / path <name>` | Locate the agent skills bundled with the install. |
-| `examples copy <name>` | Copy a runnable example into the current project. |
+| Command                                      | Purpose                                                                                                                                                       |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `init <slug>`                                | Create a workspace and seed the default failure-mode taxonomy.                                                                                                |
+| `run <spec.yaml>`                            | Run an experiment spec end-to-end.                                                                                                                            |
+| `report <ws> <exp>`                          | Render a stored experiment as markdown (`--format json` for JSON; the JSON now includes per-iteration `cache` hit counts and deduplicated `failure_reasons`). |
+| `compare <ws> <itr_a> <itr_b>`               | Diff two iterations side by side.                                                                                                                             |
+| `estimate`                                   | Dry-run cost estimate for a search space × cases × reps.                                                                                                      |
+| `workspace show <ws>`                        | Inspect a workspace.                                                                                                                                          |
+| `experiment list/show <ws> [exp]`            | List or inspect experiments.                                                                                                                                  |
+| `iteration list <ws> <exp>`                  | List recorded iterations.                                                                                                                                     |
+| `analyze pull/push <ws> <exp>`               | The error-analysis handshake (see below).                                                                                                                     |
+| `failuremode list/promote/retire/merge/edit` | Manage the failure-mode taxonomy.                                                                                                                             |
+| `skills list / path <name>`                  | Locate the agent skills bundled with the install.                                                                                                             |
+| `examples copy <name>`                       | Copy a runnable example into the current project.                                                                                                             |
+| `serve`                                      | Run the HTTP API (and the web dashboard, if built) in one process.                                                                                            |
 
 `--db <path>` is a global flag (default `./selfevals.sqlite`) and goes
 before the subcommand.
+
+## Running the API + dashboard (dev local)
+
+selfevals ships an HTTP API (its own "LangSmith") and a SvelteKit dashboard.
+Everything runs on localhost — no deploy required.
+
+**API only** (FastAPI on `:8000`, needs the `web` extra for `uvicorn`):
+
+```bash
+uv sync --extra web
+python -m selfevals.api --host 127.0.0.1 --port 8000 --db ./selfevals.sqlite
+# health check + smoke
+curl -s localhost:8000/api/health
+curl -s localhost:8000/api/workspaces
+curl -s localhost:8000/api/openapi.json | python3 -m json.tool | head
+```
+
+Docs live at `/api/docs`; the OpenAPI schema at `/api/openapi.json` (a typed
+client can be generated from it). CORS already allows the Vite dev server on
+`:5173`.
+
+**API + dashboard together** — build the web bundle once, then `serve`:
+
+```bash
+cd web && npm ci && npm run build && cd ..
+selfevals serve --host 127.0.0.1 --port 8000 --db ./selfevals.sqlite
+```
+
+`serve` starts the API and, when `web/build/index.js` exists, the dashboard
+next to it (use `--no-web` for API-only). Add `--reload` for auto-reload in
+development.
+
+**Launch an experiment over HTTP** (non-blocking — returns `202` immediately
+and runs in the background; poll the experiment to follow progress):
+
+```bash
+curl -s -X POST "localhost:8000/api/workspaces/<ws>/experiments/run" \
+  -H 'content-type: application/json' \
+  -d '{"spec_path": "evals/experiments/example_pingpong.yaml", "max_iterations": 2}'
+# → {"experiment_id": "exp_…", "workspace_id": "<ws>", "state": "draft", ...}
+# then poll until state == "completed":
+curl -s "localhost:8000/api/workspaces/<ws>/experiments/<exp>" | python3 -m json.tool
+```
+
+The body accepts either `spec_path` (a YAML spec on the server) or `spec_inline`
+(the spec as a JSON object, with cases embedded under `dataset.cases_inline`).
+The path workspace is authoritative. See
+[`docs/api_reference.md`](docs/api_reference.md) for the full contract.
 
 ### Error analysis (closed loop)
 
@@ -173,7 +222,7 @@ candidate modes via `failuremode promote`. The bundled
 selfevals isn't theoretical — it's used in production to grade a real agent.
 
 **brain_os** is a memory OS for AI agents: an append-only `event_log` of raw
-evidence, slowly distilled into `pages` by a *dream worker*, exposed to any
+evidence, slowly distilled into `pages` by a _dream worker_, exposed to any
 agent (Claude Code, Codex, Cursor) over MCP. Its hardest problem is
 **retrieval** — given a query, surface the right pages — so it points
 selfevals at its own hybrid retriever (FTS5 keyword + named-entity + 1-hop
@@ -197,18 +246,18 @@ Those two complaints became the two headline features of **v0.5.0**:
 proposer-aware convergence and per-grader scoring. A self-improving evals
 framework improved by the agent it was grading — and the experiment also did
 its job, relocating brain_os's retrieval bottleneck to upstream task-shape
-classification *with evidence, not intuition*.
+classification _with evidence, not intuition_.
 
 ## Documentation
 
-| Doc | What it covers |
-|-----|----------------|
-| [`docs/eval_config.md`](docs/eval_config.md) | The YAML experiment spec: top-level keys, `EvalCase`/`Expected` fields (including recall-based `must_include` via `min_recall`), graders, agent transports, and proposers. |
-| [`docs/api_reference.md`](docs/api_reference.md) | The canonical HTTP API reference — every endpoint, response schema, and error codes. |
-| [`docs/json_report_schema.md`](docs/json_report_schema.md) | The `report --format json` output shape, including the per-iteration `cache` and `failure_reasons` keys. |
-| [`docs/adapters.md`](docs/adapters.md) | Adapter contract and per-transport YAML/code snippets. |
-| [`docs/FRONTEND.md`](docs/FRONTEND.md) | The web UI spec (views, endpoints, roadmap). |
-| [`docs/STATUS.md`](docs/STATUS.md) | Honest what-works / what-doesn't snapshot. |
+| Doc                                                        | What it covers                                                                                                                                                             |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`docs/eval_config.md`](docs/eval_config.md)               | The YAML experiment spec: top-level keys, `EvalCase`/`Expected` fields (including recall-based `must_include` via `min_recall`), graders, agent transports, and proposers. |
+| [`docs/api_reference.md`](docs/api_reference.md)           | The canonical HTTP API reference — every endpoint, response schema, and error codes.                                                                                       |
+| [`docs/json_report_schema.md`](docs/json_report_schema.md) | The `report --format json` output shape, including the per-iteration `cache` and `failure_reasons` keys.                                                                   |
+| [`docs/adapters.md`](docs/adapters.md)                     | Adapter contract and per-transport YAML/code snippets.                                                                                                                     |
+| [`docs/FRONTEND.md`](docs/FRONTEND.md)                     | The web UI spec (views, endpoints, roadmap).                                                                                                                               |
+| [`docs/STATUS.md`](docs/STATUS.md)                         | Honest what-works / what-doesn't snapshot.                                                                                                                                 |
 
 ## Layout
 

@@ -58,3 +58,4 @@ data/
 .env
 .env.*
 !.env.example
+.gstack/

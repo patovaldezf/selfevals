@@ -5,7 +5,7 @@ FastAPI service over the SQLite store (`src/selfevals/api/app.py`). Every
 endpoint maps roughly 1:1 to a page in the web UI, and every response shape
 is a Pydantic model in `src/selfevals/api/schemas.py`.
 
-For the frontend architecture and the roadmap of *future* endpoints, see
+For the frontend architecture and the roadmap of _future_ endpoints, see
 [`FRONTEND.md`](FRONTEND.md). For the YAML that drives experiments, see
 [`eval_config.md`](eval_config.md). For the `report --format json` shape,
 see [`json_report_schema.md`](json_report_schema.md).
@@ -48,9 +48,9 @@ Liveness probe.
 
 **Response** (`HealthResponse`):
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `status` | string | Always `"ok"`. |
+| Field     | Type   | Notes                                        |
+| --------- | ------ | -------------------------------------------- |
+| `status`  | string | Always `"ok"`.                               |
 | `db_path` | string | The resolved SQLite path the app is serving. |
 
 ---
@@ -65,16 +65,16 @@ List every workspace (cross-workspace; the only un-scoped listing).
 
 `WorkspaceSummary`:
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `id` | string | Workspace id (`ws_...`). |
-| `slug` | string | |
-| `name` | string | |
-| `description` | string \| null | |
-| `owner_id` | string \| null | |
-| `created_at` | datetime | |
-| `experiment_count` | int | |
-| `last_run_at` | datetime \| null | Max `updated_at` over the workspace's iteration records. |
+| Field              | Type             | Notes                                                    |
+| ------------------ | ---------------- | -------------------------------------------------------- |
+| `id`               | string           | Workspace id (`ws_...`).                                 |
+| `slug`             | string           |                                                          |
+| `name`             | string           |                                                          |
+| `description`      | string \| null   |                                                          |
+| `owner_id`         | string \| null   |                                                          |
+| `created_at`       | datetime         |                                                          |
+| `experiment_count` | int              |                                                          |
+| `last_run_at`      | datetime \| null | Max `updated_at` over the workspace's iteration records. |
 
 ### `GET /api/workspaces/{workspace_id}`
 
@@ -82,11 +82,11 @@ A single workspace with a recent-health rollup.
 
 **Response** (`WorkspaceResponse`):
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `id`, `slug`, `name`, `description`, `owner_id`, `created_at` | — | As above. |
-| `experiment_count` | int | |
-| `recent_health` | float \| null | Fraction of the 20 most recent iterations whose decision outcome is `keep_candidate`; `null` when there are no iterations. |
+| Field                                                         | Type          | Notes                                                                                                                      |
+| ------------------------------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `id`, `slug`, `name`, `description`, `owner_id`, `created_at` | —             | As above.                                                                                                                  |
+| `experiment_count`                                            | int           |                                                                                                                            |
+| `recent_health`                                               | float \| null | Fraction of the 20 most recent iterations whose decision outcome is `keep_candidate`; `null` when there are no iterations. |
 
 **Errors:** `404` when the workspace does not exist.
 
@@ -97,11 +97,11 @@ workspace `owner_id` (default `"local"`).
 
 **Request body** (`CreateWorkspaceRequest`):
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `slug` | string | Required, 1–63 chars. |
-| `name` | string \| null | Defaults to `slug`. |
-| `description` | string \| null | |
+| Field         | Type           | Notes                 |
+| ------------- | -------------- | --------------------- |
+| `slug`        | string         | Required, 1–63 chars. |
+| `name`        | string \| null | Defaults to `slug`.   |
+| `description` | string \| null |                       |
 
 **Response** (`WorkspaceResponse`, status `201`). `experiment_count` is `0`
 and `recent_health` is `null` for a freshly seeded workspace.
@@ -114,32 +114,79 @@ and `recent_health` is `null` for a freshly seeded workspace.
 
 Paginated experiment list.
 
-**Query params:** `limit` (1–500, default 100), `offset` (≥ 0, default 0).
+**Query params:**
+
+| Param     | Type   | Notes                                                                                                                                           |
+| --------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `limit`   | int    | 1–500, default 100.                                                                                                                             |
+| `offset`  | int    | ≥ 0, default 0.                                                                                                                                 |
+| `state`   | string | Optional. Filter by experiment state (`draft`, `queued`, `running`, `paused`, `completed`, `aborted`, `superseded`); an invalid value is `422`. |
+| `feature` | string | Optional. Keep only experiments whose `taxonomy.target_features` contains this value.                                                           |
+
+Filters apply before pagination, so `total`/`has_more` describe the filtered
+set.
 
 **Response** (`ExperimentListPage`):
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `items` | `ExperimentSummary[]` | The page. |
-| `total` | int | Total experiments in the workspace. |
-| `limit` | int | Echoed. |
-| `offset` | int | Echoed. |
-| `has_more` | bool | `(offset + limit) < total`. |
+| Field      | Type                  | Notes                               |
+| ---------- | --------------------- | ----------------------------------- |
+| `items`    | `ExperimentSummary[]` | The page.                           |
+| `total`    | int                   | Total experiments in the workspace. |
+| `limit`    | int                   | Echoed.                             |
+| `offset`   | int                   | Echoed.                             |
+| `has_more` | bool                  | `(offset + limit) < total`.         |
 
 `ExperimentSummary`:
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `id` | string | `exp_...`. |
-| `name`, `goal` | string | |
-| `mode` | string | Experiment mode. |
-| `state` | string | Experiment lifecycle state. |
-| `primary_metric` | string | Name of the primary target metric. |
-| `primary_target` | object | `{ "operator": str, "value": number }`. |
-| `proposer_strategy` | string | `manual` \| `grid` \| `random`. |
-| `max_iterations` | int | |
-| `created_at`, `updated_at` | datetime | |
-| `iteration_count` | int | |
+| Field                      | Type     | Notes                                   |
+| -------------------------- | -------- | --------------------------------------- |
+| `id`                       | string   | `exp_...`.                              |
+| `name`, `goal`             | string   |                                         |
+| `mode`                     | string   | Experiment mode.                        |
+| `state`                    | string   | Experiment lifecycle state.             |
+| `primary_metric`           | string   | Name of the primary target metric.      |
+| `primary_target`           | object   | `{ "operator": str, "value": number }`. |
+| `proposer_strategy`        | string   | `manual` \| `grid` \| `random`.         |
+| `max_iterations`           | int      |                                         |
+| `created_at`, `updated_at` | datetime |                                         |
+| `iteration_count`          | int      |                                         |
+
+### `POST /api/workspaces/{workspace_id}/experiments/run`
+
+Launch an experiment. **Non-blocking:** validates and persists synchronously,
+then runs the optimization loop on a background thread and returns `202`
+immediately. Follow progress by polling
+`GET /api/workspaces/{workspace_id}/experiments/{experiment_id}` — its
+`summary.state` climbs `draft → queued → running → completed` (or `aborted` on
+failure). Persistence is on: the experiment, its iterations, and traces are
+written to storage, exactly like `selfevals run`.
+
+**Request** (`RunExperimentRequest`) — provide exactly one of:
+
+| Field            | Type           | Notes                                                                                                                                                             |
+| ---------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `spec_path`      | string \| null | Path/name of a YAML spec on the server's disk.                                                                                                                    |
+| `spec_inline`    | object \| null | The spec as a JSON object (same shape as the YAML). Must embed cases under `dataset.cases_inline`; a `dataset.cases_path` has no base to resolve and is rejected. |
+| `max_iterations` | int \| null    | Optional override (≥ 1).                                                                                                                                          |
+| `reps`           | int \| null    | Optional repetitions per case (≥ 1).                                                                                                                              |
+| `persist_traces` | string \| null | Optional: `none` \| `all` \| `failed`.                                                                                                                            |
+
+The path `workspace_id` is authoritative — it overrides any `workspace:` in the
+spec, so the experiment always lands in the workspace from the URL.
+
+**Response** (`RunExperimentResponse`, `202`):
+
+| Field           | Type           | Notes                                                                      |
+| --------------- | -------------- | -------------------------------------------------------------------------- |
+| `experiment_id` | string         | `exp_...`.                                                                 |
+| `workspace_id`  | string         | The path workspace.                                                        |
+| `state`         | string         | Starting state at acknowledgement.                                         |
+| `run_id`        | string \| null | `null` here; trace run ids surface on the iterations as they are produced. |
+
+**Errors:** `422` when the spec does not validate, yields zero cases, or the
+source combination is wrong (neither/both of `spec_path`/`spec_inline`); `409`
+when the target experiment already has an active run (`queued`/`running`/
+`paused`).
 
 ### `GET /api/workspaces/{workspace_id}/experiments/{experiment_id}`
 
@@ -147,30 +194,30 @@ Full experiment detail, including a reconstructed JSON report.
 
 **Response** (`ExperimentDetailResponse`):
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `summary` | `ExperimentSummary` | |
-| `result` | object \| null | The reporter's JSON shape (`render_json`, see [`json_report_schema.md`](json_report_schema.md)); `null` when the experiment has not run. Note: reconstructed from storage, so per-iteration `funnel` and `failure_reasons` are empty here. |
-| `iterations` | `IterationSummary[]` | |
+| Field        | Type                 | Notes                                                                                                                                                                                                                                      |
+| ------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `summary`    | `ExperimentSummary`  |                                                                                                                                                                                                                                            |
+| `result`     | object \| null       | The reporter's JSON shape (`render_json`, see [`json_report_schema.md`](json_report_schema.md)); `null` when the experiment has not run. Note: reconstructed from storage, so per-iteration `funnel` and `failure_reasons` are empty here. |
+| `iterations` | `IterationSummary[]` |                                                                                                                                                                                                                                            |
 
 `IterationSummary`:
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `id` | string | `itr_...`. |
-| `iteration` | int | Zero-based index. |
-| `state` | string | |
-| `hypothesis` | string | |
-| `proposed_parameters` | object | |
-| `primary_metric_name` | string \| null | |
-| `primary_metric_value` | float \| null | |
-| `delta_vs_best` | float \| null | Primary value minus the best-so-far value seen in earlier iterations. |
-| `decision_outcome` | string \| null | |
-| `decision_rationale` | string \| null | Automated rationale. |
-| `cost_usd` | float \| null | |
-| `duration_seconds` | float \| null | |
-| `trace_run_ids` | string[] | Run ids of the traces this iteration produced. |
-| `created_at` | datetime | |
+| Field                  | Type           | Notes                                                                 |
+| ---------------------- | -------------- | --------------------------------------------------------------------- |
+| `id`                   | string         | `itr_...`.                                                            |
+| `iteration`            | int            | Zero-based index.                                                     |
+| `state`                | string         |                                                                       |
+| `hypothesis`           | string         |                                                                       |
+| `proposed_parameters`  | object         |                                                                       |
+| `primary_metric_name`  | string \| null |                                                                       |
+| `primary_metric_value` | float \| null  |                                                                       |
+| `delta_vs_best`        | float \| null  | Primary value minus the best-so-far value seen in earlier iterations. |
+| `decision_outcome`     | string \| null |                                                                       |
+| `decision_rationale`   | string \| null | Automated rationale.                                                  |
+| `cost_usd`             | float \| null  |                                                                       |
+| `duration_seconds`     | float \| null  |                                                                       |
+| `trace_run_ids`        | string[]       | Run ids of the traces this iteration produced.                        |
+| `created_at`           | datetime       |                                                                       |
 
 **Errors:** `404` when the experiment does not exist.
 
@@ -183,17 +230,17 @@ Full experiment detail, including a reconstructed JSON report.
 The decision audit trail, one entry per iteration that has a decision,
 sorted by iteration.
 
-**Response:** `list[object]`, each:
+**Response:** `list[DecisionRecordResponse]`, each:
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `id` | string | Decision id (`dec_...`). |
-| `iteration` | int | |
-| `outcome` | string | |
-| `automated_rationale` | string | |
-| `human_rationale` | string \| null | The human reviewer's notes, when present. |
-| `metrics_snapshot` | object | The metrics at decision time. |
-| `created_at` | string | ISO-8601. |
+| Field                 | Type           | Notes                                     |
+| --------------------- | -------------- | ----------------------------------------- |
+| `id`                  | string         | Decision id (`dec_...`).                  |
+| `iteration`           | int            |                                           |
+| `outcome`             | string         |                                           |
+| `automated_rationale` | string         |                                           |
+| `human_rationale`     | string \| null | The human reviewer's notes, when present. |
+| `metrics_snapshot`    | object         | The metrics at decision time.             |
+| `created_at`          | string         | ISO-8601.                                 |
 
 ### `GET /api/workspaces/{workspace_id}/experiments/{experiment_id}/compare`
 
@@ -206,18 +253,18 @@ record id, required).
 
 **Response** (`CompareResponse`):
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `a_id`, `b_id` | string | Iteration record ids. |
-| `a_iteration`, `b_iteration` | int | Iteration indices. |
-| `a_created_at`, `b_created_at` | string | |
-| `a_decision`, `b_decision` | string \| null | Decision outcomes. |
-| `proposal_diff` | `CompareParamRow[]` | Per-parameter: `{ key, a, b, changed }` (a/b are stringified values). |
-| `metrics_diff` | `CompareMetricRow[]` | Per-metric: `{ name, a, b, delta }` (a/b/delta are floats or null). |
-| `failure_modes` | object | `{ only_a: {mode: count}, only_b: {mode: count}, common: {mode: [count_a, count_b]} }`. |
-| `funnel_diff` | `CompareFunnelRow[]` | Per funnel path: `{ path, a, b, delta }`. |
-| `recommendation` | object | `{ kind, winner?, metric_name?, a_metric_name?, b_metric_name?, a_value?, b_value?, delta?, new_failure_modes[] }`. `kind` ∈ `winner` \| `tie` \| `different_metric` \| `none`. |
-| `holdout_status` | string | Always `"unavailable"` — an `IterationRecord` carries no split classification, so no holdout number is fabricated. |
+| Field                          | Type                 | Notes                                                                                                                                                                           |
+| ------------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `a_id`, `b_id`                 | string               | Iteration record ids.                                                                                                                                                           |
+| `a_iteration`, `b_iteration`   | int                  | Iteration indices.                                                                                                                                                              |
+| `a_created_at`, `b_created_at` | string               |                                                                                                                                                                                 |
+| `a_decision`, `b_decision`     | string \| null       | Decision outcomes.                                                                                                                                                              |
+| `proposal_diff`                | `CompareParamRow[]`  | Per-parameter: `{ key, a, b, changed }` (a/b are stringified values).                                                                                                           |
+| `metrics_diff`                 | `CompareMetricRow[]` | Per-metric: `{ name, a, b, delta }` (a/b/delta are floats or null).                                                                                                             |
+| `failure_modes`                | object               | `{ only_a: {mode: count}, only_b: {mode: count}, common: {mode: [count_a, count_b]} }`.                                                                                         |
+| `funnel_diff`                  | `CompareFunnelRow[]` | Per funnel path: `{ path, a, b, delta }`.                                                                                                                                       |
+| `recommendation`               | object               | `{ kind, winner?, metric_name?, a_metric_name?, b_metric_name?, a_value?, b_value?, delta?, new_failure_modes[] }`. `kind` ∈ `winner` \| `tie` \| `different_metric` \| `none`. |
+| `holdout_status`               | string               | Always `"unavailable"` — an `IterationRecord` carries no split classification, so no holdout number is fabricated.                                                              |
 
 **Errors:** `404` when one or both iterations are not found; `400` when the
 two iterations belong to a different experiment than the one in the path (not
@@ -243,23 +290,23 @@ persisted `IterationRecord.metrics.funnel` (the source of truth).
 
 **Response** (`FunnelResponse`):
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `iteration_id` | string | |
-| `iteration` | int | |
-| `nodes` | object | Map of top-level `key` → `FunnelNodeResponse`. Empty `{}` when no grader emitted a breakdown (the common case for the pingpong example — *not* an error). |
+| Field          | Type   | Notes                                                                                                                                                     |
+| -------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `iteration_id` | string |                                                                                                                                                           |
+| `iteration`    | int    |                                                                                                                                                           |
+| `nodes`        | object | Map of top-level `key` → `FunnelNodeResponse`. Empty `{}` when no grader emitted a breakdown (the common case for the pingpong example — _not_ an error). |
 
 `FunnelNodeResponse` (recursive):
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `key` | string | |
-| `count` | int | How many breakdown nodes rolled up here. |
-| `mean_score` | float \| null | Weight-weighted mean of contributing scores. |
-| `total_weight` | float | |
-| `label_counts` | object | `{ label: count }`. |
-| `failure_mode_counts` | object | `{ failure_mode: count }`. |
-| `children` | object | Map of `key` → nested `FunnelNodeResponse`. |
+| Field                 | Type          | Notes                                        |
+| --------------------- | ------------- | -------------------------------------------- |
+| `key`                 | string        |                                              |
+| `count`               | int           | How many breakdown nodes rolled up here.     |
+| `mean_score`          | float \| null | Weight-weighted mean of contributing scores. |
+| `total_weight`        | float         |                                              |
+| `label_counts`        | object        | `{ label: count }`.                          |
+| `failure_mode_counts` | object        | `{ failure_mode: count }`.                   |
+| `children`            | object        | Map of `key` → nested `FunnelNodeResponse`.  |
 
 **Errors:** `404` when the iteration does not exist.
 
@@ -274,32 +321,32 @@ A single trace. `trace_id` accepts either the entity id (`tr_...`) or the
 
 **Response** (`TraceResponse`):
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `id` | string | Trace entity id. |
-| `run_id` | string | |
-| `experiment_id` | string \| null | |
-| `experiment_name` | string \| null | Resolved for nicer titling; null for orphan/standalone traces. |
-| `iteration` | int \| null | |
-| `thread_id` | string \| null | |
-| `thread_position` | int \| null | |
-| `final_state` | string | |
-| `started_at` | datetime | |
-| `ended_at` | datetime \| null | |
-| `spans` | `SpanSummary[]` | |
-| `metrics` | object | The trace's metrics, JSON-dumped. |
+| Field             | Type             | Notes                                                          |
+| ----------------- | ---------------- | -------------------------------------------------------------- |
+| `id`              | string           | Trace entity id.                                               |
+| `run_id`          | string           |                                                                |
+| `experiment_id`   | string \| null   |                                                                |
+| `experiment_name` | string \| null   | Resolved for nicer titling; null for orphan/standalone traces. |
+| `iteration`       | int \| null      |                                                                |
+| `thread_id`       | string \| null   |                                                                |
+| `thread_position` | int \| null      |                                                                |
+| `final_state`     | string           |                                                                |
+| `started_at`      | datetime         |                                                                |
+| `ended_at`        | datetime \| null |                                                                |
+| `spans`           | `SpanSummary[]`  |                                                                |
+| `metrics`         | object           | The trace's metrics, JSON-dumped.                              |
 
 `SpanSummary`:
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `id` | string | |
-| `parent_id` | string \| null | |
-| `kind` | string | Span kind (LLMCall, ToolCall, Retrieval, Decision, …). |
-| `name` | string | |
-| `started_at` | datetime | |
-| `duration_ms` | int | |
-| `detail` | object | Kind-specific high-value fields (model, tokens, cost, TTFT, tool name/args/result pointers, retrieval query/top_k, etc.) for the inspector to render without a second fetch. |
+| Field         | Type           | Notes                                                                                                                                                                        |
+| ------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`          | string         |                                                                                                                                                                              |
+| `parent_id`   | string \| null |                                                                                                                                                                              |
+| `kind`        | string         | Span kind (LLMCall, ToolCall, Retrieval, Decision, …).                                                                                                                       |
+| `name`        | string         |                                                                                                                                                                              |
+| `started_at`  | datetime       |                                                                                                                                                                              |
+| `duration_ms` | int            |                                                                                                                                                                              |
+| `detail`      | object         | Kind-specific high-value fields (model, tokens, cost, TTFT, tool name/args/result pointers, retrieval query/top_k, etc.) for the inspector to render without a second fetch. |
 
 **Errors:** `404` when the trace does not exist.
 
@@ -311,27 +358,27 @@ conversation. Turns are ordered by `thread_position` when set, falling back to
 
 **Response** (`ThreadResponse`):
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `thread_id` | string | |
-| `turn_count` | int | |
-| `turns` | `ThreadTurn[]` | |
+| Field        | Type           | Notes |
+| ------------ | -------------- | ----- |
+| `thread_id`  | string         |       |
+| `turn_count` | int            |       |
+| `turns`      | `ThreadTurn[]` |       |
 
 `ThreadTurn`:
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `trace_id` | string | |
-| `run_id` | string | |
-| `position` | int | `thread_position` when set, else the 0-based ordinal. |
-| `experiment_id` | string \| null | |
-| `iteration` | int \| null | |
-| `final_state` | string | |
-| `started_at` | datetime | |
-| `ended_at` | datetime \| null | |
-| `primary_grade` | string \| null | Label of the first grader result. |
-| `grader_results` | object[] | Per-grader results for this turn. |
-| `metrics` | object | The turn's trace metrics. |
+| Field            | Type             | Notes                                                 |
+| ---------------- | ---------------- | ----------------------------------------------------- |
+| `trace_id`       | string           |                                                       |
+| `run_id`         | string           |                                                       |
+| `position`       | int              | `thread_position` when set, else the 0-based ordinal. |
+| `experiment_id`  | string \| null   |                                                       |
+| `iteration`      | int \| null      |                                                       |
+| `final_state`    | string           |                                                       |
+| `started_at`     | datetime         |                                                       |
+| `ended_at`       | datetime \| null |                                                       |
+| `primary_grade`  | string \| null   | Label of the first grader result.                     |
+| `grader_results` | object[]         | Per-grader results for this turn.                     |
+| `metrics`        | object           | The turn's trace metrics.                             |
 
 **Errors:** `404` when no trace carries the thread id.
 
@@ -339,7 +386,7 @@ conversation. Turns are ordered by `thread_position` when set, falling back to
 
 Currently-streaming runs (from the in-memory span broker).
 
-**Response:** `list[{ "workspace_id": str, "run_id": str }]`.
+**Response** (`ActiveRunsResponse`): `{ "runs": [{ "workspace_id": str, "run_id": str }] }`.
 
 ### `GET /api/workspaces/{workspace_id}/traces/{run_id}/stream`
 
@@ -381,12 +428,12 @@ repeated reruns of a canonical case set — land later.)
 
 **Response:** `list[AnchorPoint]`:
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `experiment_id` | string | |
-| `experiment_name` | string | |
-| `iteration` | int | |
-| `primary_metric_name` | string | |
-| `primary_metric_value` | float | |
-| `decision_outcome` | string | `"unknown"` when the iteration has no decision. |
-| `created_at` | string | ISO-8601. |
+| Field                  | Type   | Notes                                           |
+| ---------------------- | ------ | ----------------------------------------------- |
+| `experiment_id`        | string |                                                 |
+| `experiment_name`      | string |                                                 |
+| `iteration`            | int    |                                                 |
+| `primary_metric_name`  | string |                                                 |
+| `primary_metric_value` | float  |                                                 |
+| `decision_outcome`     | string | `"unknown"` when the iteration has no decision. |
+| `created_at`           | string | ISO-8601.                                       |

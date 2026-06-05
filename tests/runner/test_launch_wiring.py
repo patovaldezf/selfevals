@@ -1,21 +1,17 @@
 """Wiring point: transport-tagged agent specs → concrete adapters.
 
-The loader only parses the `agent:` block into a typed spec; the CLI
-dispatches that spec to an adapter. These tests pin the dispatch (one
-adapter per variant) and the judge-fallback rule (only embedded agents
-expose an in-process callable to reuse as a judge).
+The loader only parses the `agent:` block into a typed spec; `runner.launch`
+dispatches that spec to an adapter. These tests pin the dispatch (one adapter per
+variant) and the judge-fallback rule (only embedded agents expose an in-process
+callable to reuse as a judge). They live alongside `runner/launch.py` because
+this wiring is now shared by both the CLI and the HTTP `experiments/run` path.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from selfevals.cli.commands import (
-    CommandError,
-    _agent_entrypoint_for_judge,
-    _build_adapter,
-    _wrap_user_callable,
-)
+from selfevals._errors import SelfEvalsUserError
 from selfevals.repo.loader import (
     AgentEntrypoint,
     CliAgentSpec,
@@ -30,6 +26,11 @@ from selfevals.runner.adapters import (
     EmbeddedAdapter,
     HttpEndpointAdapter,
 )
+from selfevals.runner.launch import (
+    _agent_entrypoint_for_judge,
+    _wrap_user_callable,
+    build_adapter,
+)
 
 
 def _req() -> AdapterRequest:
@@ -42,19 +43,19 @@ def test_build_adapter_embedded() -> None:
         module="selfevals.repo.loader",
         attribute="resolve_agent_callable",
     )
-    adapter = _build_adapter(EmbeddedAgentSpec(entrypoint=ep))
+    adapter = build_adapter(EmbeddedAgentSpec(entrypoint=ep))
     assert isinstance(adapter, EmbeddedAdapter)
 
 
-def test_build_adapter_embedded_bad_entrypoint_is_command_error() -> None:
+def test_build_adapter_embedded_bad_entrypoint_is_user_error() -> None:
     ep = AgentEntrypoint(raw="not.a.real.mod:x", module="not.a.real.mod", attribute="x")
-    with pytest.raises(CommandError, match="could not be imported"):
-        _build_adapter(EmbeddedAgentSpec(entrypoint=ep))
+    with pytest.raises(SelfEvalsUserError, match="could not be imported"):
+        build_adapter(EmbeddedAgentSpec(entrypoint=ep))
 
 
 def test_build_adapter_cli() -> None:
     spec = CliAgentSpec(command=["./bin/agent"], env={"TOKEN": "x"}, timeout_seconds=30.0)
-    adapter = _build_adapter(spec)
+    adapter = build_adapter(spec)
     assert isinstance(adapter, CliCommandAdapter)
     assert adapter._command == ["./bin/agent"]
     assert adapter._env == {"TOKEN": "x"}
@@ -62,7 +63,7 @@ def test_build_adapter_cli() -> None:
 
 
 def test_build_adapter_cli_default_timeout() -> None:
-    adapter = _build_adapter(CliAgentSpec(command=["./agent"]))
+    adapter = build_adapter(CliAgentSpec(command=["./agent"]))
     assert isinstance(adapter, CliCommandAdapter)
     # When the spec omits timeout_seconds, the adapter default applies.
     assert adapter._timeout == 60.0
@@ -74,7 +75,7 @@ def test_build_adapter_http() -> None:
         headers={"Authorization": "Bearer x"},
         timeout_seconds=12.5,
     )
-    adapter = _build_adapter(spec)
+    adapter = build_adapter(spec)
     assert isinstance(adapter, HttpEndpointAdapter)
     assert adapter._url == "https://agent.example.com/eval"
     assert adapter._headers["Authorization"] == "Bearer x"
@@ -82,7 +83,7 @@ def test_build_adapter_http() -> None:
 
 
 def test_build_adapter_http_default_timeout() -> None:
-    adapter = _build_adapter(HttpAgentSpec(url="https://x/eval"))
+    adapter = build_adapter(HttpAgentSpec(url="https://x/eval"))
     assert isinstance(adapter, HttpEndpointAdapter)
     assert adapter._timeout == 60.0
 
@@ -93,12 +94,12 @@ def test_judge_fallback_returns_embedded_entrypoint() -> None:
 
 
 def test_judge_fallback_rejects_cli_agent() -> None:
-    with pytest.raises(CommandError, match="not embedded"):
+    with pytest.raises(SelfEvalsUserError, match="not embedded"):
         _agent_entrypoint_for_judge("rubric", CliAgentSpec(command=["./a"]))
 
 
 def test_judge_fallback_rejects_http_agent() -> None:
-    with pytest.raises(CommandError, match="not embedded"):
+    with pytest.raises(SelfEvalsUserError, match="not embedded"):
         _agent_entrypoint_for_judge("rubric", HttpAgentSpec(url="https://x"))
 
 

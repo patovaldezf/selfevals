@@ -38,20 +38,27 @@ from selfevals.api.queries import (
     load_trace,
     workspace_detail,
 )
+from selfevals.api.run_launcher import launch_experiment_run
 from selfevals.api.schemas import (
+    ActiveRun,
+    ActiveRunsResponse,
     CompareResponse,
     CreateWorkspaceRequest,
+    DecisionRecordResponse,
     ExperimentDetailResponse,
     ExperimentListPage,
     FunnelResponse,
     HealthResponse,
     IterationListResponse,
+    RunExperimentRequest,
+    RunExperimentResponse,
     ThreadResponse,
     TraceResponse,
     WorkspaceListResponse,
     WorkspaceResponse,
 )
 from selfevals.api.sse import stream_trace
+from selfevals.schemas.enums import ExperimentState
 from selfevals.storage.errors import ObjectNotFoundError, PointerHashMismatchError
 from selfevals.storage.filesystem import FilesystemObjectStore, parse_pointer
 from selfevals.storage.sqlite import SQLiteStorage
@@ -191,6 +198,14 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
         storage: SQLiteStorage = Depends(_storage),
         limit: Annotated[int, Query(ge=1, le=500)] = 100,
         offset: Annotated[int, Query(ge=0)] = 0,
+        state: Annotated[
+            ExperimentState | None,
+            Query(description="Filter by experiment state (e.g. running, completed)."),
+        ] = None,
+        feature: Annotated[
+            str | None,
+            Query(description="Filter to experiments whose taxonomy.target_features contains this."),
+        ] = None,
         _user: UserHeader = None,
     ) -> ExperimentListPage:
         try:
@@ -199,9 +214,31 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
                 workspace_id=workspace_id,
                 limit=limit,
                 offset=offset,
+                state=state,
+                feature=feature,
             )
         finally:
             storage.close()
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/experiments/run",
+        response_model=RunExperimentResponse,
+        status_code=202,
+        tags=["experiments"],
+    )
+    def experiments_run(
+        workspace_id: str,
+        body: RunExperimentRequest,
+        _user: UserHeader = None,
+    ) -> RunExperimentResponse:
+        # Non-blocking: validates + persists synchronously, then runs the loop
+        # on a daemon thread. Returns 202 immediately; the FE polls the
+        # experiment detail (state climbs to completed/aborted).
+        return launch_experiment_run(
+            db_path=resolved,
+            workspace_id=workspace_id,
+            body=body,
+        )
 
     @app.get(
         "/api/workspaces/{workspace_id}/experiments/{experiment_id}",
@@ -253,6 +290,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
 
     @app.get(
         "/api/workspaces/{workspace_id}/experiments/{experiment_id}/decisions",
+        response_model=list[DecisionRecordResponse],
         tags=["experiments"],
     )
     def experiments_decisions(
@@ -260,13 +298,16 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
         experiment_id: str,
         storage: SQLiteStorage = Depends(_storage),
         _user: UserHeader = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[DecisionRecordResponse]:
         try:
-            return experiment_decisions(
-                storage,
-                workspace_id=workspace_id,
-                experiment_id=experiment_id,
-            )
+            return [
+                DecisionRecordResponse(**d)
+                for d in experiment_decisions(
+                    storage,
+                    workspace_id=workspace_id,
+                    experiment_id=experiment_id,
+                )
+            ]
         finally:
             storage.close()
 
@@ -307,6 +348,17 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     @app.get(
         "/api/workspaces/{workspace_id}/iterations/{iteration_id}",
         tags=["experiments"],
+        responses={
+            200: {
+                "description": (
+                    "Full iteration drill-down: `{iteration: IterationRecord, "
+                    "decision: DecisionRecord | null}`, each a JSON dump of the "
+                    "canonical domain model. Returned untyped on purpose — the FE "
+                    "renders it generically rather than against a view schema."
+                ),
+            },
+            404: {"description": "Iteration not found."},
+        },
     )
     def iterations_show(
         workspace_id: str,
@@ -387,9 +439,14 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
         finally:
             storage.close()
 
-    @app.get("/api/runs/active", tags=["traces"])
-    def runs_active(_user: UserHeader = None) -> list[dict[str, str]]:
-        return [{"workspace_id": ws, "run_id": run} for (ws, run) in get_broker().active_runs()]
+    @app.get("/api/runs/active", response_model=ActiveRunsResponse, tags=["traces"])
+    def runs_active(_user: UserHeader = None) -> ActiveRunsResponse:
+        return ActiveRunsResponse(
+            runs=[
+                ActiveRun(workspace_id=ws, run_id=run)
+                for (ws, run) in get_broker().active_runs()
+            ]
+        )
 
     @app.get(
         "/api/workspaces/{workspace_id}/traces/{run_id}/stream",
