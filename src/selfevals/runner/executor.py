@@ -271,14 +271,21 @@ class Executor:
         request: AdapterRequest,
     ) -> None:
         # The model name reported by the agent wins (embedded specs declare no
-        # model — the function does), then the agent record (cli/http), then
-        # "unknown". This is what stops the trace viewer showing model="unknown".
+        # model — the function does), then the spec-declared `agent.model`
+        # (cli/http), then the agent record, then "unknown". This is what stops
+        # the trace viewer showing model="unknown".
         meta = response.provider_metadata
-        provider = _str_or_none(meta.get("provider")) or (
-            self._adapter.agent.model.provider if self._adapter.agent else None
+        declared = self._adapter.model
+        agent_model = self._adapter.agent.model if self._adapter.agent else None
+        provider = (
+            _str_or_none(meta.get("provider"))
+            or (declared.provider if declared else None)
+            or (agent_model.provider if agent_model else None)
         )
-        model = _str_or_none(meta.get("model")) or (
-            self._adapter.agent.model.name if self._adapter.agent else None
+        model = (
+            _str_or_none(meta.get("model"))
+            or (declared.name if declared else None)
+            or (agent_model.name if agent_model else None)
         )
         with recorder.llm_call(
             "adapter_response",
@@ -392,14 +399,19 @@ class Executor:
         The adapter's `cost_usd` is authoritative when it reports one — we keep
         it as the breakdown total (the component split is the provider's, not
         ours to infer). When the adapter reports no cost, derive it from the
-        response tokens and the agent's model via the pricing table. An unknown
-        model yields None (a one-time warning fires in the pricing layer) — we
-        never fabricate a cost.
+        response tokens and the known model (the spec-declared `agent.model` for
+        cli/http, or the agent record) via the pricing table. No known model
+        yields None (a one-time warning fires in the pricing layer) — we never
+        fabricate a cost. This is why a cli/http agent that returns tokens but no
+        cost still showed `$0.00`: without a declared model there's nothing to
+        price against.
         """
         if response.cost_usd > 0:
             return CostBreakdown(total=response.cost_usd)
-        agent = self._adapter.agent
-        if agent is None:
+        model = self._adapter.model or (
+            self._adapter.agent.model if self._adapter.agent else None
+        )
+        if model is None:
             return None
         tokens = TokenBreakdown(
             input=response.tokens_input,
@@ -415,7 +427,7 @@ class Executor:
                 + response.tokens_reasoning
             ),
         )
-        return estimate_cost(agent.model.provider, agent.model.name, tokens)
+        return estimate_cost(model.provider, model.name, tokens)
 
     def _agent_ref(self) -> AgentSnapshotRef:
         ag = self._adapter.agent

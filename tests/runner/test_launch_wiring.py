@@ -285,3 +285,22 @@ def test_trace_sampling_override_unknown_value_returns_none(
     # An unrecognized value falls through to the spec default, not an error.
     monkeypatch.setenv("SELFEVALS_TRACE_SAMPLING", "sometimes")
     assert trace_sampling_override() is None
+
+
+def test_build_adapter_http_passes_declared_model() -> None:
+    from selfevals.repo.loader import AgentModelDecl
+
+    spec = HttpAgentSpec(
+        url="https://x/eval", model=AgentModelDecl(provider="openai", name="gpt-5")
+    )
+    adapter = build_adapter(spec)
+    assert isinstance(adapter, HttpEndpointAdapter)
+    assert adapter.model is not None
+    assert adapter.model.provider == "openai"
+    assert adapter.model.name == "gpt-5"
+
+
+def test_build_adapter_http_without_model_is_none() -> None:
+    adapter = build_adapter(HttpAgentSpec(url="https://x/eval"))
+    assert isinstance(adapter, HttpEndpointAdapter)
+    assert adapter.model is None

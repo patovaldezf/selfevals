@@ -27,15 +27,15 @@ blocking the event loop. There is no synchronous variant.
 
 What selfevals sends to your agent for each case.
 
-| Field           | Type                 | Notes                                                                                 |
-| --------------- | -------------------- | ------------------------------------------------------------------------------------- |
-| `workspace_id`  | `str`                | The owning workspace's id.                                                            |
-| `case_id`       | `str`                | Stable id for the `EvalCase` being run.                                               |
-| `input`         | `dict[str, Any]`     | The Pydantic-compatible `EvalCase.input` payload (usually a `messages` list).         |
-| `context`       | `dict[str, Any]\|None` | Optional context block (system info, retrieved docs, etc.).                         |
-| `tools_allowed` | `list[str]`          | Frozen list of tool names the agent is permitted to use.                              |
-| `parameters`    | `dict[str, Any]`     | Overrides from the proposer (e.g. model temperature, prompt swap). Pass through verbatim. |
-| `metadata`      | `dict[str, Any]`     | Free-form metadata for tracing.                                                       |
+| Field           | Type                   | Notes                                                                                     |
+| --------------- | ---------------------- | ----------------------------------------------------------------------------------------- |
+| `workspace_id`  | `str`                  | The owning workspace's id.                                                                |
+| `case_id`       | `str`                  | Stable id for the `EvalCase` being run.                                                   |
+| `input`         | `dict[str, Any]`       | The Pydantic-compatible `EvalCase.input` payload (usually a `messages` list).             |
+| `context`       | `dict[str, Any]\|None` | Optional context block (system info, retrieved docs, etc.).                               |
+| `tools_allowed` | `list[str]`            | Frozen list of tool names the agent is permitted to use.                                  |
+| `parameters`    | `dict[str, Any]`       | Overrides from the proposer (e.g. model temperature, prompt swap). Pass through verbatim. |
+| `metadata`      | `dict[str, Any]`       | Free-form metadata for tracing.                                                           |
 
 #### Reading proposer model params
 
@@ -63,24 +63,50 @@ know the envelope's shape.
 
 What your agent must return.
 
-| Field                 | Type                          | Notes                                              |
-| --------------------- | ----------------------------- | -------------------------------------------------- |
-| `content`             | `str \| None`                 | Agent's textual reply.                             |
-| `structured_output`   | `dict[str, Any] \| None`      | Structured payload (e.g. JSON tool result).        |
-| `tool_uses`           | `list[AdapterToolUse]`        | List of `{tool, tool_use_id, args}` records.       |
-| `stop_reason`         | `str \| None`                 | Provider-reported termination reason.              |
-| `tokens_input`        | `int`                         | Input tokens consumed.                             |
-| `tokens_output`       | `int`                         | Output tokens emitted.                             |
-| `tokens_reasoning`    | `int`                         | Reasoning tokens (for models that report them).    |
-| `tokens_cache_read`   | `int`                         | Cache-read tokens.                                 |
-| `tokens_cache_creation` | `int`                       | Cache-creation tokens.                             |
-| `cost_usd`            | `float`                       | Cost of this single call in USD.                   |
-| `provider_metadata`   | `dict[str, Any]`              | Anything else worth keeping in the trace.          |
+| Field                   | Type                     | Notes                                           |
+| ----------------------- | ------------------------ | ----------------------------------------------- |
+| `content`               | `str \| None`            | Agent's textual reply.                          |
+| `structured_output`     | `dict[str, Any] \| None` | Structured payload (e.g. JSON tool result).     |
+| `tool_uses`             | `list[AdapterToolUse]`   | List of `{tool, tool_use_id, args}` records.    |
+| `stop_reason`           | `str \| None`            | Provider-reported termination reason.           |
+| `tokens_input`          | `int`                    | Input tokens consumed.                          |
+| `tokens_output`         | `int`                    | Output tokens emitted.                          |
+| `tokens_reasoning`      | `int`                    | Reasoning tokens (for models that report them). |
+| `tokens_cache_read`     | `int`                    | Cache-read tokens.                              |
+| `tokens_cache_creation` | `int`                    | Cache-creation tokens.                          |
+| `cost_usd`              | `float`                  | Cost of this single call in USD.                |
+| `provider_metadata`     | `dict[str, Any]`         | Anything else worth keeping in the trace.       |
 
 `AdapterToolUse` is `{tool: str, tool_use_id: str, args: dict[str, Any]}`.
 
 Failures raise `AdapterError` (transport error, decode error, contract
 violation).
+
+#### Model name and cost in the trace
+
+The trace's LLM span shows `model`/`provider` and a per-call `cost_usd`. An
+embedded/cli/http agent is a black box, so selfevals resolves them in this order:
+
+1. `provider_metadata["provider"]` / `["model"]` returned by the agent — the most
+   accurate, since only the agent knows which model actually ran.
+2. The spec's `agent.model: {provider, name}` (cli/http only) — see below.
+3. The agent record's model (embedded agents bound to an `Agent`).
+4. `"unknown"` — honest when none of the above is available.
+
+Cost likewise prefers the `cost_usd` the agent reports. When the agent returns
+**tokens but no cost**, selfevals prices them from the known model (sources 2–3
+above). With no known model there is nothing to price against, so `cost_usd`
+stays `0.0` — this is why a cli/http agent that returns tokens but no cost shows
+`$0.00` until you declare `agent.model`:
+
+```yaml
+agent:
+  type: http
+  url: https://my-agent/invoke
+  model: # optional — enables model badge + token-based pricing
+    provider: openai
+    name: gpt-5
+```
 
 The wire format for `CliCommandAdapter` and `HttpEndpointAdapter` is
 JSON-serialised versions of these same shapes; see `_request_to_json` /
@@ -152,7 +178,7 @@ Rules of the road:
   ingests it into a `Trace` separately.
 
 The three bundled adapters are auto-wired from YAML by the `agent:` block
-(see each section below). A *custom* adapter — anything you subclass
+(see each section below). A _custom_ adapter — anything you subclass
 yourself — is wired via a Python `entrypoint` (an embedded callable that
 constructs and delegates to your adapter); there is no `type:` tag for
 user-defined adapters.
@@ -255,9 +281,9 @@ proxy needed:
 ```yaml
 agent:
   type: cli
-  command: ["./bin/my-agent", "--mode", "eval"]   # required, non-empty argv
-  env: { MY_TOKEN: "..." }                          # optional
-  timeout_seconds: 30                               # optional; default 60
+  command: ["./bin/my-agent", "--mode", "eval"] # required, non-empty argv
+  env: { MY_TOKEN: "..." } # optional
+  timeout_seconds: 30 # optional; default 60
 ```
 
 The CLI builds `CliCommandAdapter(command, env=..., timeout_seconds=...)`
@@ -308,7 +334,7 @@ can be hit concurrently. Default timeout 60 seconds.
 - Your agent runs as a hosted service.
 - You want to point selfevals at a deployed staging environment or a
   local server tunnelled via `ngrok`.
-- You need to evaluate the *deployed* surface, not an in-process copy.
+- You need to evaluate the _deployed_ surface, not an in-process copy.
 
 ### YAML
 
@@ -318,9 +344,9 @@ proxy needed:
 ```yaml
 agent:
   type: http
-  url: "https://agent.example.com/eval"          # required
-  headers: { Authorization: "Bearer ..." }        # optional
-  timeout_seconds: 30                              # optional; default 60
+  url: "https://agent.example.com/eval" # required
+  headers: { Authorization: "Bearer ..." } # optional
+  timeout_seconds: 30 # optional; default 60
 ```
 
 The CLI builds `HttpEndpointAdapter(url, headers=..., timeout_seconds=...)`
@@ -376,11 +402,11 @@ def evaluate(req: Request) -> dict:
 
 ## Comparison
 
-| Adapter               | Latency overhead         | Isolation                   | Typical use                                              |
-| --------------------- | ------------------------ | --------------------------- | -------------------------------------------------------- |
-| `EmbeddedAdapter`     | ~0 (function call)       | None (same process)         | Fast in-repo iteration, tests, CI smoke runs.            |
-| `CliCommandAdapter`   | Subprocess spawn per case | OS process (clean exit)     | Multi-language agents, OS-level isolation, crash safety. |
-| `HttpEndpointAdapter` | Network round-trip       | Remote (different host OK)  | Deployed/staging agents, dogfooding through a tunnel.    |
+| Adapter               | Latency overhead          | Isolation                  | Typical use                                              |
+| --------------------- | ------------------------- | -------------------------- | -------------------------------------------------------- |
+| `EmbeddedAdapter`     | ~0 (function call)        | None (same process)        | Fast in-repo iteration, tests, CI smoke runs.            |
+| `CliCommandAdapter`   | Subprocess spawn per case | OS process (clean exit)    | Multi-language agents, OS-level isolation, crash safety. |
+| `HttpEndpointAdapter` | Network round-trip        | Remote (different host OK) | Deployed/staging agents, dogfooding through a tunnel.    |
 
 The transport protocol is nailed down so the layers above the adapter
 can stabilise first. Streaming, retries, batching, structured auth, and

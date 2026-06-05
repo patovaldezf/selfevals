@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 if TYPE_CHECKING:
-    from selfevals.schemas.fleet import Agent
+    from selfevals.schemas.fleet import Agent, ModelRef
 
 EmbeddedCallable = Callable[
     ["AdapterRequest"], "AdapterResponse | Awaitable[AdapterResponse]"
@@ -104,6 +104,13 @@ class AgentAdapter(ABC):
     """Optional handle to the Agent record this adapter was constructed for.
     Used by the Executor to bake snapshot ids into traces."""
 
+    model: ModelRef | None = None
+    """Optional model the agent runs, when known. Embedded/cli/http agents are
+    black boxes; a cli/http spec may declare `agent.model: {provider, name}` so
+    the Executor can stamp the real model on the trace and price reported tokens.
+    None when undeclared (the model stays "unknown" and cost comes only from a
+    `cost_usd` the agent reports itself)."""
+
     @abstractmethod
     async def invoke(self, request: AdapterRequest) -> AdapterResponse: ...
 
@@ -167,6 +174,7 @@ class CliCommandAdapter(AgentAdapter):
         env: dict[str, str] | None = None,
         timeout_seconds: float | None = 60.0,
         agent: Agent | None = None,
+        model: ModelRef | None = None,
     ) -> None:
         if not command:
             raise ValueError("command must be non-empty")
@@ -174,6 +182,7 @@ class CliCommandAdapter(AgentAdapter):
         self._env = env
         self._timeout = timeout_seconds
         self.agent = agent
+        self.model = model
 
     async def invoke(self, request: AdapterRequest) -> AdapterResponse:
         payload = json.dumps(_request_to_json(request)).encode("utf-8")
@@ -224,6 +233,7 @@ class HttpEndpointAdapter(AgentAdapter):
         headers: dict[str, str] | None = None,
         timeout_seconds: float = 60.0,
         agent: Agent | None = None,
+        model: ModelRef | None = None,
     ) -> None:
         if not url:
             raise ValueError("url must be non-empty")
@@ -231,6 +241,7 @@ class HttpEndpointAdapter(AgentAdapter):
         self._headers = {"Content-Type": "application/json", **(headers or {})}
         self._timeout = timeout_seconds
         self.agent = agent
+        self.model = model
 
     async def invoke(self, request: AdapterRequest) -> AdapterResponse:
         payload = _request_to_json(request)

@@ -50,6 +50,7 @@ from selfevals.optimization.proposers import (
 )
 from selfevals.repo.loader import (
     AgentEntrypoint,
+    AgentModelDecl,
     AgentSpec,
     CliAgentSpec,
     EmbeddedAgentSpec,
@@ -70,6 +71,7 @@ from selfevals.runner.executor import Executor
 from selfevals.runner.sandbox import SandboxPolicy
 from selfevals.schemas.enums import ProposerStrategy
 from selfevals.schemas.experiment import Experiment
+from selfevals.schemas.fleet import ModelRef
 from selfevals.schemas.workspace import Workspace
 from selfevals.storage.interface import WorkspaceScope
 from selfevals.storage.sqlite import SQLiteStorage
@@ -143,16 +145,26 @@ def build_adapter(agent: AgentSpec) -> AgentAdapter:
             raise SelfEvalsUserError(str(exc)) from exc
         return _wrap_user_callable(callable_obj, agent.entrypoint)
     if isinstance(agent, CliAgentSpec):
-        kwargs: dict[str, object] = {"env": agent.env}
+        kwargs: dict[str, object] = {"env": agent.env, "model": _model_ref(agent.model)}
         if agent.timeout_seconds is not None:
             kwargs["timeout_seconds"] = agent.timeout_seconds
         return CliCommandAdapter(agent.command, **kwargs)  # type: ignore[arg-type]
     if isinstance(agent, HttpAgentSpec):
-        http_kwargs: dict[str, object] = {"headers": agent.headers}
+        http_kwargs: dict[str, object] = {
+            "headers": agent.headers,
+            "model": _model_ref(agent.model),
+        }
         if agent.timeout_seconds is not None:
             http_kwargs["timeout_seconds"] = agent.timeout_seconds
         return HttpEndpointAdapter(agent.url, **http_kwargs)  # type: ignore[arg-type]
     raise SelfEvalsUserError(f"unsupported agent spec: {type(agent).__name__}")  # defensive
+
+
+def _model_ref(decl: AgentModelDecl | None) -> ModelRef | None:
+    """Lift the loader's `agent.model` declaration into a `ModelRef`, or None."""
+    if decl is None:
+        return None
+    return ModelRef(provider=decl.provider, name=decl.name)
 
 
 def build_proposer(experiment: Experiment) -> Proposer:
