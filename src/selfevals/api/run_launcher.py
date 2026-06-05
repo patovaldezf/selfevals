@@ -115,12 +115,10 @@ def _apply_overrides(spec: ExperimentSpec, body: RunExperimentRequest) -> None:
 def _run_in_thread(*, db_path: str, spec: ExperimentSpec, reps: int) -> None:
     """Background worker: own storage + own event loop. Never blocks FastAPI.
 
-    The loop mutates `spec.experiment.state` (draft → … → completed) and persists
-    iterations/decisions/traces, but it does not write the experiment row back —
-    the CLI renders from the in-memory result and never re-reads it. The HTTP
-    contract is the opposite: the FE polls the persisted experiment to follow
-    progress. So we persist the experiment here, after the run resolves, so its
-    final state (completed, or aborted on failure) is what a `GET` returns.
+    The loop drives `spec.experiment.state` (draft → … → completed) and now
+    persists the experiment row at each transition via its `scope`, so a polling
+    `GET` follows progress without anything extra here. On failure we still move
+    it to `aborted` ourselves (the loop has no failure transition).
     """
     storage = SQLiteStorage(db_path)
     scope = None
@@ -128,7 +126,6 @@ def _run_in_thread(*, db_path: str, spec: ExperimentSpec, reps: int) -> None:
         scope = storage.open(spec.workspace_id)
         loop = build_loop(spec, scope=scope, repetitions_per_case=reps)
         asyncio.run(loop.run())
-        scope.put_entity(spec.experiment)  # persist the terminal (completed) state
     except Exception:
         logger.exception("experiment run failed: %s", spec.experiment.id)
         _abort_experiment(storage, spec)

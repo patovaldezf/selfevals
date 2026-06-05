@@ -171,6 +171,42 @@ async def test_loop_runs_max_iterations_when_no_convergence(tmp_path: Path) -> N
 
 
 @pytest.mark.asyncio
+async def test_loop_persists_experiment_terminal_state(tmp_path: Path) -> None:
+    # The experiment row in storage must reflect the run's outcome, not the
+    # pre-run state. Before the fix the loop transitioned the in-memory object
+    # to COMPLETED but never flushed it, so a reader (e.g. a polling HTTP
+    # client) saw it stuck at DRAFT.
+    cases = [_case("pong")]
+    exp = _experiment(max_iterations=1, search_space={"level": [1.0]})
+    assert exp.state == ExperimentState.DRAFT
+    storage = SQLiteStorage(tmp_path / "db.sqlite")
+    ws = Workspace(id=WS, workspace_id=WS, slug="t", name="t")
+    with storage.open(WS) as scope:
+        scope.put_entity(ws)
+    scope = storage.open(WS)
+    loop = OptimizationLoop(
+        experiment=exp,
+        executor=Executor(
+            adapter=_adapter_for("pong", level=1.0),
+            sandbox=SandboxPolicy(SandboxMode.MOCK),
+            workspace_id=WS,
+        ),
+        proposer=GridProposer(),
+        graders=[DeterministicGrader()],
+        cases=cases,
+        scope=scope,
+    )
+    await loop.run()
+    scope.close()
+
+    with storage.open(WS) as s:
+        persisted = s.get_entity(Experiment, exp.id)
+    assert isinstance(persisted, Experiment)
+    assert persisted.state == ExperimentState.COMPLETED
+    storage.close()
+
+
+@pytest.mark.asyncio
 async def test_loop_persists_and_carries_grader_reason(tmp_path: Path) -> None:
     from selfevals.schemas.trace import Trace
 
