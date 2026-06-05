@@ -74,11 +74,29 @@ from selfevals.storage.interface import WorkspaceScope
 from selfevals.storage.sqlite import SQLiteStorage
 
 if TYPE_CHECKING:
+    from selfevals.trace.payload_router import PayloadRouter
     from selfevals.trace.span_sink import SpanSink
 
 # Serializes the register → resolve → unregister window so concurrent
 # `build_loop` calls cannot trample one another's grader registrations.
 _REGISTRY_LOCK = threading.Lock()
+
+
+def payload_router_for_db(db_path: str, workspace_id: str) -> PayloadRouter:
+    """Build a `PayloadRouter` whose object store sits next to the SQLite db.
+
+    Same layout the analyze CLI and the HTTP `/payloads` endpoint use
+    (`<db>.parent/objects`), so a pointer written here resolves there. Callers
+    that persist (`selfevals run`, the HTTP run launcher) pass the result into
+    `build_loop` so the executor offloads large trace payloads; ephemeral
+    `--no-persist` runs skip it and the executor inlines instead."""
+    from pathlib import Path
+
+    from selfevals.storage.filesystem import FilesystemObjectStore
+    from selfevals.trace.payload_router import PayloadRouter
+
+    store = FilesystemObjectStore(Path(db_path).parent / "objects")
+    return PayloadRouter(store, workspace_id=workspace_id)
 
 
 def build_adapter(agent: AgentSpec) -> AgentAdapter:
@@ -314,6 +332,7 @@ def build_loop(
     scope: WorkspaceScope | None,
     repetitions_per_case: int = 1,
     span_sink: SpanSink | None = None,
+    payload_router: PayloadRouter | None = None,
 ) -> OptimizationLoop:
     """Wire a validated spec into a runnable `OptimizationLoop`.
 
@@ -356,6 +375,7 @@ def build_loop(
         sandbox=SandboxPolicy(spec.experiment.run.sandbox),
         workspace_id=spec.workspace_id,
         span_sink=span_sink,
+        payload_router=payload_router,
     )
     return OptimizationLoop(
         experiment=spec.experiment,

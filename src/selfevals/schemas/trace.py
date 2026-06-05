@@ -42,7 +42,15 @@ from selfevals.schemas.enums import (
 # 1.1.0: `CostBreakdown.cache_creation` (cache-write cost line).
 # 1.2.0: `GraderResult.breakdown` — optional funnel breakdown tree
 #        (see graders.base.BreakdownNode); default None when absent.
-TRACE_SCHEMA_VERSION = "1.2.0"
+# 1.3.0: `LLMCallSpan.{system_prompt_inline,messages_inline}` +
+#        `LLMOutput.content_inline` — small payloads inlined on the span so the
+#        trace viewer shows the prompt/response without resolving a pointer.
+#        Large payloads still go to the object store via the matching `*_pointer`.
+TRACE_SCHEMA_VERSION = "1.3.0"
+
+# Inlined trace payloads are capped so a chatty run can't bloat the Trace row.
+# Anything larger is offloaded to the object store and referenced by pointer.
+INLINE_PAYLOAD_MAX_CHARS = 4096
 
 
 class RunInfo(SelfEvalsModel):
@@ -147,6 +155,10 @@ class ToolUseRequest(SelfEvalsModel):
 class LLMOutput(SelfEvalsModel):
     content_pointer: str | None = None
     content_hash: str | None = None
+    content_inline: str | None = None
+    """The model's response text, inlined when small (<= INLINE_PAYLOAD_MAX_CHARS).
+    Lets the trace viewer show the answer directly; larger content lives in the
+    object store behind `content_pointer`. Both may be set when truncated."""
     stop_reason: StopReason | None = None
     tool_use_requested: list[ToolUseRequest] = Field(default_factory=list)
 
@@ -195,8 +207,13 @@ class LLMCallSpan(_SpanBase):
     model_version_pinned: str | None = None
     system_prompt_pointer: str | None = None
     system_prompt_hash: str | None = None
+    system_prompt_inline: str | None = None
+    """System prompt inlined when small; otherwise behind `system_prompt_pointer`."""
     messages_pointer: str | None = None
     messages_hash: str | None = None
+    messages_inline: str | None = None
+    """Input messages (the prompt sent to the model) inlined when small; otherwise
+    behind `messages_pointer`. JSON-encoded string of the conversation payload."""
     tools_offered: list[NonEmptyStr] = Field(default_factory=list)
     tools_offered_hash: str | None = None
     params: dict[str, Any] = Field(default_factory=dict)
