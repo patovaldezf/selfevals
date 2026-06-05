@@ -29,6 +29,7 @@ from selfevals.api.schemas import (
     ExperimentDetailResponse,
     ExperimentListPage,
     ExperimentSummary,
+    FeatureRef,
     FunnelNodeResponse,
     FunnelResponse,
     IterationSummary,
@@ -278,7 +279,12 @@ def _case_summary(case: EvalCase) -> CaseSummary:
         graders=list(case.graders),
         holdout=case.holdout,
         is_conversation=case.is_conversation(),
-        feature=str(case.taxonomy.feature) if case.taxonomy.feature is not None else None,
+        feature=FeatureRef(
+            primary=str(case.taxonomy.feature.primary),
+            secondary=[str(s) for s in case.taxonomy.feature.secondary],
+        )
+        if case.taxonomy.feature is not None
+        else None,
         level=str(case.taxonomy.level) if case.taxonomy.level is not None else None,
         dataset_type=(
             str(case.taxonomy.dataset_type) if case.taxonomy.dataset_type is not None else None

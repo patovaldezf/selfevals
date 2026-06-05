@@ -157,6 +157,11 @@ def test_cases_endpoint_lists_persisted_cases(client: tuple[TestClient, str]) ->
     for key in ("id", "name", "task_type", "input", "graders", "holdout", "is_conversation"):
         assert key in first
     assert first["id"].startswith("ec_")
+    # `feature` is an object {primary, secondary}, not a stringified Pydantic repr
+    # (the OpenAPI contract now matches what's serialized).
+    assert isinstance(first["feature"], dict)
+    assert first["feature"]["primary"] == "commerce.product_resolution"
+    assert first["feature"]["secondary"] == []
     # Stable order by name.
     names = [c["name"] for c in body["cases"]]
     assert names == sorted(names)

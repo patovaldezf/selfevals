@@ -154,6 +154,18 @@ class TraceResponse(BaseModel):
     metrics: dict[str, Any]
 
 
+class FeatureRef(BaseModel):
+    """A case's feature classification: one primary path + optional secondaries.
+
+    Mirrors `schemas.eval_case.FeatureTag`. Exposed as an object (not a flattened
+    string) so the OpenAPI contract matches what the API actually serializes — the
+    prior `str(taxonomy.feature)` leaked a Pydantic repr that the type claimed was
+    a plain string."""
+
+    primary: str
+    secondary: list[str] = Field(default_factory=list)
+
+
 class CaseSummary(BaseModel):
     """An eval case as persisted under an experiment, shaped for the cases list.
 
@@ -172,7 +184,7 @@ class CaseSummary(BaseModel):
     graders: list[str] = Field(default_factory=list)
     holdout: bool = False
     is_conversation: bool = False
-    feature: str | None = None
+    feature: FeatureRef | None = None
     level: str | None = None
     dataset_type: str | None = None
 
