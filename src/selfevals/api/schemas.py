@@ -267,3 +267,31 @@ class CompareResponse(BaseModel):
     carries no split classification, so this is honestly "unavailable"
     rather than a fabricated holdout number — the FE renders it as a
     first-class caveat, never a fake metric."""
+
+
+class DecisionRecordResponse(BaseModel):
+    """One decision in an experiment's history.
+
+    The shape is flat and stable (unlike the full `DecisionRecord` dump),
+    so it is worth typing for the Orval-generated client rather than
+    leaking a raw `dict`.
+    """
+
+    id: str
+    iteration: int
+    outcome: str
+    automated_rationale: str
+    human_rationale: str | None = None
+    metrics_snapshot: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+
+
+class ActiveRun(BaseModel):
+    """A trace run currently streaming spans through the broker."""
+
+    workspace_id: str
+    run_id: str
+
+
+class ActiveRunsResponse(BaseModel):
+    runs: list[ActiveRun] = Field(default_factory=list)
