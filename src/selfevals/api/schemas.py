@@ -9,9 +9,9 @@ chooses what to expose and in what shape.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class HealthResponse(BaseModel):
@@ -295,3 +295,45 @@ class ActiveRun(BaseModel):
 
 class ActiveRunsResponse(BaseModel):
     runs: list[ActiveRun] = Field(default_factory=list)
+
+
+class RunExperimentRequest(BaseModel):
+    """Launch an experiment over HTTP (F1).
+
+    Provide exactly one source:
+
+    * `spec_path` — a path/name of a YAML spec already on the server's disk.
+    * `spec_inline` — the spec as a JSON object (same shape as the YAML).
+      Inline specs must embed their cases via `dataset.cases_inline`; a
+      `dataset.cases_path` has no on-disk base to resolve against and is
+      rejected.
+
+    The optional overrides mirror `selfevals run` flags.
+    """
+
+    spec_path: str | None = None
+    spec_inline: dict[str, Any] | None = None
+    max_iterations: int | None = Field(default=None, ge=1)
+    reps: int | None = Field(default=None, ge=1)
+    persist_traces: Literal["none", "all", "failed"] | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_source(self) -> RunExperimentRequest:
+        if (self.spec_path is None) == (self.spec_inline is None):
+            raise ValueError("provide exactly one of `spec_path` or `spec_inline`")
+        return self
+
+
+class RunExperimentResponse(BaseModel):
+    """202 acknowledgement: the run is queued on a background thread.
+
+    The FE polls `GET .../experiments/{experiment_id}` (state climbs
+    queued → running → completed/aborted) to follow progress. `run_id` is
+    null here — trace run ids are minted per repetition inside the loop and
+    surface on the iterations once they exist.
+    """
+
+    experiment_id: str
+    workspace_id: str
+    state: str
+    run_id: str | None = None

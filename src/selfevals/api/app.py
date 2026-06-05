@@ -38,6 +38,7 @@ from selfevals.api.queries import (
     load_trace,
     workspace_detail,
 )
+from selfevals.api.run_launcher import launch_experiment_run
 from selfevals.api.schemas import (
     ActiveRun,
     ActiveRunsResponse,
@@ -49,6 +50,8 @@ from selfevals.api.schemas import (
     FunnelResponse,
     HealthResponse,
     IterationListResponse,
+    RunExperimentRequest,
+    RunExperimentResponse,
     ThreadResponse,
     TraceResponse,
     WorkspaceListResponse,
@@ -216,6 +219,26 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
             )
         finally:
             storage.close()
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/experiments/run",
+        response_model=RunExperimentResponse,
+        status_code=202,
+        tags=["experiments"],
+    )
+    def experiments_run(
+        workspace_id: str,
+        body: RunExperimentRequest,
+        _user: UserHeader = None,
+    ) -> RunExperimentResponse:
+        # Non-blocking: validates + persists synchronously, then runs the loop
+        # on a daemon thread. Returns 202 immediately; the FE polls the
+        # experiment detail (state climbs to completed/aborted).
+        return launch_experiment_run(
+            db_path=resolved,
+            workspace_id=workspace_id,
+            body=body,
+        )
 
     @app.get(
         "/api/workspaces/{workspace_id}/experiments/{experiment_id}",

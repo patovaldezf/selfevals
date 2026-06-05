@@ -153,12 +153,40 @@ def load_experiment_spec(
         raise LoaderError(
             f"{spec_path}: expected a mapping at the top level, got {type(raw).__name__}"
         )
+    return build_spec_from_mapping(raw, workspace_id=workspace_id, source_dir=spec_path.parent)
+
+
+def build_spec_from_mapping(
+    raw: dict[str, Any],
+    *,
+    workspace_id: str | None = None,
+    source_dir: Path | None = None,
+) -> ExperimentSpec:
+    """Hydrate a fully-validated `ExperimentSpec` from an already-parsed mapping.
+
+    This is the post-parse half of `load_experiment_spec`, exposed so callers
+    that receive a spec over the wire (the HTTP `experiments/run` endpoint) can
+    reuse the exact same construction and validation without writing the body
+    to a temp file.
+
+    `source_dir` is the base for resolving a relative `dataset.cases_path`. When
+    it is None (an inline spec with no on-disk home), the spec must carry
+    `dataset.cases_inline` instead — `cases_path` would have nothing to resolve
+    against and raises a clear `LoaderError`.
+    """
+    if not isinstance(raw, dict):
+        raise LoaderError(f"expected a mapping at the top level, got {type(raw).__name__}")
 
     ws_id = workspace_id or raw.get("workspace") or raw.get("workspace_id")
     if not ws_id:
         raise LoaderError(
-            f"{spec_path}: workspace_id missing — pass --workspace or set top-level `workspace:` key"
+            "workspace_id missing — pass --workspace or set top-level `workspace:` key"
         )
+
+    # `_build_*` use `spec_path` for relative resolution and error labels. With
+    # no on-disk source we hand them a sentinel path: `cases_inline` ignores it,
+    # and a stray `cases_path` resolves to a non-existent file that errors clearly.
+    spec_path = (source_dir / "<inline>") if source_dir is not None else Path("<inline>")
 
     experiment = _build_experiment(spec_path, raw, ws_id)
     cases = _build_cases(spec_path, raw, ws_id)
