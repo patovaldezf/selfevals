@@ -330,19 +330,28 @@ def _wrap_user_callable(callable_obj: object, entrypoint: AgentEntrypoint) -> Ag
     return EmbeddedAdapter(_adapt)
 
 
-def ensure_workspace(storage: SQLiteStorage, spec: ExperimentSpec) -> None:
-    """Make sure the workspace row exists. Idempotent."""
-    with storage.open(spec.workspace_id) as s:
-        if s.exists(Workspace, spec.workspace_id):
+def ensure_workspace_by_id(storage: SQLiteStorage, workspace_id: str) -> None:
+    """Make sure a workspace row exists for `workspace_id`. Idempotent.
+
+    The experiment-free variant of `ensure_workspace`, used by standalone flows
+    (uploading a dataset) that have a workspace id but no `ExperimentSpec`.
+    """
+    with storage.open(workspace_id) as s:
+        if s.exists(Workspace, workspace_id):
             return
     ws = Workspace(
-        id=spec.workspace_id,
-        workspace_id=spec.workspace_id,
-        slug=spec.workspace_id.lower(),
-        name=spec.workspace_id,
+        id=workspace_id,
+        workspace_id=workspace_id,
+        slug=workspace_id.lower(),
+        name=workspace_id,
     )
-    with storage.open(spec.workspace_id) as s:
+    with storage.open(workspace_id) as s:
         s.put_entity(ws)
+
+
+def ensure_workspace(storage: SQLiteStorage, spec: ExperimentSpec) -> None:
+    """Make sure the workspace row exists. Idempotent."""
+    ensure_workspace_by_id(storage, spec.workspace_id)
 
 
 def _persist_cases(scope: WorkspaceScope, spec: ExperimentSpec) -> None:

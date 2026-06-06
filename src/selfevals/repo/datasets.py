@@ -12,8 +12,10 @@ first-class resource that can be uploaded and reused on its own.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import TYPE_CHECKING
+import json
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from selfevals._internal.hashing import content_hash
 from selfevals.schemas._base import EntityRef
@@ -23,10 +25,60 @@ from selfevals.schemas.dataset import (
     SplitAllocation,
 )
 from selfevals.schemas.enums import DatasetStatus, DatasetType
+from selfevals.schemas.eval_case import EvalCase
 
 if TYPE_CHECKING:
-    from selfevals.schemas.eval_case import EvalCase
     from selfevals.storage.interface import WorkspaceScope
+
+
+class DatasetImportError(ValueError):
+    """Raised when case rows for a dataset are malformed or empty."""
+
+
+def load_cases_from_rows(
+    rows: Sequence[Mapping[str, Any]], *, workspace_id: str
+) -> list[EvalCase]:
+    """Validate raw case dicts into EvalCases (shared by CLI/API upload paths).
+
+    Mirrors the loader's per-case hydration (generate `id`, stamp
+    `workspace_id`, validate) but works on an in-memory row list rather than a
+    YAML spec — so an HTTP body or an uploaded JSONL gets the same treatment as
+    a spec's `cases_inline`. Cases carry no `experiment_id`: this builds a
+    standalone dataset, not an experiment run.
+    """
+    if not rows:
+        raise DatasetImportError("no cases provided")
+    cases: list[EvalCase] = []
+    for i, row in enumerate(rows):
+        if not isinstance(row, Mapping):
+            raise DatasetImportError(f"case #{i} must be a mapping, got {type(row).__name__}")
+        payload = dict(row)
+        payload.setdefault("id", EvalCase.make_id())
+        payload.setdefault("workspace_id", workspace_id)
+        try:
+            cases.append(EvalCase(**payload))
+        except Exception as exc:
+            raise DatasetImportError(f"invalid case #{i}: {exc}") from exc
+    return cases
+
+
+def load_cases_from_jsonl(path: Path, *, workspace_id: str) -> list[EvalCase]:
+    """Read a JSONL file (one case per line) into EvalCases."""
+    if not path.exists():
+        raise DatasetImportError(f"file not found: {path}")
+    rows: list[dict[str, Any]] = []
+    for line_no, line in enumerate(path.read_text().splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            row = json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            raise DatasetImportError(f"{path}:{line_no}: invalid JSON: {exc}") from exc
+        if not isinstance(row, dict):
+            raise DatasetImportError(f"{path}:{line_no}: expected an object")
+        rows.append(row)
+    return load_cases_from_rows(rows, workspace_id=workspace_id)
 
 
 def compute_manifest_hash(cases: Sequence[EvalCase]) -> str:
