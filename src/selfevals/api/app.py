@@ -342,6 +342,21 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
         # declared; exclude_none keeps the JSON compact (no null rules) at scale.
         response_model_exclude_none=True,
         tags=["experiments"],
+        summary="Per-scenario expected vs detected vs matched (best iteration)",
+        description=(
+            "Returns one `ScenarioResult` per case of the best iteration. "
+            "`expected`/`detected` are **derived per declared dimension**: a case "
+            "that declares `structured_output` gets only that; a `must_include` "
+            "case gets substrings + the produced `content` (+ `missing` on a gap); "
+            "a tool case gets `required_tools` vs `tools_invoked`. Undeclared "
+            "dimensions are omitted (not null), so the payload stays compact. "
+            "`message` is the classified reply. A conversation case carries its "
+            "per-turn breakdown in `turns[]` (same shape) when called with "
+            "`?include=turns`.\n\n"
+            "**Migration (0.8.0 → 0.9.0, breaking):** the old flat `CaseResultRow` "
+            "(with fixed `detected={content,structured_output,tools_invoked}`) is "
+            "replaced by this recursive, dimension-derived `ScenarioResult`."
+        ),
     )
     def experiments_results(
         workspace_id: str,
@@ -530,7 +545,16 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     @app.get(
         "/api/workspaces/{workspace_id}/threads/{thread_id}",
         response_model=ThreadResponse,
+        response_model_exclude_none=True,
         tags=["traces"],
+        summary="A conversation thread as ordered per-turn ScenarioResults",
+        description=(
+            "Every trace sharing `thread_id`, ordered by turn, each projected as a "
+            "`ScenarioResult` — the same shape as `/results`, with per-turn "
+            "expected/detected/matched and the classified `message`.\n\n"
+            "**Migration (breaking):** `turns[]` items are now `ScenarioResult` "
+            "(was `ThreadTurn`); use `label` instead of `primary_grade`."
+        ),
     )
     def threads_show(
         workspace_id: str,

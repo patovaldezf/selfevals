@@ -250,3 +250,104 @@ def test_results_shape_derived_for_structured_case(tmp_path: Path) -> None:
     assert "must_include" not in row["expected"]
     assert "content" not in row["detected"]
     assert "tools_invoked" not in row["detected"]
+
+
+def test_results_include_turns_expands_conversation(tmp_path: Path) -> None:
+    """?include=turns expands a conversation case into per-turn ScenarioResults;
+    without it the case-level grid stays flat (no turns)."""
+    from datetime import UTC, datetime, timedelta
+
+    from selfevals.schemas.enums import (
+        DecisionOutcome,
+        IterationState,
+        ProposerStrategy,
+        TraceState,
+    )
+    from selfevals.schemas.iteration import (
+        ExecutionInfo,
+        IterationDecision,
+        IterationMetrics,
+        IterationRecord,
+        MetricObservation,
+        ProposerInputs,
+    )
+    from selfevals.schemas.trace import (
+        AgentSnapshotRef,
+        EnvironmentInfo,
+        FinalState,
+        GraderResult,
+        RunInfo,
+        Trace,
+        TraceOutputs,
+    )
+
+    db = tmp_path / "turns.sqlite"
+    storage = SQLiteStorage(str(db))
+    ws = seed_workspace(storage, slug="t", name="t", user_id="local").workspace
+    ws_id = ws.id
+    exp = make_experiment(workspace_id=ws_id, name="conv-exp")
+    case = _structured_case(ws_id, exp.id)  # declares structured_output, has messages
+
+    t0 = datetime(2026, 5, 25, 12, 0, 0, tzinfo=UTC)
+
+    def _turn(position: int, structured: dict) -> Trace:
+        started = t0 + timedelta(seconds=position * 10)
+        return Trace(
+            id=Trace.make_id(),
+            workspace_id=ws_id,
+            run=RunInfo(
+                run_id=f"run_t{position}",
+                experiment_id=exp.id,
+                iteration=0,
+                eval_case_id=case.id,
+                thread_id="th_1",
+                thread_position=position,
+            ),
+            agent=AgentSnapshotRef(agent_id="ag_x", agent_version=1),
+            environment=EnvironmentInfo(
+                framework_version="t",
+                runtime="t",
+                sandbox=SandboxMode.MOCK,
+                started_at=started,
+                ended_at=started + timedelta(seconds=1),
+            ),
+            final_state=FinalState(status=TraceState.COMPLETED),
+            outputs=TraceOutputs(structured_output=structured),
+            grader_results=[GraderResult(grader="deterministic", label="pass", score=1.0)],
+        )
+
+    iteration = IterationRecord(
+        id=IterationRecord.make_id(),
+        workspace_id=ws_id,
+        experiment_id=exp.id,
+        iteration=0,
+        state=IterationState.COMPLETED,
+        proposer=ProposerInputs(type=ProposerStrategy.MANUAL),
+        hypothesis="h",
+        proposed_parameters={},
+        execution=ExecutionInfo(variant_id="var_x"),
+        metrics=IterationMetrics(primary=MetricObservation(name="pass@1", value=1.0)),
+        decision=IterationDecision(outcome=DecisionOutcome.KEEP_CANDIDATE, rationale="r"),
+    )
+    with storage.open(ws_id) as scope:
+        scope.put_entity(exp)
+        scope.put_entity(case)
+        scope.put_entity(iteration)
+        scope.put_entity(_turn(0, {"intent": "buy", "category": "apparel"}))
+        scope.put_entity(_turn(1, {"intent": "other"}))
+    storage.close()
+
+    c = TestClient(build_app(db_path=str(db)))
+    c.headers.update({"X-SelfEvals-User": "local"})
+    base = f"/api/workspaces/{ws_id}/experiments/{exp.id}/results"
+
+    # Without ?include=turns: case-level only, no turns expansion.
+    flat = c.get(base).json()["cases"][0]
+    assert flat.get("turns", []) == []
+
+    # With ?include=turns: the conversation case carries its 2 turns.
+    expanded = c.get(f"{base}?include=turns").json()["cases"][0]
+    assert len(expanded["turns"]) == 2
+    assert [t["position"] for t in expanded["turns"]] == [0, 1]
+    assert expanded["turns"][0]["detected"]["structured_output"]["intent"] == "buy"
+    assert expanded["turns"][1]["detected"]["structured_output"]["intent"] == "other"

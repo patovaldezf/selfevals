@@ -400,8 +400,14 @@ def experiment_results(
         case_traces = traces_by_case.get(case_id, [])
         representative = case_traces[0] if case_traces else None
         row = _scenario_result(case_id, case, representative, best_iter)
-        if include_turns and case is not None and case.is_conversation() and case_traces:
-            row.turns = _turns_for_case(case, case_traces, best_iter)
+        # Expand turns only for a genuine multi-turn conversation — traces with
+        # more than one distinct `thread_position`. A single-turn case (even one
+        # with `messages`) or multiple repetitions of a single-shot case are NOT
+        # turns, so they stay flat (no redundant `turns` duplicating the case).
+        if include_turns and case is not None:
+            positions = {t.run.thread_position for t in case_traces}
+            if len(positions) > 1:
+                row.turns = _turns_for_case(case, case_traces, best_iter)
         rows.append(row)
     return ExperimentResultsResponse(
         experiment_id=experiment_id,
