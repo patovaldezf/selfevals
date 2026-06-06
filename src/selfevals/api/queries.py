@@ -39,7 +39,6 @@ from selfevals.api.schemas import (
     ScenarioResult,
     SpanSummary,
     ThreadResponse,
-    ThreadTurn,
     TraceResponse,
     WorkspaceResponse,
     WorkspaceSummary,
@@ -737,12 +736,14 @@ def load_trace(storage: SQLiteStorage, *, workspace_id: str, trace_id: str) -> T
 def load_thread(
     storage: SQLiteStorage, *, workspace_id: str, thread_id: str
 ) -> ThreadResponse | None:
-    """Assemble every Trace sharing `thread_id` into an ordered conversation.
+    """Assemble every Trace sharing `thread_id` into an ordered conversation,
+    each turn projected as a `ScenarioResult` — the same shape `/results` uses.
 
     Traces are ordered by `run.thread_position` when set, falling back to
     `environment.started_at` so a thread without explicit turn indices still
-    reads in chronological order. Each turn carries its grader results so the
-    thread view shows the grade per turn, not just the transcript.
+    reads in chronological order. Each turn carries its own expected/detected
+    (derived from the turn's `EvalCase`) plus the classified `message`, so the
+    thread view shows the per-turn expected-vs-detected diff, not just the grade.
     Returns None when no trace carries the thread_id.
     """
     rows = storage.connection.execute(
@@ -766,26 +767,25 @@ def load_thread(
 
     traces.sort(key=_sort_key)
 
-    turns: list[ThreadTurn] = []
+    # Cross-reference each turn's EvalCase so expected/detected can be derived.
+    case_ids = {t.run.eval_case_id for t in traces if t.run.eval_case_id is not None}
+    cases: dict[str, EvalCase] = {}
+    for cid in case_ids:
+        case_row = storage.connection.execute(
+            "SELECT payload FROM entities "
+            "WHERE workspace_id = ? AND entity_type = 'EvalCase' AND id = ? LIMIT 1",
+            (workspace_id, cid),
+        ).fetchone()
+        if case_row is not None:
+            cases[cid] = EvalCase.model_validate(json.loads(case_row[0]))
+
+    turns: list[ScenarioResult] = []
     for idx, trace in enumerate(traces):
-        primary_grade = trace.grader_results[0].label if trace.grader_results else None
-        turns.append(
-            ThreadTurn(
-                trace_id=trace.id,
-                run_id=trace.run.run_id,
-                position=trace.run.thread_position
-                if trace.run.thread_position is not None
-                else idx,
-                experiment_id=trace.run.experiment_id,
-                iteration=trace.run.iteration,
-                final_state=str(trace.final_state.status),
-                started_at=trace.environment.started_at,
-                ended_at=trace.environment.ended_at,
-                primary_grade=primary_grade,
-                grader_results=[g.model_dump(mode="json") for g in trace.grader_results],
-                metrics=trace.metrics.model_dump(mode="json"),
-            )
-        )
+        case = cases.get(trace.run.eval_case_id) if trace.run.eval_case_id else None
+        iteration = trace.run.iteration if trace.run.iteration is not None else 0
+        turn = _scenario_result(trace.run.eval_case_id or trace.run.run_id, case, trace, iteration)
+        turn.position = trace.run.thread_position if trace.run.thread_position is not None else idx
+        turns.append(turn)
     return ThreadResponse(thread_id=thread_id, turn_count=len(turns), turns=turns)
 
 

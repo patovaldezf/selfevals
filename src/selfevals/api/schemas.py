@@ -293,28 +293,16 @@ class ExperimentResultsResponse(BaseModel):
     total: int
 
 
-class ThreadTurn(BaseModel):
-    """One trace within a thread, projected as a turn for the thread view."""
-
-    trace_id: str
-    run_id: str
-    position: int
-    experiment_id: str | None = None
-    iteration: int | None = None
-    final_state: str
-    started_at: datetime
-    ended_at: datetime | None = None
-    primary_grade: str | None = None
-    grader_results: list[dict[str, Any]] = Field(default_factory=list)
-    metrics: dict[str, Any] = Field(default_factory=dict)
-
-
 class ThreadResponse(BaseModel):
-    """All traces sharing a thread_id, assembled into an ordered conversation."""
+    """All traces sharing a thread_id, assembled into an ordered conversation.
+
+    Each turn is a `ScenarioResult` — the same shape `/results` uses — so the FE
+    renders a turn and a case identically, with per-turn expected/detected/matched
+    and the classified `message`. (Replaces the old `ThreadTurn`.)"""
 
     thread_id: str
     turn_count: int
-    turns: list[ThreadTurn] = Field(default_factory=list)
+    turns: list[ScenarioResult] = Field(default_factory=list)
 
 
 class FunnelNodeResponse(BaseModel):
