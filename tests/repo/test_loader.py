@@ -10,10 +10,13 @@ from selfevals.repo.loader import (
     CliAgentSpec,
     EmbeddedAgentSpec,
     HttpAgentSpec,
+    InlineDatasetSource,
     LoaderError,
+    RefDatasetSource,
     load_experiment_spec,
     resolve_agent_callable,
 )
+from selfevals.schemas.enums import DatasetType
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
@@ -382,3 +385,92 @@ def test_resolve_agent_callable_unknown_attribute() -> None:
     )
     with pytest.raises(LoaderError, match="has no attribute"):
         resolve_agent_callable(ep)
+
+
+# --- dataset_source classification (F2) ------------------------------------
+
+
+def test_inline_dataset_source_carries_cases_and_metadata(tmp_path: Path) -> None:
+    body = {
+        "workspace": WS,
+        "experiment": _experiment_block(),
+        "dataset": {
+            "cases_inline": [_inline_case(), _inline_case()],
+            "name": "smoke-suite",
+            "dataset_type": "smoke",
+            "split_allocation": {"optimization": 0.5, "holdout": 0.5, "reliability": 0.0},
+            "description": "two-case warmup",
+        },
+        "agent": {"entrypoint": "mod:fn"},
+    }
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    assert isinstance(spec.dataset_source, InlineDatasetSource)
+    assert spec.dataset_source.name == "smoke-suite"
+    assert spec.dataset_source.dataset_type == DatasetType.SMOKE
+    assert spec.dataset_source.split_allocation is not None
+    assert spec.dataset_source.split_allocation.optimization == 0.5
+    # Inline cases also populate spec.cases (back-compat with the run path).
+    assert len(spec.cases) == 2
+    assert len(spec.dataset_source.cases) == 2
+
+
+def test_inline_dataset_source_defaults_metadata_to_none(tmp_path: Path) -> None:
+    body = {
+        "workspace": WS,
+        "experiment": _experiment_block(),
+        "dataset": {"cases_inline": [_inline_case()]},
+        "agent": {"entrypoint": "mod:fn"},
+    }
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    assert isinstance(spec.dataset_source, InlineDatasetSource)
+    assert spec.dataset_source.name is None
+    assert spec.dataset_source.dataset_type is None
+    assert spec.dataset_source.split_allocation is None
+
+
+def test_ref_dataset_source_resolves_to_ref(tmp_path: Path) -> None:
+    body = {
+        "workspace": WS,
+        "experiment": _experiment_block(),
+        "dataset": {"ref": "ds_01HZZZZZZZZZZZZZZZZZZZZZZZ", "version": 2},
+        "agent": {"entrypoint": "mod:fn"},
+    }
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    assert isinstance(spec.dataset_source, RefDatasetSource)
+    assert spec.dataset_source.ref.id == "ds_01HZZZZZZZZZZZZZZZZZZZZZZZ"
+    assert spec.dataset_source.ref.version == 2
+    # A ref declares no cases inline — they resolve from storage at launch.
+    assert spec.cases == []
+
+
+def test_ref_and_inline_are_mutually_exclusive(tmp_path: Path) -> None:
+    body = {
+        "workspace": WS,
+        "experiment": _experiment_block(),
+        "dataset": {"ref": "ds_x", "cases_inline": [_inline_case()]},
+        "agent": {"entrypoint": "mod:fn"},
+    }
+    with pytest.raises(LoaderError, match="cannot mix `ref:`"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_dataset_without_any_source_errors(tmp_path: Path) -> None:
+    body = {
+        "workspace": WS,
+        "experiment": _experiment_block(),
+        "dataset": {},
+        "agent": {"entrypoint": "mod:fn"},
+    }
+    with pytest.raises(LoaderError, match=r"cases_inline.*cases_path.*ref"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_invalid_dataset_type_in_block_errors(tmp_path: Path) -> None:
+    body = {
+        "workspace": WS,
+        "experiment": _experiment_block(),
+        "dataset": {"cases_inline": [_inline_case()], "dataset_type": "not_a_type"},
+        "agent": {"entrypoint": "mod:fn"},
+    }
+    with pytest.raises(LoaderError, match=r"invalid `dataset\.dataset_type:`"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
