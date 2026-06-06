@@ -146,6 +146,12 @@ def test_results_grid_carries_expected_detected_matched(
     assert passed["expected"]["must_include"] == ["pong"]
     assert passed["detected"]["content"] == "pong"
     assert passed["failure_modes"] == []
+    # Compactness: a must_include case declares no structured/tool rules, so
+    # those keys must be absent (exclude_none), not present-and-null.
+    assert "structured_output" not in passed["expected"]
+    assert "required_tools" not in passed["expected"]
+    assert "structured_output" not in passed["detected"]
+    assert "tools_invoked" not in passed["detected"]
     # Resolvable trace reference so the FE opens the trace inline.
     assert passed["run_id"] is not None
     assert passed["trace_id"] is not None
@@ -156,6 +162,8 @@ def test_results_grid_carries_expected_detected_matched(
     assert failed["expected"]["must_include"] == ["zzz"]
     # The agent produced "pong" (the detected output), which misses "zzz".
     assert failed["detected"]["content"] == "pong"
+    # The unmet substrings surface under `missing` for a direct expected-vs-detected diff.
+    assert failed["detected"]["missing"] == ["zzz"]
     assert "missing_required_substring" in failed["failure_modes"]
     assert failed["label"] == "fail"
 
@@ -164,3 +172,81 @@ def test_results_404_for_unknown_experiment(seeded: tuple[TestClient, str, str])
     c, ws_id, _exp_id = seeded
     res = c.get(f"/api/workspaces/{ws_id}/experiments/exp_DOESNOTEXIST/results")
     assert res.status_code == 404
+
+
+def _structured_case(ws_id: str, experiment_id: str) -> EvalCase:
+    return EvalCase(
+        id=EvalCase.make_id(),
+        workspace_id=ws_id,
+        experiment_id=experiment_id,
+        name="classify",
+        task_type="classification",
+        input={"messages": [{"role": "user", "content": "buy a red shirt"}]},
+        taxonomy=CaseTaxonomy(
+            level=Level.FINAL_RESPONSE,
+            feature=FeatureTag(primary="commerce.product_resolution"),
+            source=SourceInfo(type=DatasetSource.HANDCRAFTED),
+            ground_truth=GroundTruthSpec(methods=[GroundTruthMethod.EXACT_MATCH]),
+            dataset_type=DatasetType.CAPABILITY,
+        ),
+        expected=Expected(structured_output={"intent": "buy", "category": "apparel"}),
+    )
+
+
+def _classifier(req: AdapterRequest) -> AdapterResponse:
+    return AdapterResponse(
+        content=None,
+        structured_output={"intent": "buy", "category": "apparel"},
+        stop_reason="end_turn",
+    )
+
+
+def test_results_shape_derived_for_structured_case(tmp_path: Path) -> None:
+    """A classification case declares only `structured_output`, so its
+    expected/detected carry only that dimension — no `content`/`must_include`
+    nulls. This is the per-grader-derived shape."""
+    db = tmp_path / "s.sqlite"
+    storage = SQLiteStorage(str(db))
+    ws = seed_workspace(storage, slug="t", name="t", user_id="local").workspace
+    ws_id = ws.id
+    exp = make_experiment(workspace_id=ws_id, name="structured-exp")
+    exp.run.persist_traces = "all"
+    exp.run.sandbox = SandboxMode.MOCK
+    exp.run.max_iterations = 1
+    exp.search_space = SearchSpace(model_params={"level": [1.0]})
+    case = _structured_case(ws_id, exp.id)
+    with storage.open(ws_id) as scope:
+        scope.put_entity(exp)
+        scope.put_entity(case)
+    scope = storage.open(ws_id)
+    executor = Executor(
+        adapter=EmbeddedAdapter(_classifier, agent=_agent(ws_id)),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=ws_id,
+        payload_router=payload_router_for_db(str(db), ws_id),
+    )
+    loop = OptimizationLoop(
+        experiment=exp,
+        executor=executor,
+        proposer=GridProposer(),
+        graders=[DeterministicGrader()],
+        cases=[case],
+        scope=scope,
+    )
+    import asyncio
+
+    asyncio.run(loop.run())
+    scope.close()
+    storage.close()
+
+    c = TestClient(build_app(db_path=str(db)))
+    c.headers.update({"X-SelfEvals-User": "local"})
+    row = c.get(f"/api/workspaces/{ws_id}/experiments/{exp.id}/results").json()["cases"][0]
+
+    assert row["matched"] is True
+    # expected/detected carry ONLY structured_output — the derived shape.
+    assert row["expected"] == {"structured_output": {"intent": "buy", "category": "apparel"}}
+    assert row["detected"]["structured_output"] == {"intent": "buy", "category": "apparel"}
+    assert "must_include" not in row["expected"]
+    assert "content" not in row["detected"]
+    assert "tools_invoked" not in row["detected"]

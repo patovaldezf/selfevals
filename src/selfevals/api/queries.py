@@ -19,7 +19,6 @@ from pydantic import BaseModel
 
 from selfevals.api.schemas import (
     CaseListResponse,
-    CaseResultRow,
     CaseSummary,
     CompareFailureModes,
     CompareFunnelRow,
@@ -27,6 +26,8 @@ from selfevals.api.schemas import (
     CompareParamRow,
     CompareRecommendation,
     CompareResponse,
+    DetectedView,
+    ExpectedView,
     ExperimentDetailResponse,
     ExperimentListPage,
     ExperimentResultsResponse,
@@ -35,6 +36,7 @@ from selfevals.api.schemas import (
     FunnelNodeResponse,
     FunnelResponse,
     IterationSummary,
+    ScenarioResult,
     SpanSummary,
     ThreadResponse,
     ThreadTurn,
@@ -329,7 +331,11 @@ def _case_summary(case: EvalCase, trace_ref: tuple[str, str] | None = None) -> C
 
 
 def experiment_results(
-    storage: SQLiteStorage, *, workspace_id: str, experiment_id: str
+    storage: SQLiteStorage,
+    *,
+    workspace_id: str,
+    experiment_id: str,
+    include_turns: bool = False,
 ) -> ExperimentResultsResponse | None:
     """Per-scenario results for the experiment's best iteration (the FE's
     expected/detected/matched grid).
@@ -344,6 +350,11 @@ def experiment_results(
     `persist_traces="failed"`) are still listed — `detected`/`matched` None — so
     the set is honest, not silently trimmed to the failures.
 
+    When `include_turns` is set, a conversation case (input with `messages`,
+    producing one trace per turn sharing a `thread_id`) carries its turns in
+    `turns`, each a `ScenarioResult` of the same shape. Off by default so the
+    common case-level grid stays a single representative trace per case.
+
     Returns None for an unknown experiment (→ 404 at the route)."""
     with storage.open(workspace_id) as scope:
         try:
@@ -352,25 +363,29 @@ def experiment_results(
             return None
         assert isinstance(exp, Experiment)
         iterations = _experiment_iterations(scope, experiment_id)
+        empty = ExperimentResultsResponse(
+            experiment_id=experiment_id, iteration=None, cases=[], total=0
+        )
         if not iterations:
-            return ExperimentResultsResponse(experiment_id=experiment_id, iteration=None, cases=[], total=0)
+            return empty
         best = max(
             (it for it in iterations if it.metrics is not None),
             key=lambda it: it.metrics.primary.value,  # type: ignore[union-attr]
             default=None,
         )
         if best is None:
-            return ExperimentResultsResponse(experiment_id=experiment_id, iteration=None, cases=[], total=0)
+            return empty
         best_iter = best.iteration
-        traces_by_case: dict[str, Trace] = {}
+        # All best-iteration traces, grouped by case. The first per case is the
+        # representative for the case-level row; the full list feeds `turns`.
+        traces_by_case: dict[str, list[Trace]] = {}
         for t in scope.list_entities(
             Trace,
             ListFilter(where={"run.experiment_id": experiment_id, "run.iteration": best_iter}),
         ):
             if not isinstance(t, Trace) or t.run.eval_case_id is None:
                 continue
-            # First trace per case (rep 0) is representative for the grid view.
-            traces_by_case.setdefault(t.run.eval_case_id, t)
+            traces_by_case.setdefault(t.run.eval_case_id, []).append(t)
         cases = {
             c.id: c
             for c in scope.list_entities(
@@ -379,12 +394,16 @@ def experiment_results(
             if isinstance(c, EvalCase)
         }
 
-    rows: list[CaseResultRow] = []
+    rows: list[ScenarioResult] = []
     # Every case the experiment declared, whether or not its trace was kept.
     for case_id in sorted(set(cases) | set(traces_by_case)):
         case = cases.get(case_id)
-        trace = traces_by_case.get(case_id)
-        rows.append(_case_result_row(case_id, case, trace, best_iter))
+        case_traces = traces_by_case.get(case_id, [])
+        representative = case_traces[0] if case_traces else None
+        row = _scenario_result(case_id, case, representative, best_iter)
+        if include_turns and case is not None and case.is_conversation() and case_traces:
+            row.turns = _turns_for_case(case, case_traces, best_iter)
+        rows.append(row)
     return ExperimentResultsResponse(
         experiment_id=experiment_id,
         iteration=best_iter,
@@ -393,13 +412,34 @@ def experiment_results(
     )
 
 
-def _case_result_row(
+def _turns_for_case(
+    case: EvalCase, traces: list[Trace], iteration: int
+) -> list[ScenarioResult]:
+    """One `ScenarioResult` per turn of a conversation case, ordered like
+    `load_thread` (by `thread_position`, then `started_at`)."""
+
+    def _sort_key(t: Trace) -> tuple[int, int, datetime]:
+        pos = t.run.thread_position
+        has_pos = 0 if pos is not None else 1
+        return (has_pos, pos if pos is not None else 0, t.environment.started_at)
+
+    ordered = sorted(traces, key=_sort_key)
+    turns: list[ScenarioResult] = []
+    for idx, trace in enumerate(ordered):
+        turn = _scenario_result(case.id, case, trace, iteration)
+        turn.position = trace.run.thread_position if trace.run.thread_position is not None else idx
+        turns.append(turn)
+    return turns
+
+
+def _scenario_result(
     case_id: str, case: EvalCase | None, trace: Trace | None, iteration: int
-) -> CaseResultRow:
-    expected = case.expected.model_dump(mode="json") if case is not None else None
+) -> ScenarioResult:
     case_name = case.name if case is not None else None
+    expected = _expected_view(case)
     if trace is None:
-        return CaseResultRow(
+        # No persisted trace (e.g. it passed under persist_traces="failed").
+        return ScenarioResult(
             case_id=case_id,
             case_name=case_name,
             iteration=iteration,
@@ -408,36 +448,94 @@ def _case_result_row(
     primary = trace.grader_results[0] if trace.grader_results else None
     matched = primary.label == "pass" if primary is not None else None
     failure_modes = sorted({m for gr in trace.grader_results for m in gr.failure_modes})
-    return CaseResultRow(
+    detected, message = _detected_view(case, trace)
+    return ScenarioResult(
         case_id=case_id,
         case_name=case_name,
         run_id=trace.run.run_id,
         trace_id=trace.id,
         iteration=trace.run.iteration if trace.run.iteration is not None else iteration,
-        expected=expected,
-        detected=_detected_from_trace(trace),
         matched=matched,
         score=primary.score if primary is not None else None,
         label=primary.label if primary is not None else None,
+        message=message,
         failure_modes=failure_modes,
+        expected=expected,
+        detected=detected,
         grader_results=[gr.model_dump(mode="json") for gr in trace.grader_results],
     )
 
 
-def _detected_from_trace(trace: Trace) -> dict[str, Any]:
-    """What the agent produced, read off the persisted trace: the response text
-    (inlined on the LLM span), the structured output, and the tools it invoked."""
-    content: str | None = None
+def _trace_content(trace: Trace) -> str | None:
+    """The classified message: the agent's reply text, inlined on the LLM span."""
     for span in trace.spans:
         if isinstance(span, LLMCallSpan) and span.output.content_inline is not None:
-            content = span.output.content_inline
-            break
+            return span.output.content_inline
+    return None
+
+
+def _expected_view(case: EvalCase | None) -> ExpectedView | None:
+    """Project the case's declared expectations into an `ExpectedView`, carrying
+    only the dimensions the case actually declares. None when nothing is declared
+    (or no case on disk) — we don't fabricate empty rules."""
+    if case is None:
+        return None
+    exp = case.expected
+    view = ExpectedView(
+        structured_output=exp.structured_output,
+        must_include=list(exp.must_include) or None,
+        must_not_include=list(exp.must_not_include) or None,
+        required_tools=list(exp.required_tools) or None,
+        forbidden_tools=list(exp.forbidden_tools) or None,
+    )
+    # All-None → nothing declared; report None rather than an empty object.
+    if view.model_dump(exclude_none=True):
+        return view
+    return None
+
+
+def _detected_view(
+    case: EvalCase | None, trace: Trace
+) -> tuple[DetectedView | None, str | None]:
+    """Project what the agent produced into a `DetectedView` that mirrors the
+    case's declared dimensions, plus the classified `message`.
+
+    Only the dimensions the case declared are compared: a structured case gets
+    `structured_output`, a substring case gets `content` + which substrings were
+    `missing`/`forbidden_present` (read from the grade's failure modes), a tool
+    case gets `tools_invoked`. With no declared dimensions we still return the raw
+    `content`/`structured_output` so the FE has something to show."""
+    content = _trace_content(trace)
+    structured = trace.outputs.structured_output
     tools_invoked = [s.tool_name for s in trace.spans if isinstance(s, ToolCallSpan)]
-    return {
-        "content": content,
-        "structured_output": trace.outputs.structured_output,
-        "tools_invoked": tools_invoked,
-    }
+    modes = {m for gr in trace.grader_results for m in gr.failure_modes}
+
+    if case is None:
+        view = DetectedView(content=content, structured_output=structured)
+        return (view if view.model_dump(exclude_none=True) else None), content
+
+    exp = case.expected
+    kwargs: dict[str, Any] = {}
+    if exp.structured_output is not None:
+        kwargs["structured_output"] = structured
+    if exp.must_include:
+        kwargs["content"] = content
+        # The grader emits a `missing_required_substring` mode when one or more
+        # required substrings are absent (without naming which); surface the
+        # declared set as the candidate gaps when that mode fired. Exact
+        # per-substring attribution lives in the funnel breakdown for the drill-down.
+        if "missing_required_substring" in modes:
+            kwargs["missing"] = list(exp.must_include)
+    if exp.must_not_include and "forbidden_substring" in modes:
+        kwargs["content"] = content
+        kwargs["forbidden_present"] = list(exp.must_not_include)
+    if exp.required_tools or exp.forbidden_tools:
+        kwargs["tools_invoked"] = tools_invoked
+    if not kwargs:
+        # Nothing declared to compare → still show the raw output.
+        kwargs = {"content": content, "structured_output": structured}
+    view = DetectedView(**kwargs)
+    return (view if view.model_dump(exclude_none=True) else None), content
 
 
 def experiment_decisions(

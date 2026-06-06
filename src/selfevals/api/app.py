@@ -338,22 +338,37 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     @app.get(
         "/api/workspaces/{workspace_id}/experiments/{experiment_id}/results",
         response_model=ExperimentResultsResponse,
+        # Each scenario's expected/detected only carries the dimensions the case
+        # declared; exclude_none keeps the JSON compact (no null rules) at scale.
+        response_model_exclude_none=True,
         tags=["experiments"],
     )
     def experiments_results(
         workspace_id: str,
         experiment_id: str,
+        include: Annotated[
+            str | None,
+            Query(
+                description=(
+                    "Comma-separated expansions. `turns` expands each conversation "
+                    "case into per-turn `ScenarioResult`s (off by default — the "
+                    "case-level grid stays one representative trace per case)."
+                ),
+            ),
+        ] = None,
         storage: SQLiteStorage = Depends(_storage),
         _user: UserHeader = None,
     ) -> ExperimentResultsResponse:
         # Per-scenario expected/detected/matched for the best iteration. Cases
         # whose traces weren't persisted are listed with detected/matched null
         # rather than dropped, so the grid is honest.
+        include_set = {p.strip() for p in (include or "").split(",") if p.strip()}
         try:
             results = experiment_results(
                 storage,
                 workspace_id=workspace_id,
                 experiment_id=experiment_id,
+                include_turns="turns" in include_set,
             )
             if results is None:
                 raise HTTPException(
