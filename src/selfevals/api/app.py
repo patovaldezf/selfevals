@@ -70,6 +70,25 @@ from selfevals.storage.sqlite import SQLiteStorage
 DEFAULT_DB_PATH = "./selfevals.sqlite"
 _USER_HEADER = "X-SelfEvals-User"
 
+# Dev frontends that may call the API cross-origin. 5173 is the bundled
+# SvelteKit web UI; 3000 is the common Next/Vite default (e.g. the seals
+# playground). Override with SELFEVALS_CORS_ORIGINS (comma-separated) to add a
+# tunnel/deploy origin without code changes.
+_DEFAULT_CORS_ORIGINS = (
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+)
+
+
+def _cors_origins() -> list[str]:
+    raw = os.environ.get("SELFEVALS_CORS_ORIGINS")
+    if raw:
+        # Explicit override wins outright; trim blanks and empties.
+        return [o.strip() for o in raw.split(",") if o.strip()]
+    return list(_DEFAULT_CORS_ORIGINS)
+
 UserHeader = Annotated[
     str | None,
     Header(alias=_USER_HEADER, description="Stubbed user id (auth is post-MVP)."),
@@ -109,7 +128,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_origins=_cors_origins(),
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],
