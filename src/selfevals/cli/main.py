@@ -244,6 +244,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Workspace id override (otherwise read from the spec's `workspace:` key).",
     )
     p_run.add_argument(
+        "--dataset",
+        default=None,
+        help=(
+            "Run against this persisted dataset id instead of the spec's `dataset:` "
+            "block (resolves its cases + split from storage). Needs persistence."
+        ),
+    )
+    p_run.add_argument(
         "--max-iterations",
         type=int,
         default=None,

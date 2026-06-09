@@ -218,6 +218,105 @@ def test_inline_dataset_materialization_is_idempotent(tmp_path: object) -> None:
     assert len(datasets) == 1
 
 
+def test_ref_dataset_resolution_hydrates_cases_and_split(tmp_path: object) -> None:
+    """A `dataset: {ref: ds_x}` spec resolves the persisted dataset at launch:
+    its cases hydrate `spec.cases` and its split allocation reaches the loop."""
+    from pathlib import Path
+
+    import yaml as _yaml
+
+    from selfevals.repo.datasets import load_cases_from_jsonl, persist_dataset
+    from selfevals.repo.loader import RefDatasetSource, build_spec_from_mapping
+    from selfevals.runner.launch import _resolve_dataset_source, ensure_workspace_by_id
+    from selfevals.schemas.dataset import SplitAllocation
+    from selfevals.schemas.enums import DatasetType
+    from selfevals.storage.sqlite import SQLiteStorage
+
+    ws = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
+    repo_root = Path(__file__).resolve().parents[2]
+    db = Path(str(tmp_path)) / "ref.sqlite"
+    storage = SQLiteStorage(str(db))
+    try:
+        ensure_workspace_by_id(storage, ws)
+        cases = load_cases_from_jsonl(
+            repo_root / "evals/datasets/pingpong.jsonl", workspace_id=ws
+        )
+        with storage.open(ws) as scope:
+            ds = persist_dataset(
+                scope,
+                name="shared",
+                dataset_type=DatasetType.CAPABILITY,
+                cases=cases,
+                split_allocation=SplitAllocation(
+                    optimization=0.5, holdout=0.5, reliability=0.0
+                ),
+            )
+
+        raw = _yaml.safe_load(
+            (repo_root / "evals/experiments/example_pingpong.yaml").read_text()
+        )
+        raw["dataset"] = {"ref": ds.id}
+        spec = build_spec_from_mapping(raw, workspace_id=ws)
+        assert isinstance(spec.dataset_source, RefDatasetSource)
+        assert spec.cases == []  # not hydrated until launch
+
+        with storage.open(ws) as scope:
+            split = _resolve_dataset_source(scope, spec)
+    finally:
+        storage.close()
+
+    # Cases hydrated in place from the dataset; split adopted from it.
+    assert len(spec.cases) == len(cases)
+    assert split is not None and split.optimization == 0.5
+    assert spec.experiment.datasets.optimization.id == ds.id
+
+
+def test_ref_dataset_without_scope_is_user_error() -> None:
+    """Resolving a ref needs storage — an ephemeral run over a ref is an error."""
+    from pathlib import Path
+
+    import yaml as _yaml
+
+    from selfevals.repo.loader import build_spec_from_mapping
+    from selfevals.runner.launch import build_loop
+
+    repo_root = Path(__file__).resolve().parents[2]
+    raw = _yaml.safe_load(
+        (repo_root / "evals/experiments/example_pingpong.yaml").read_text()
+    )
+    raw["dataset"] = {"ref": "ds_01HZZZZZZZZZZZZZZZZZZZZZZZ"}
+    spec = build_spec_from_mapping(raw, workspace_id="ws_01HZZZZZZZZZZZZZZZZZZZZZZZ")
+    with pytest.raises(SelfEvalsUserError, match="not persisting"):
+        build_loop(spec, scope=None, repetitions_per_case=1)
+
+
+def test_ref_dataset_missing_is_user_error(tmp_path: object) -> None:
+    """A ref to a dataset that isn't in storage fails with a clear message."""
+    from pathlib import Path
+
+    import yaml as _yaml
+
+    from selfevals.repo.loader import build_spec_from_mapping
+    from selfevals.runner.launch import build_loop, ensure_workspace_by_id
+    from selfevals.storage.sqlite import SQLiteStorage
+
+    ws = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
+    repo_root = Path(__file__).resolve().parents[2]
+    raw = _yaml.safe_load(
+        (repo_root / "evals/experiments/example_pingpong.yaml").read_text()
+    )
+    raw["dataset"] = {"ref": "ds_01HZZZZZZZZZZZZZZZZZZZZZZZ"}
+    spec = build_spec_from_mapping(raw, workspace_id=ws)
+    db = Path(str(tmp_path)) / "missing.sqlite"
+    storage = SQLiteStorage(str(db))
+    try:
+        ensure_workspace_by_id(storage, ws)
+        with storage.open(ws) as scope, pytest.raises(SelfEvalsUserError, match="not found"):
+            build_loop(spec, scope=scope, repetitions_per_case=1)
+    finally:
+        storage.close()
+
+
 def test_build_adapter_cli() -> None:
     spec = CliAgentSpec(command=["./bin/agent"], env={"TOKEN": "x"}, timeout_seconds=30.0)
     adapter = build_adapter(spec)

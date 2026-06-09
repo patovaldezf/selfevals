@@ -59,6 +59,7 @@ from selfevals.repo.loader import (
     HttpAgentSpec,
     InlineDatasetSource,
     LoaderError,
+    RefDatasetSource,
     resolve_agent_callable,
 )
 from selfevals.runner.adapters import (
@@ -72,12 +73,13 @@ from selfevals.runner.adapters import (
 from selfevals.runner.executor import Executor
 from selfevals.runner.sandbox import SandboxPolicy
 from selfevals.schemas._base import EntityRef
-from selfevals.schemas.dataset import Dataset
+from selfevals.schemas.dataset import Dataset, SplitAllocation
 from selfevals.schemas.enums import ProposerStrategy
+from selfevals.schemas.eval_case import EvalCase
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.fleet import ModelRef
 from selfevals.schemas.workspace import Workspace
-from selfevals.storage.interface import WorkspaceScope
+from selfevals.storage.interface import ListFilter, WorkspaceScope
 from selfevals.storage.sqlite import SQLiteStorage
 
 if TYPE_CHECKING:
@@ -378,6 +380,67 @@ def _persist_cases(scope: WorkspaceScope, spec: ExperimentSpec) -> None:
         scope.put_entity(case)
 
 
+def _resolve_dataset_source(
+    scope: WorkspaceScope | None, spec: ExperimentSpec
+) -> SplitAllocation | None:
+    """Resolve the experiment's dataset source, returning its split allocation.
+
+    * Inline: cases already live in `spec.cases`; the split (if any) rides the
+      block. Returns it so the loop's sampler honors it.
+    * Ref: load the persisted `Dataset`, hydrate `spec.cases` in place from its
+      case refs, and return its split. A ref needs storage — resolving one
+      without a `scope` (an ephemeral `--no-persist` run) is a user error.
+
+    Mutates `spec.cases` in place (it's a list on a frozen dataclass) so every
+    downstream reader — graders, persistence, the loop — sees the resolved set.
+    """
+    source = spec.dataset_source
+    if isinstance(source, InlineDatasetSource):
+        return source.split_allocation
+    if isinstance(source, RefDatasetSource):
+        if scope is None:
+            raise SelfEvalsUserError(
+                f"experiment references dataset {source.ref.id!r} but the run is not "
+                "persisting — a dataset reference needs storage to resolve. Drop "
+                "--no-persist, or declare cases inline."
+            )
+        return _resolve_ref_dataset(scope, spec, source.ref)
+    return None  # defensive: unknown source variant
+
+
+def _resolve_ref_dataset(
+    scope: WorkspaceScope, spec: ExperimentSpec, ref: EntityRef
+) -> SplitAllocation | None:
+    try:
+        dataset = scope.get_entity(Dataset, ref.id)
+    except Exception as exc:
+        raise SelfEvalsUserError(
+            f"experiment references dataset {ref.id!r}, which was not found in "
+            f"workspace {spec.workspace_id!r}. Create it first "
+            "(`selfevals dataset create` or POST .../datasets)."
+        ) from exc
+    assert isinstance(dataset, Dataset)
+
+    ref_ids = {c.id for c in dataset.cases}
+    resolved = [
+        c
+        for c in scope.list_entities(EvalCase, ListFilter())
+        if isinstance(c, EvalCase) and c.id in ref_ids
+    ]
+    if not resolved:
+        raise SelfEvalsUserError(
+            f"dataset {ref.id!r} resolved to zero cases — its EvalCases are missing "
+            "from storage. Re-import the dataset."
+        )
+    # Hydrate the (frozen-dataclass) spec's case list in place.
+    spec.cases[:] = resolved
+    # Stamp the experiment's optimization ref so reports/links point at the
+    # actual dataset (the YAML may have named a placeholder).
+    spec.experiment.datasets.optimization = EntityRef(id=dataset.id, version=dataset.version)
+    spec.experiment.frozen.datasets = [EntityRef(id=dataset.id, version=dataset.version)]
+    return dataset.split_allocation
+
+
 def _materialize_inline_dataset(scope: WorkspaceScope, spec: ExperimentSpec) -> None:
     """Persist a real Dataset over an inline experiment's cases and link it.
 
@@ -474,6 +537,11 @@ def build_loop(
     adapter = build_adapter(spec.agent)
     proposer = build_proposer(spec.experiment)
 
+    # Resolve a `ref:` dataset before anything reads `spec.cases` (graders,
+    # persistence, the loop). For inline sources this is a no-op — cases are
+    # already in `spec.cases` and the split comes from the block.
+    split_allocation = _resolve_dataset_source(scope, spec)
+
     with _REGISTRY_LOCK:
         registered = register_grader_specs(spec)
         try:
@@ -503,4 +571,5 @@ def build_loop(
         scope=scope,
         decision_evaluator=DecisionMatrixEvaluator(),
         repetitions_per_case=repetitions_per_case,
+        split_allocation=split_allocation,
     )

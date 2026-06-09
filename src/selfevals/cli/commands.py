@@ -421,6 +421,25 @@ def cmd_run(args: argparse.Namespace) -> int:
     _ensure_cwd_on_path()
     spec = _friendly.load_spec(args.spec, workspace_id=args.workspace)
 
+    dataset_id = getattr(args, "dataset", None)
+    if dataset_id is not None:
+        from dataclasses import replace
+
+        from selfevals.repo.loader import RefDatasetSource
+        from selfevals.schemas._base import EntityRef
+
+        # Override the spec's dataset source with a reference; build_loop resolves
+        # its cases + split from storage. A ref needs persistence.
+        if args.no_persist:
+            raise CommandError(
+                "--dataset needs persistence to resolve; drop --no-persist"
+            )
+        spec = replace(
+            spec,
+            dataset_source=RefDatasetSource(ref=EntityRef(id=dataset_id)),
+            cases=[],
+        )
+
     if args.max_iterations is not None:
         if args.max_iterations < 1:
             raise CommandError("--max-iterations must be >= 1")

@@ -223,3 +223,33 @@ def test_run_409_when_active(client: tuple[TestClient, str]) -> None:
 
     res = c.post(f"/api/workspaces/{ws.id}/experiments/run", json={"spec_inline": spec})
     assert res.status_code == 409
+
+
+def test_run_with_dataset_id_override(client: tuple[TestClient, str]) -> None:
+    """A standalone dataset (uploaded via the datasets API) can be selected at
+    launch via `dataset_id`, without editing the spec's `dataset:` block."""
+    c, _ = client
+    rows = [json.loads(line) for line in CASES.read_text().splitlines() if line.strip()]
+
+    created = c.post(
+        f"/api/workspaces/{WS}/datasets",
+        json={"name": "shared", "dataset_type": "capability", "cases": rows},
+    )
+    assert created.status_code == 201, created.text
+    dataset_id = created.json()["id"]
+
+    # The spec still declares inline cases, but the override points the run at
+    # the standalone dataset instead.
+    res = c.post(
+        f"/api/workspaces/{WS}/experiments/run",
+        json={"spec_inline": _inline_spec(), "dataset_id": dataset_id},
+    )
+    assert res.status_code == 202, res.text
+    exp_id = res.json()["experiment_id"]
+    assert _poll_state(c, WS, exp_id) == "completed"
+
+    # The completed experiment references the dataset we selected.
+    detail = c.get(f"/api/workspaces/{WS}/experiments/{exp_id}").json()
+    cases_resp = c.get(f"/api/workspaces/{WS}/experiments/{exp_id}/cases").json()
+    assert cases_resp["total"] == len(rows)
+    assert detail["summary"]["state"] == "completed"

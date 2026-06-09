@@ -449,6 +449,10 @@ class RunExperimentRequest(BaseModel):
 
     spec_path: str | None = None
     spec_inline: dict[str, Any] | None = None
+    dataset_id: str | None = None
+    """Optional override: run against this persisted dataset instead of whatever
+    the spec's `dataset:` block declares. Lets the FE pick a dataset at launch
+    without editing the spec — the experiment consumes the dataset by reference."""
     max_iterations: int | None = Field(default=None, ge=1)
     reps: int | None = Field(default=None, ge=1)
     persist_traces: Literal["none", "all", "failed"] | None = None
