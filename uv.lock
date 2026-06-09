@@ -3888,7 +3888,7 @@ wheels = [
 
 [[package]]
 name = "selfevals"
-version = "0.4.2"
+version = "0.8.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
@@ -3914,6 +3914,7 @@ all = [
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-proto" },
     { name = "opentelemetry-sdk" },
+    { name = "python-multipart" },
     { name = "uvicorn" },
 ]
 anthropic = [
@@ -3965,6 +3966,7 @@ vertex = [
 ]
 web = [
     { name = "fastapi" },
+    { name = "python-multipart" },
     { name = "uvicorn" },
 ]
 
@@ -4006,6 +4008,7 @@ requires-dist = [
     { name = "opentelemetry-proto", marker = "extra == 'telemetry'", specifier = ">=1.25,<2" },
     { name = "opentelemetry-sdk", marker = "extra == 'telemetry'", specifier = ">=1.25,<2" },
     { name = "pydantic", specifier = ">=2.7,<3" },
+    { name = "python-multipart", marker = "extra == 'web'", specifier = ">=0.0.9,<1" },
     { name = "pyyaml", specifier = ">=6,<7" },
     { name = "selfevals", extras = ["telemetry"], marker = "extra == 'anthropic'" },
     { name = "selfevals", extras = ["telemetry"], marker = "extra == 'bedrock'" },

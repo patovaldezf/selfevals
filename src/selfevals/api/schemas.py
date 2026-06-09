@@ -473,3 +473,94 @@ class RunExperimentResponse(BaseModel):
     workspace_id: str
     state: str
     run_id: str | None = None
+
+
+class SplitAllocationView(BaseModel):
+    """A dataset's optimization/holdout/reliability split fractions."""
+
+    optimization: float
+    holdout: float
+    reliability: float
+    other: dict[str, float] = Field(default_factory=dict)
+
+
+class DatasetStatisticsView(BaseModel):
+    """Portfolio counts for a dataset's cases (computed at materialization)."""
+
+    total_cases: int
+    by_level: dict[str, int] = Field(default_factory=dict)
+    by_feature: dict[str, int] = Field(default_factory=dict)
+    by_source: dict[str, int] = Field(default_factory=dict)
+    by_risk: dict[str, int] = Field(default_factory=dict)
+    holdout_count: int = 0
+    pii_breakdown: dict[str, int] = Field(default_factory=dict)
+
+
+class DatasetSummary(BaseModel):
+    """A dataset as it appears in a list — identity + shape, no case bodies."""
+
+    id: str
+    name: str
+    description: str | None = None
+    dataset_type: str
+    status: str
+    case_count: int
+    manifest_hash: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class DatasetListPage(BaseModel):
+    """Paginated `GET /workspaces/{ws}/datasets`."""
+
+    items: list[DatasetSummary] = Field(default_factory=list)
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+
+
+class DatasetDetailResponse(BaseModel):
+    """One dataset with its split, statistics, and resolved case summaries.
+
+    `cases` reuses `CaseSummary` — the same shape the experiment cases list
+    returns — so the FE renders a dataset's cases with one component.
+    """
+
+    id: str
+    name: str
+    description: str | None = None
+    dataset_type: str
+    status: str
+    case_count: int
+    manifest_hash: str | None = None
+    split_allocation: SplitAllocationView
+    statistics: DatasetStatisticsView | None = None
+    cases: list[CaseSummary] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateDatasetRequest(BaseModel):
+    """Create a dataset over HTTP (JSON body). Provide exactly one case source:
+
+    * `cases` — the case dicts inline in the request body.
+    * `cases_path` — a path to a JSONL file already on the server's disk.
+
+    (To upload a `.jsonl` file directly, use the multipart `…/datasets/upload`
+    endpoint instead.) `dataset_type` defaults to `capability`; an optional
+    `split_allocation` overrides the default 0.7/0.2/0.1 portfolio.
+    """
+
+    name: str = Field(min_length=1)
+    description: str | None = None
+    dataset_type: str = "capability"
+    cases: list[dict[str, Any]] | None = None
+    cases_path: str | None = None
+    split_allocation: dict[str, float] | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_source(self) -> CreateDatasetRequest:
+        if (self.cases is None) == (self.cases_path is None):
+            raise ValueError("provide exactly one of `cases` or `cases_path`")
+        return self

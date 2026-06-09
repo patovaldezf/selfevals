@@ -18,20 +18,38 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 
 from selfevals.api.broker import get_broker
+from selfevals.api.dataset_writer import (
+    DatasetNotFoundError,
+    DatasetWriteError,
+    create_dataset_from_jsonl_bytes,
+    create_dataset_from_request,
+    freeze_dataset,
+)
 from selfevals.api.queries import (
     AnchorPoint,
     anchor_set_history,
+    dataset_detail,
     experiment_cases,
     experiment_decisions,
     experiment_detail,
     experiment_iterations,
     experiment_results,
     iteration_detail,
+    list_datasets,
     list_experiments,
     list_workspaces,
     load_compare,
@@ -46,7 +64,10 @@ from selfevals.api.schemas import (
     ActiveRunsResponse,
     CaseListResponse,
     CompareResponse,
+    CreateDatasetRequest,
     CreateWorkspaceRequest,
+    DatasetDetailResponse,
+    DatasetListPage,
     DecisionRecordResponse,
     ExperimentDetailResponse,
     ExperimentListPage,
@@ -62,7 +83,7 @@ from selfevals.api.schemas import (
     WorkspaceResponse,
 )
 from selfevals.api.sse import stream_trace
-from selfevals.schemas.enums import ExperimentState
+from selfevals.schemas.enums import DatasetStatus, ExperimentState
 from selfevals.storage.errors import ObjectNotFoundError, PointerHashMismatchError
 from selfevals.storage.filesystem import FilesystemObjectStore, parse_pointer
 from selfevals.storage.sqlite import SQLiteStorage
@@ -210,6 +231,127 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
             )
         finally:
             storage.close()
+
+    # --- datasets (first-class, experiment-independent) ------------------
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/datasets",
+        response_model=DatasetListPage,
+        tags=["datasets"],
+    )
+    def datasets_index(
+        workspace_id: str,
+        storage: SQLiteStorage = Depends(_storage),
+        limit: Annotated[int, Query(ge=1, le=500)] = 100,
+        offset: Annotated[int, Query(ge=0)] = 0,
+        status: Annotated[
+            DatasetStatus | None,
+            Query(description="Filter by lifecycle status (draft/active/frozen/archived)."),
+        ] = None,
+        dataset_type: Annotated[
+            str | None, Query(description="Filter by dataset type (e.g. capability, golden).")
+        ] = None,
+        _user: UserHeader = None,
+    ) -> DatasetListPage:
+        try:
+            return list_datasets(
+                storage,
+                workspace_id=workspace_id,
+                limit=limit,
+                offset=offset,
+                status=status,
+                dataset_type=dataset_type,
+            )
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/datasets/{dataset_id}",
+        response_model=DatasetDetailResponse,
+        tags=["datasets"],
+    )
+    def datasets_show(
+        workspace_id: str,
+        dataset_id: str,
+        storage: SQLiteStorage = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> DatasetDetailResponse:
+        try:
+            detail = dataset_detail(
+                storage, workspace_id=workspace_id, dataset_id=dataset_id
+            )
+            if detail is None:
+                raise HTTPException(status_code=404, detail=f"dataset {dataset_id} not found")
+            return detail
+        finally:
+            storage.close()
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/datasets",
+        response_model=DatasetDetailResponse,
+        status_code=201,
+        tags=["datasets"],
+    )
+    def datasets_create(
+        workspace_id: str,
+        body: CreateDatasetRequest,
+        _user: UserHeader = None,
+    ) -> DatasetDetailResponse:
+        # Inline cases or a server-side cases_path. Persists the dataset + its
+        # cases synchronously (a dataset is small; no background needed).
+        try:
+            return create_dataset_from_request(
+                db_path=resolved, workspace_id=workspace_id, body=body
+            )
+        except DatasetWriteError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/datasets/upload",
+        response_model=DatasetDetailResponse,
+        status_code=201,
+        tags=["datasets"],
+    )
+    async def datasets_upload(
+        workspace_id: str,
+        name: Annotated[str, Form(description="Dataset name.")],
+        file: Annotated[UploadFile, File(description="A .jsonl file, one case per line.")],
+        dataset_type: Annotated[str, Form()] = "capability",
+        description: Annotated[str | None, Form()] = None,
+        _user: UserHeader = None,
+    ) -> DatasetDetailResponse:
+        # Multipart upload of a raw .jsonl — the file-drag path for a FE.
+        raw = await file.read()
+        try:
+            return create_dataset_from_jsonl_bytes(
+                db_path=resolved,
+                workspace_id=workspace_id,
+                name=name,
+                raw=raw,
+                dataset_type=dataset_type,
+                description=description,
+            )
+        except DatasetWriteError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/datasets/{dataset_id}/freeze",
+        response_model=DatasetDetailResponse,
+        tags=["datasets"],
+    )
+    def datasets_freeze(
+        workspace_id: str,
+        dataset_id: str,
+        _user: UserHeader = None,
+    ) -> DatasetDetailResponse:
+        try:
+            return freeze_dataset(
+                db_path=resolved, workspace_id=workspace_id, dataset_id=dataset_id
+            )
+        except DatasetNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"dataset {dataset_id} not found") from exc
+        except DatasetWriteError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get(
         "/api/workspaces/{workspace_id}/experiments",
