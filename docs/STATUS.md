@@ -1,8 +1,8 @@
 # Status — v0.3.0
 
 This file is the honest snapshot of what selfevals can and cannot do
-today. Updated on every release; the CHANGELOG records what *changed*,
-this file records what *is*.
+today. Updated on every release; the CHANGELOG records what _changed_,
+this file records what _is_.
 
 ## What works end-to-end
 
@@ -34,10 +34,15 @@ this file records what *is*.
 - **Graders**: `DeterministicGrader` (`must_include`,
   `must_not_include`, `required_tools`, `forbidden_tools`,
   `regex_match`, `structured_output` equality, `output_schema` JSON
-  Schema), `LLMJudgeGrader` (single judge, rubric template, optional
-  `GraderCard`-driven calibration with auto-degrade to advisory when
-  thresholds breach). Calibration utilities compute
-  precision/recall/F1/macro-F1 and high-risk false negatives.
+  Schema), `SetMatchGrader` (many-to-many set scoring —
+  completeness/precision/recall/F1 over `structured_output["detected"]`
+  vs `Expected.must_include`, with per-element funnel and case-level
+  `aliases`; declarable as `type: set_match`), `LLMJudgeGrader` (single
+  judge, rubric template, optional `GraderCard`-driven calibration with
+  auto-degrade to advisory when thresholds breach), `JudgePanelGrader`
+  (N judges + consensus, declarable as `type: judge_panel`; default 3 /
+  majority). Calibration utilities compute precision/recall/F1/macro-F1
+  and high-risk false negatives.
 - **OptimizationLoop**: `ManualProposer`, `GridProposer`,
   `RandomProposer`, `LLMProposer` (offline deterministic hypothesis mode
   by default; LLM mode via an injected `AgentAdapter`). Convergence
@@ -142,7 +147,7 @@ on the backlog until it earns its place.
 
 - **Provider extras bundle the provider SDK** (0.2.1) — a single
   `pip install selfevals[anthropic]` (or `[openai]`, etc.) pulls the
-  SDK *and* the tracing integration.
+  SDK _and_ the tracing integration.
 - **OpenAI example** (`examples/hello_openai/`, 0.2.1) — an OpenAI
   twin of the Anthropic example, with a deterministic fake fallback.
 - **Onboarding docs** (0.2.2) — rewritten README, `examples/README.md`
