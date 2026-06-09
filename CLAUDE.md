@@ -4,7 +4,7 @@
 
 Framework de evals AI-native auto-mejorante para agentes. Corre experimentos
 (search space x cases x reps) con grading concurrente, optimiza y reporta.
-Python >=3.12, uv, version 0.6.0. Layout `src/`, package `selfevals`.
+Python >=3.12, uv, version 0.9.0. Layout `src/`, package `selfevals`.
 Deps core mínimas (pydantic, pyyaml, httpx); extras opcionales por proveedor
 (`[anthropic]`, `[openai]`, `[telemetry]`, `[web]`...) que se lazy-importan.
 Repo: github.com/patovaldezf/selfevals.
@@ -21,6 +21,13 @@ Repo: github.com/patovaldezf/selfevals.
 - **per-grader scoring** (v0.5.0): cada grader puntúa por separado.
 - **grid-exhaust**: el grid proposer agota combinaciones y lanza
   `SearchSpaceExhaustedError` (ver `optimization/proposers.py`).
+- **datasets entidad de primer orden** (v0.9.0): `Dataset` se persiste y reusa.
+  El block `dataset:` se clasifica en `InlineDatasetSource` (materializa un
+  Dataset al lanzar) o `RefDatasetSource` (`ref: ds_xxx`, resuelve uno
+  persistido). `repo/datasets.py::persist_dataset` es el camino canónico que
+  comparten CLI (`selfevals dataset`), API (`/datasets`) y launch. El loader
+  sigue puro (no toca storage); toda resolución/persistencia vive en
+  `runner/launch.py`. El `split_allocation` del dataset llega de verdad al loop.
 
 ## Convenciones
 

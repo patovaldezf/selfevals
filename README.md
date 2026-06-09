@@ -150,6 +150,7 @@ its arguments. The surface:
 | `workspace show <ws>`                        | Inspect a workspace.                                                                                                                                          |
 | `experiment list/show <ws> [exp]`            | List or inspect experiments.                                                                                                                                  |
 | `iteration list <ws> <exp>`                  | List recorded iterations.                                                                                                                                     |
+| `dataset create/import/list/show/freeze`     | Manage standalone datasets (upload cases from JSONL, inspect, freeze) — reusable across experiments via `dataset: {ref: ds_…}` or `run --dataset`.            |
 | `analyze pull/push <ws> <exp>`               | The error-analysis handshake (see below).                                                                                                                     |
 | `failuremode list/promote/retire/merge/edit` | Manage the failure-mode taxonomy.                                                                                                                             |
 | `skills list / path <name>`                  | Locate the agent skills bundled with the install.                                                                                                             |
