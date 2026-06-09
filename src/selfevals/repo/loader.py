@@ -125,23 +125,39 @@ class GraderSpec:
     YAML shape:
         - type: deterministic
           name: rules                       # optional; defaults per type
+        - type: set_match                   # many-to-many set scoring
+          name: intention_f1
+          params: {gating: f1, threshold: 0.8}   # optional; default completeness@1.0
         - type: llm_judge
           name: rubric_judge
           rubric: "Was the agent empathetic and accurate?"
           judge_entrypoint: pkg.mod:fn      # optional; falls back to an
                                             # embedded agent's entrypoint
+        - type: judge_panel                 # N judges + consensus
+          name: quality_panel
+          rubric: "Score 0-1: is the answer correct and grounded?"
+          n_judges: 3                        # optional; default 3 (odd → no ties)
+          consensus: majority                # majority | unanimous | weighted
+          judge_entrypoint: pkg.mod:fn       # optional; falls back like llm_judge
 
     The instantiator lives in `selfevals.cli.commands` because building an
     `LLMJudgeGrader` requires the same callable-resolution path as the
     main adapter — and the loader stays import-side-effect-free. The
     fallback only works when the agent is `embedded`; cli/http agents must
     name a `judge_entrypoint` explicitly.
+
+    `params` is a generic bag for grader-type-specific tuning (e.g. set_match's
+    `gating`/`threshold`) so adding a tunable grader does not require touching
+    this dataclass each time.
     """
 
     type: str
     name: str
     rubric: str | None = None
     judge_entrypoint: AgentEntrypoint | None = None
+    n_judges: int | None = None
+    consensus: str | None = None
+    params: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -312,7 +328,9 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-_SUPPORTED_GRADER_TYPES = {"deterministic", "llm_judge"}
+_SUPPORTED_GRADER_TYPES = {"deterministic", "llm_judge", "judge_panel", "set_match"}
+_SET_MATCH_GATINGS = {"completeness", "precision", "recall", "f1"}
+_CONSENSUS_RULES = {"majority", "unanimous", "weighted"}
 
 
 def _build_grader_specs(spec_path: Path, raw: dict[str, Any]) -> list[GraderSpec]:
@@ -343,24 +361,107 @@ def _build_grader_specs(spec_path: Path, raw: dict[str, Any]) -> list[GraderSpec
 
         rubric: str | None = None
         judge_entry: AgentEntrypoint | None = None
-        if type_ == "llm_judge":
+        n_judges: int | None = None
+        consensus: str | None = None
+        params: dict[str, Any] = {}
+
+        if type_ in ("llm_judge", "judge_panel"):
             rubric_raw = entry.get("rubric")
             if not isinstance(rubric_raw, str) or not rubric_raw.strip():
                 raise LoaderError(
-                    f"{spec_path}: graders[{i}] (llm_judge) requires a non-empty `rubric`"
+                    f"{spec_path}: graders[{i}] ({type_}) requires a non-empty `rubric`"
                 )
             rubric = rubric_raw
-            judge_raw = entry.get("judge_entrypoint")
-            if judge_raw is not None:
-                if not isinstance(judge_raw, str) or ":" not in judge_raw:
-                    raise LoaderError(
-                        f"{spec_path}: graders[{i}].judge_entrypoint must be "
-                        f"'module:callable', got {judge_raw!r}"
-                    )
-                module, _, attribute = judge_raw.partition(":")
-                judge_entry = AgentEntrypoint(raw=judge_raw, module=module, attribute=attribute)
-        specs.append(GraderSpec(type=type_, name=name, rubric=rubric, judge_entrypoint=judge_entry))
+            judge_entry = _parse_judge_entrypoint(spec_path, i, entry)
+
+        if type_ == "judge_panel":
+            n_judges = _parse_n_judges(spec_path, i, entry)
+            consensus = _parse_consensus(spec_path, i, entry)
+
+        if type_ == "set_match":
+            params = _parse_set_match_params(spec_path, i, entry)
+
+        specs.append(
+            GraderSpec(
+                type=type_,
+                name=name,
+                rubric=rubric,
+                judge_entrypoint=judge_entry,
+                n_judges=n_judges,
+                consensus=consensus,
+                params=params,
+            )
+        )
     return specs
+
+
+def _parse_judge_entrypoint(
+    spec_path: Path, i: int, entry: dict[str, Any]
+) -> AgentEntrypoint | None:
+    judge_raw = entry.get("judge_entrypoint")
+    if judge_raw is None:
+        return None
+    if not isinstance(judge_raw, str) or ":" not in judge_raw:
+        raise LoaderError(
+            f"{spec_path}: graders[{i}].judge_entrypoint must be "
+            f"'module:callable', got {judge_raw!r}"
+        )
+    module, _, attribute = judge_raw.partition(":")
+    return AgentEntrypoint(raw=judge_raw, module=module, attribute=attribute)
+
+
+def _parse_n_judges(spec_path: Path, i: int, entry: dict[str, Any]) -> int:
+    raw = entry.get("n_judges", 3)
+    if not isinstance(raw, int) or isinstance(raw, bool) or raw < 1:
+        raise LoaderError(
+            f"{spec_path}: graders[{i}].n_judges must be an integer >= 1, got {raw!r}"
+        )
+    return raw
+
+
+def _parse_consensus(spec_path: Path, i: int, entry: dict[str, Any]) -> str:
+    raw = entry.get("consensus", "majority")
+    if raw not in _CONSENSUS_RULES:
+        raise LoaderError(
+            f"{spec_path}: graders[{i}].consensus must be one of "
+            f"{sorted(_CONSENSUS_RULES)}, got {raw!r}"
+        )
+    return cast(str, raw)
+
+
+def _parse_set_match_params(spec_path: Path, i: int, entry: dict[str, Any]) -> dict[str, Any]:
+    raw = entry.get("params", {})
+    if not isinstance(raw, dict):
+        raise LoaderError(f"{spec_path}: graders[{i}].params must be a mapping, got {raw!r}")
+    params: dict[str, Any] = {}
+    gating = raw.get("gating")
+    if gating is not None:
+        if gating not in _SET_MATCH_GATINGS:
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].params.gating must be one of "
+                f"{sorted(_SET_MATCH_GATINGS)}, got {gating!r}"
+            )
+        params["gating"] = gating
+    threshold = raw.get("threshold")
+    if threshold is not None:
+        if not isinstance(threshold, int | float) or isinstance(threshold, bool):
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].params.threshold must be a number, got {threshold!r}"
+            )
+        if not 0.0 <= float(threshold) <= 1.0:
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].params.threshold must be in [0, 1], got {threshold!r}"
+            )
+        params["threshold"] = float(threshold)
+    case_sensitive = raw.get("case_sensitive")
+    if case_sensitive is not None:
+        if not isinstance(case_sensitive, bool):
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].params.case_sensitive must be a boolean, "
+                f"got {case_sensitive!r}"
+            )
+        params["case_sensitive"] = case_sensitive
+    return params
 
 
 def _validate_primary_grader(

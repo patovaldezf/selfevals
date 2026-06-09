@@ -16,6 +16,7 @@ from selfevals.repo.loader import (
     AgentEntrypoint,
     CliAgentSpec,
     EmbeddedAgentSpec,
+    GraderSpec,
     HttpAgentSpec,
 )
 from selfevals.runner.adapters import (
@@ -304,3 +305,88 @@ def test_build_adapter_http_without_model_is_none() -> None:
     adapter = build_adapter(HttpAgentSpec(url="https://x/eval"))
     assert isinstance(adapter, HttpEndpointAdapter)
     assert adapter.model is None
+
+
+# --- register_grader_specs: judge_panel + set_match wiring ----------------
+
+
+def _dummy_judge(request: AdapterRequest) -> AdapterResponse:
+    # Never invoked during registration; only needs to be importable so the
+    # judge entrypoint resolves.
+    return AdapterResponse(content='{"label": "pass", "reason": "ok"}')
+
+
+class _SpecShim:
+    """Minimal stand-in: register_grader_specs only reads `.graders`/`.agent`."""
+
+    def __init__(self, graders: list[GraderSpec], agent: object) -> None:
+        self.graders = graders
+        self.agent = agent
+
+
+def _embedded_agent() -> EmbeddedAgentSpec:
+    ep = AgentEntrypoint(
+        raw="tests.runner.test_launch_wiring:_dummy_judge",
+        module="tests.runner.test_launch_wiring",
+        attribute="_dummy_judge",
+    )
+    return EmbeddedAgentSpec(entrypoint=ep)
+
+
+@pytest.fixture
+def restore_registry() -> object:
+    from selfevals.graders.registry import available_graders, unregister_grader
+
+    before = set(available_graders())
+    yield None
+    for name in set(available_graders()) - before:
+        unregister_grader(name)
+
+
+def test_register_judge_panel_builds_panel_of_n(restore_registry: None) -> None:
+    from selfevals.graders.judge_panel import JudgePanelGrader
+    from selfevals.graders.registry import resolve_graders
+    from selfevals.runner.launch import register_grader_specs
+
+    spec = _SpecShim(
+        graders=[
+            GraderSpec(
+                type="judge_panel",
+                name="quality_panel",
+                rubric="Is the answer correct?",
+                n_judges=3,
+                consensus="majority",
+            )
+        ],
+        agent=_embedded_agent(),
+    )
+    registered = register_grader_specs(spec)  # type: ignore[arg-type]
+    assert registered == ["quality_panel"]
+    grader = resolve_graders(["quality_panel"])[0]
+    assert isinstance(grader, JudgePanelGrader)
+    assert grader.name == "quality_panel"
+    assert len(grader._judges) == 3
+    assert grader._consensus_rule == "majority"
+
+
+def test_register_set_match_bakes_gating(restore_registry: None) -> None:
+    from selfevals.graders.registry import resolve_graders
+    from selfevals.graders.set_match import SetMatchGrader
+    from selfevals.runner.launch import register_grader_specs
+
+    spec = _SpecShim(
+        graders=[
+            GraderSpec(
+                type="set_match",
+                name="intention_f1",
+                params={"gating": "f1", "threshold": 0.8},
+            )
+        ],
+        agent=_embedded_agent(),
+    )
+    registered = register_grader_specs(spec)  # type: ignore[arg-type]
+    assert registered == ["intention_f1"]
+    grader = resolve_graders(["intention_f1"])[0]
+    assert isinstance(grader, SetMatchGrader)
+    assert grader._gating == "f1"
+    assert grader._threshold == 0.8

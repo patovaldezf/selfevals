@@ -28,7 +28,7 @@ import inspect
 import os
 import threading
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 from selfevals._errors import SelfEvalsUserError
 from selfevals.graders.base import Grader
@@ -220,6 +220,29 @@ def register_grader_specs(spec: ExperimentSpec) -> list[str]:
             register_grader(g_spec.name, _llm_judge_factory(g_spec.name, judge_adapter, rubric))
             registered.append(g_spec.name)
             continue
+        if g_spec.type == "judge_panel":
+            entry = g_spec.judge_entrypoint or _agent_entrypoint_for_judge(g_spec.name, spec.agent)
+            try:
+                judge_callable = resolve_agent_callable(entry)
+            except LoaderError as exc:
+                raise SelfEvalsUserError(str(exc)) from exc
+            judge_adapter = _wrap_user_callable(judge_callable, entry)
+            register_grader(
+                g_spec.name,
+                _judge_panel_factory(
+                    g_spec.name,
+                    judge_adapter,
+                    g_spec.rubric or "",
+                    n_judges=g_spec.n_judges or 3,
+                    consensus=g_spec.consensus or "majority",
+                ),
+            )
+            registered.append(g_spec.name)
+            continue
+        if g_spec.type == "set_match":
+            register_grader(g_spec.name, _set_match_factory(g_spec.name, g_spec.params))
+            registered.append(g_spec.name)
+            continue
         raise SelfEvalsUserError(f"unsupported grader type: {g_spec.type!r}")  # defensive
     return registered
 
@@ -236,6 +259,55 @@ def _llm_judge_factory(name: str, judge_adapter: AgentAdapter, rubric: str) -> C
 
     def _build() -> Grader:
         return LLMJudgeGrader(name=name, judge_adapter=judge_adapter, rubric=template)
+
+    return _build
+
+
+def _judge_panel_factory(
+    name: str,
+    judge_adapter: AgentAdapter,
+    rubric: str,
+    *,
+    n_judges: int,
+    consensus: str,
+) -> Callable[[], Grader]:
+    """Build a panel of `n_judges` identical-rubric judges + a consensus rule.
+
+    The judges share one rubric and one adapter — independence comes from the
+    LLM's own sampling, not from distinct prompts. Each judge needs a unique
+    name within the panel (a `JudgePanelGrader` invariant), so they are suffixed
+    `-judge-0..N`. Default consensus is `majority`; for `weighted` (which the
+    panel requires explicit weights for) we pass uniform weights so a bare
+    `consensus: weighted` still constructs.
+    """
+    from selfevals.graders.judge_panel import JudgePanelGrader
+
+    template = RubricTemplate(rubric=rubric)
+
+    def _build() -> Grader:
+        judges: list[Grader] = [
+            LLMJudgeGrader(name=f"{name}-judge-{k}", judge_adapter=judge_adapter, rubric=template)
+            for k in range(n_judges)
+        ]
+        weights = [1.0] * n_judges if consensus == "weighted" else None
+        return JudgePanelGrader(
+            name=name, judges=judges, consensus_rule=consensus, weights=weights
+        )
+
+    return _build
+
+
+def _set_match_factory(name: str, params: dict[str, object]) -> Callable[[], Grader]:
+    from selfevals.graders.set_match import GatingDimension, SetMatchGrader
+
+    gating = cast("GatingDimension", params.get("gating", "completeness"))
+    threshold = float(cast(float, params.get("threshold", 1.0)))
+    case_sensitive = bool(params.get("case_sensitive", False))
+
+    def _build() -> Grader:
+        return SetMatchGrader(
+            name=name, gating=gating, threshold=threshold, case_sensitive=case_sensitive
+        )
 
     return _build
 

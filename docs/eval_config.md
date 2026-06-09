@@ -22,13 +22,13 @@ output), and [`adapters.md`](adapters.md) (adapter usage).
 
 ## Top-level keys
 
-| Key | Required | Notes |
-|-----|----------|-------|
-| `workspace` (or `workspace_id`) | yes* | Workspace id. *Can be supplied via `--workspace` instead of the file. |
-| `experiment` | yes | The experiment contract (mapping → `Experiment`). |
-| `dataset` | yes | Where the eval cases come from. |
-| `agent` | yes | The adapter that calls your agent. |
-| `graders` | no | Explicit grader configuration. When omitted, cases reference graders by name (see [Graders](#graders)). |
+| Key                             | Required | Notes                                                                                                   |
+| ------------------------------- | -------- | ------------------------------------------------------------------------------------------------------- |
+| `workspace` (or `workspace_id`) | yes\*    | Workspace id. \*Can be supplied via `--workspace` instead of the file.                                  |
+| `experiment`                    | yes      | The experiment contract (mapping → `Experiment`).                                                       |
+| `dataset`                       | yes      | Where the eval cases come from.                                                                         |
+| `agent`                         | yes      | The adapter that calls your agent.                                                                      |
+| `graders`                       | no       | Explicit grader configuration. When omitted, cases reference graders by name (see [Graders](#graders)). |
 
 ---
 
@@ -37,21 +37,21 @@ output), and [`adapters.md`](adapters.md) (adapter usage).
 The keys mirror the `Experiment` schema (`src/selfevals/schemas/experiment.py`).
 The loader auto-fills `id` and `workspace_id` when absent.
 
-| Key | Type | Notes |
-|-----|------|-------|
-| `name` | string | Human name. |
-| `goal` | string | One-line intent. |
-| `mode` | enum | `handoff` (cloud-only parameter sweep against pinned artifacts) or `agent_loop` (writes code in your repo). |
-| `taxonomy` | mapping | `target_features` (non-empty list), optional `target_levels`, `dataset_types`. |
-| `datasets` | mapping | e.g. `optimization: { id: ds_..., version: 1 }`. |
-| `target` | mapping | `primary: { name, operator, value }` and optional `guardrails: [...]`. |
-| `editable` | mapping | Bool flags for what the proposer may change: `prompt`, `model_params` (default true), `model_choice`, `tool_code`, `workflow_graph`, `skills`. |
-| `frozen` | mapping | Pinned `fleet`, `agents`, `datasets`. |
-| `proposer` | mapping | `strategy` (`manual` \| `grid` \| `random`), `allow_search_space_expansion` (default false). |
-| `search_space` | mapping | Parameter spaces the proposer samples, e.g. `model_params: { level: [0.0, 1.0] }`. |
-| `run` | mapping | `sandbox` (`mock` \| `dry_run` \| `live_sandboxed` \| `live_canary`), `max_iterations` (1–10000, default 20), `convergence: { min_delta, patience }`, sampling. |
-| `reliability` | mapping | `metrics: [...]` — each must match `pass@N`, `pass^N`, or a known reliability metric name. |
-| `error_analysis` | mapping | Opt-in continuous error-analysis loop: `enabled`, `taxonomy: workspace`, `trigger: { when, threshold }`, `scope`. |
+| Key              | Type    | Notes                                                                                                                                                           |
+| ---------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`           | string  | Human name.                                                                                                                                                     |
+| `goal`           | string  | One-line intent.                                                                                                                                                |
+| `mode`           | enum    | `handoff` (cloud-only parameter sweep against pinned artifacts) or `agent_loop` (writes code in your repo).                                                     |
+| `taxonomy`       | mapping | `target_features` (non-empty list), optional `target_levels`, `dataset_types`.                                                                                  |
+| `datasets`       | mapping | e.g. `optimization: { id: ds_..., version: 1 }`.                                                                                                                |
+| `target`         | mapping | `primary: { name, operator, value }` and optional `guardrails: [...]`.                                                                                          |
+| `editable`       | mapping | Bool flags for what the proposer may change: `prompt`, `model_params` (default true), `model_choice`, `tool_code`, `workflow_graph`, `skills`.                  |
+| `frozen`         | mapping | Pinned `fleet`, `agents`, `datasets`.                                                                                                                           |
+| `proposer`       | mapping | `strategy` (`manual` \| `grid` \| `random`), `allow_search_space_expansion` (default false).                                                                    |
+| `search_space`   | mapping | Parameter spaces the proposer samples, e.g. `model_params: { level: [0.0, 1.0] }`.                                                                              |
+| `run`            | mapping | `sandbox` (`mock` \| `dry_run` \| `live_sandboxed` \| `live_canary`), `max_iterations` (1–10000, default 20), `convergence: { min_delta, patience }`, sampling. |
+| `reliability`    | mapping | `metrics: [...]` — each must match `pass@N`, `pass^N`, or a known reliability metric name.                                                                      |
+| `error_analysis` | mapping | Opt-in continuous error-analysis loop: `enabled`, `taxonomy: workspace`, `trigger: { when, threshold }`, `scope`.                                               |
 
 ---
 
@@ -76,31 +76,31 @@ zero cases.
 Each case is an `EvalCase` (`src/selfevals/schemas/eval_case.py`). The
 loader fills `id` and `workspace_id` when absent. Core fields:
 
-| Key | Required | Notes |
-|-----|----------|-------|
-| `name` | yes | Non-empty. |
-| `task_type` | yes | Non-empty free-form label. |
-| `modalities` | no | List of `text` (default) / `image` / `audio` / `voice` / `browser_use` / `sensor`; unique. |
-| `input` | yes | The payload fed to the agent. When it carries a `messages` key it is validated as a typed multi-turn conversation; otherwise it is an opaque dict passed to the adapter verbatim. |
-| `context` | no | Optional extra context dict. |
-| `expected` | no | The pass criteria — see [Expected](#expected). |
-| `taxonomy` | yes | Case classification — see below. |
-| `graders` | no | List of grader names that apply to this case (unique). |
-| `failure_weights` | no | `{ failure_mode: weight }`, weights ≥ 0. |
-| `metadata` | no | `owner`, `tags`, `pii_status` (default `raw`), `approved_raw_by/at`, `notes`. |
-| `blocking` | no | `{ merge: bool, release: bool }`. |
-| `holdout` | no | When true, reserved for held-out eval (invisible to proposers). |
+| Key               | Required | Notes                                                                                                                                                                             |
+| ----------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`            | yes      | Non-empty.                                                                                                                                                                        |
+| `task_type`       | yes      | Non-empty free-form label.                                                                                                                                                        |
+| `modalities`      | no       | List of `text` (default) / `image` / `audio` / `voice` / `browser_use` / `sensor`; unique.                                                                                        |
+| `input`           | yes      | The payload fed to the agent. When it carries a `messages` key it is validated as a typed multi-turn conversation; otherwise it is an opaque dict passed to the adapter verbatim. |
+| `context`         | no       | Optional extra context dict.                                                                                                                                                      |
+| `expected`        | no       | The pass criteria — see [Expected](#expected).                                                                                                                                    |
+| `taxonomy`        | yes      | Case classification — see below.                                                                                                                                                  |
+| `graders`         | no       | List of grader names that apply to this case (unique).                                                                                                                            |
+| `failure_weights` | no       | `{ failure_mode: weight }`, weights ≥ 0.                                                                                                                                          |
+| `metadata`        | no       | `owner`, `tags`, `pii_status` (default `raw`), `approved_raw_by/at`, `notes`.                                                                                                     |
+| `blocking`        | no       | `{ merge: bool, release: bool }`.                                                                                                                                                 |
+| `holdout`         | no       | When true, reserved for held-out eval (invisible to proposers).                                                                                                                   |
 
 `taxonomy` (a `CaseTaxonomy`):
 
-| Key | Notes |
-|-----|-------|
-| `level` | `single_step` \| `multi_step` \| `final_response` \| `step_level` \| `tool_call` \| `retrieval` (and others). |
-| `feature` | `{ primary: str, secondary: [str] }` — `primary` required; must not also appear in `secondary`. |
-| `source` | `{ type: handcrafted \| production \| staging \| development \| failure \| synthetic, ... }`. |
-| `ground_truth` | `{ methods: [...] }` — non-empty, unique; e.g. `exact_match`, `schema_validation`, `rubric`. |
-| `dataset_type` | exactly one of `smoke` \| `golden` \| `regression` \| `capability` \| … |
-| `runtime` | defaults to `offline`. |
+| Key            | Notes                                                                                                         |
+| -------------- | ------------------------------------------------------------------------------------------------------------- |
+| `level`        | `single_step` \| `multi_step` \| `final_response` \| `step_level` \| `tool_call` \| `retrieval` (and others). |
+| `feature`      | `{ primary: str, secondary: [str] }` — `primary` required; must not also appear in `secondary`.               |
+| `source`       | `{ type: handcrafted \| production \| staging \| development \| failure \| synthetic, ... }`.                 |
+| `ground_truth` | `{ methods: [...] }` — non-empty, unique; e.g. `exact_match`, `schema_validation`, `rubric`.                  |
+| `dataset_type` | exactly one of `smoke` \| `golden` \| `regression` \| `capability` \| …                                       |
+| `runtime`      | defaults to `offline`.                                                                                        |
 
 > **PII contract:** a case whose `source.type` is `production`/`staging`
 > with `metadata.pii_status: raw` must also set `approved_raw_by` AND
@@ -109,14 +109,19 @@ loader fills `id` and `workspace_id` when absent. Core fields:
 A minimal case (matching the bundled `pingpong.jsonl`):
 
 ```json
-{"name": "say pong", "task_type": "echo",
- "input": {"messages": [{"role": "user", "content": "ping"}]},
- "taxonomy": {"level": "final_response",
-              "feature": {"primary": "commerce.product_resolution"},
-              "source": {"type": "handcrafted"},
-              "ground_truth": {"methods": ["exact_match"]},
-              "dataset_type": "capability"},
- "expected": {"must_include": ["pong"]}}
+{
+  "name": "say pong",
+  "task_type": "echo",
+  "input": { "messages": [{ "role": "user", "content": "ping" }] },
+  "taxonomy": {
+    "level": "final_response",
+    "feature": { "primary": "commerce.product_resolution" },
+    "source": { "type": "handcrafted" },
+    "ground_truth": { "methods": ["exact_match"] },
+    "dataset_type": "capability"
+  },
+  "expected": { "must_include": ["pong"] }
+}
 ```
 
 ### Expected
@@ -124,19 +129,19 @@ A minimal case (matching the bundled `pingpong.jsonl`):
 The declarative pass criteria consumed by the `DeterministicGrader`
 (`Expected` in `eval_case.py`). All fields are optional:
 
-| Field | Type | Behavior |
-|-------|------|----------|
-| `outcome` | string \| null | Free-form expected outcome label. |
-| `must_include` | list[str] | Every substring must appear in the final response (case-insensitive by default). |
-| `min_recall` | float \| null, [0, 1] | **Recall mode for `must_include`.** See below. |
-| `must_not_include` | list[str] | None of the substrings may appear. |
-| `required_tools` | list[str] | Every tool must be invoked in the trace. |
-| `forbidden_tools` | list[str] | No tool may be invoked. (Must be disjoint from `required_tools`.) |
-| `required_citations` | list[str] | |
-| `policy_flags` | list[str] | |
-| `structured_output` | object \| null | When set, the `DeterministicGrader` requires the adapter's structured output to equal this exactly. Also the **escape hatch** for custom expected fields — see below. |
-| `output_schema` | object \| null | |
-| `required_sections` | list[str] | Top-level keys an artifact must carry (consumed by `ArtifactCompletenessGrader`). |
+| Field                | Type                  | Behavior                                                                                                                                                              |
+| -------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `outcome`            | string \| null        | Free-form expected outcome label.                                                                                                                                     |
+| `must_include`       | list[str]             | Every substring must appear in the final response (case-insensitive by default).                                                                                      |
+| `min_recall`         | float \| null, [0, 1] | **Recall mode for `must_include`.** See below.                                                                                                                        |
+| `must_not_include`   | list[str]             | None of the substrings may appear.                                                                                                                                    |
+| `required_tools`     | list[str]             | Every tool must be invoked in the trace.                                                                                                                              |
+| `forbidden_tools`    | list[str]             | No tool may be invoked. (Must be disjoint from `required_tools`.)                                                                                                     |
+| `required_citations` | list[str]             |                                                                                                                                                                       |
+| `policy_flags`       | list[str]             |                                                                                                                                                                       |
+| `structured_output`  | object \| null        | When set, the `DeterministicGrader` requires the adapter's structured output to equal this exactly. Also the **escape hatch** for custom expected fields — see below. |
+| `output_schema`      | object \| null        |                                                                                                                                                                       |
+| `required_sections`  | list[str]             | Top-level keys an artifact must carry (consumed by `ArtifactCompletenessGrader`).                                                                                     |
 
 #### `structured_output` as the escape hatch for custom expected fields
 
@@ -187,15 +192,15 @@ substrings present:
   mode (so diagnostics survive) but no longer force a FAIL on their own —
   the threshold decides.
 - **Precedence:** hard violations (`must_not_include`, `required_tools` /
-  `forbidden_tools`, `regex_match`, `structured_output`) *always* take
+  `forbidden_tools`, `regex_match`, `structured_output`) _always_ take
   priority. Even when recall clears the threshold, any hard violation makes
   the grade FAIL.
 
 ```yaml
 expected:
   must_include: ["refund", "policy", "timeframe", "contact"]
-  min_recall: 0.75            # PASS if at least 3 of the 4 appear
-  must_not_include: ["guarantee"]   # but this still hard-fails if present
+  min_recall: 0.75 # PASS if at least 3 of the 4 appear
+  must_not_include: ["guarantee"] # but this still hard-fails if present
 ```
 
 ---
@@ -208,7 +213,7 @@ Selects which adapter the CLI wires up. Two YAML shapes are accepted.
 
 ```yaml
 agent:
-  entrypoint: selfevals.examples.pingpong:run   # "module.path:callable"
+  entrypoint: selfevals.examples.pingpong:run # "module.path:callable"
 ```
 
 **Tagged** — explicit transport via `type`:
@@ -246,17 +251,18 @@ Cases reference graders by name in `EvalCase.graders`. The names resolve
 through the grader registry (`src/selfevals/graders/registry.py`). The
 built-in registered names are:
 
-| Registered name | Class | What it does |
-|-----------------|-------|--------------|
-| `deterministic` | `DeterministicGrader` | Declarative rules from `Expected`: `must_include` (with optional `min_recall`), `must_not_include`, `required_tools`/`forbidden_tools`, `regex_match`, `structured_output`. |
-| `artifact_completeness` | `ArtifactCompletenessGrader` | Checks an artifact carries each `Expected.required_sections` key with a non-empty value. |
-| `guardrail` | `GuardrailGrader` | Guardrail-style pass/fail checks. |
-| `trajectory` | `TrajectoryGrader` | Diagnostic checks over the tool-call / decision *sequence* (wraps an output grader). |
+| Registered name         | Class                        | What it does                                                                                                                                                                                                                                                                                                |
+| ----------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deterministic`         | `DeterministicGrader`        | Declarative rules from `Expected`: `must_include` (with optional `min_recall`), `must_not_include`, `required_tools`/`forbidden_tools`, `regex_match`, `structured_output`.                                                                                                                                 |
+| `artifact_completeness` | `ArtifactCompletenessGrader` | Checks an artifact carries each `Expected.required_sections` key with a non-empty value.                                                                                                                                                                                                                    |
+| `guardrail`             | `GuardrailGrader`            | Guardrail-style pass/fail checks.                                                                                                                                                                                                                                                                           |
+| `set_match`             | `SetMatchGrader`             | Many-to-many set scoring: compares the agent's `structured_output["detected"]` list against `Expected.must_include` and reports completeness / precision / recall / F1 with a per-element funnel. For tasks where the ground truth is a _set_ (intention-detection, entity-extraction), not a single label. |
+| `trajectory`            | `TrajectoryGrader`           | Diagnostic checks over the tool-call / decision _sequence_ (wraps an output grader).                                                                                                                                                                                                                        |
 
 > Additional grader classes exist in `src/selfevals/graders/`
-> (`LLMJudgeGrader`, `JudgePanelGrader`) but are **not** auto-registered by
-> name; they are configured explicitly. The `judge_panel` grader is not yet
-> exposed through the YAML `graders:` block.
+> (`LLMJudgeGrader`) that are **not** auto-registered by name; they are
+> configured through the `graders:` block (`type: llm_judge`). The
+> `JudgePanelGrader` is exposed through the block as `type: judge_panel`.
 
 ### Custom graders
 
@@ -270,8 +276,8 @@ instantiated — no registration call needed:
 ```yaml
 # in a case
 graders:
-  - deterministic                       # built-in, by registered name
-  - my_pkg.graders:TaskShapeGrader      # custom, by dotted path
+  - deterministic # built-in, by registered name
+  - my_pkg.graders:TaskShapeGrader # custom, by dotted path
 ```
 
 ```python
@@ -301,25 +307,64 @@ path avoids that ordering concern.
 ### The `graders:` block
 
 The top-level `graders:` list configures graders the loader instantiates
-directly. Each entry is a mapping. The loader currently supports two
-`type`s: `deterministic` and `llm_judge`.
+directly. Each entry is a mapping. The loader supports these `type`s:
+`deterministic`, `set_match`, `llm_judge`, and `judge_panel`.
 
 ```yaml
 graders:
   - type: deterministic
-    name: rules                 # optional; defaults to the type name
+    name: rules # optional; defaults to the type name
+
+  - type: set_match
+    name: intention_f1
+    params: # optional; default gating completeness @ 1.0
+      gating: f1 # completeness | precision | recall | f1
+      threshold: 0.8 # PASS iff the gating dimension >= threshold
+      # case_sensitive: false  # optional; default false
 
   - type: llm_judge
     name: rubric_judge
     rubric: "Was the reply empathetic and factually accurate?"
-    judge_entrypoint: my_pkg.judge:run   # optional for embedded agents;
-                                         # REQUIRED for cli/http agents
+    judge_entrypoint:
+      my_pkg.judge:run # optional for embedded agents;
+      # REQUIRED for cli/http agents
+
+  - type: judge_panel
+    name: quality_panel
+    rubric: "Score 0-1: is the answer correct and grounded?"
+    n_judges: 3 # optional; default 3 (odd → no ties)
+    consensus: majority # majority | unanimous | weighted
+    judge_entrypoint: my_pkg.judge:run # same fallback rule as llm_judge
 ```
+
+**Why 3 judges?** `judge_panel` defaults to **3 judges with majority
+consensus**: an odd panel can never tie, and three independent draws cut the
+variance of a single judge for roughly 3× the cost — the standard sweet spot
+for LLM-as-judge. The judges share one rubric and adapter; independence comes
+from the model's own sampling. Use `unanimous` for a stricter gate or
+`weighted` when some judges should count more (uniform weights are used unless
+the panel is built programmatically with explicit weights).
+
+**`set_match` vs `deterministic`.** When the ground truth is a _set_
+(intention-detection: one message carries several intentions at once),
+`deterministic` exact-match collapses "2 of 3 detected" to a flat FAIL.
+`set_match` keeps the signal: it scores completeness/precision/recall/F1 over
+the detected set vs `Expected.must_include`, with a per-element breakdown. The
+agent returns its detected labels in `structured_output["detected"]`. Any
+canonical normalization (legacy aliases, casing) lives in the _case_ via
+`Expected.aliases` — a `{raw: canonical}` map applied to both sides before
+comparison — so the engine stays domain-agnostic and never imports client code.
 
 Rules for the block:
 
-- `type` must be `deterministic` or `llm_judge`.
+- `type` must be `deterministic`, `set_match`, `llm_judge`, or `judge_panel`.
 - `name` defaults to `type`; names must be unique within the block.
+- `set_match` accepts optional `params.gating`
+  (`completeness`/`precision`/`recall`/`f1`, default `completeness`),
+  `params.threshold` (`[0,1]`, default `1.0`), and `params.case_sensitive`.
+- `judge_panel` requires a non-empty `rubric`; `n_judges` defaults to `3`
+  (≥1), `consensus` defaults to `majority`. Same `judge_entrypoint` fallback
+  as `llm_judge`.
 - `llm_judge` requires a non-empty `rubric`. Its `judge_entrypoint`
   (`"module:callable"`) is optional only when the agent is `embedded`
   (it falls back to the agent's entrypoint); `cli`/`http` agents must name
@@ -332,11 +377,11 @@ Rules for the block:
 `experiment.proposer.strategy` selects how the next parameter configuration
 is chosen. MVP implements:
 
-| Strategy | Behavior |
-|----------|----------|
-| `manual` | You enumerate the configurations to try. |
-| `grid` | Cartesian sweep over `search_space` (e.g. `model_params: { level: [0.0, 1.0] }`). |
-| `random` | Random samples from `search_space`. |
+| Strategy | Behavior                                                                          |
+| -------- | --------------------------------------------------------------------------------- |
+| `manual` | You enumerate the configurations to try.                                          |
+| `grid`   | Cartesian sweep over `search_space` (e.g. `model_params: { level: [0.0, 1.0] }`). |
+| `random` | Random samples from `search_space`.                                               |
 
 `allow_search_space_expansion` defaults to `false`.
 

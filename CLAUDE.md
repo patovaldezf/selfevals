@@ -4,7 +4,7 @@
 
 Framework de evals AI-native auto-mejorante para agentes. Corre experimentos
 (search space x cases x reps) con grading concurrente, optimiza y reporta.
-Python >=3.12, uv, version 0.6.0. Layout `src/`, package `selfevals`.
+Python >=3.12, uv, version 0.9.0. Layout `src/`, package `selfevals`.
 Deps core mínimas (pydantic, pyyaml, httpx); extras opcionales por proveedor
 (`[anthropic]`, `[openai]`, `[telemetry]`, `[web]`...) que se lazy-importan.
 Repo: github.com/patovaldezf/selfevals.
@@ -21,6 +21,12 @@ Repo: github.com/patovaldezf/selfevals.
 - **per-grader scoring** (v0.5.0): cada grader puntúa por separado.
 - **grid-exhaust**: el grid proposer agota combinaciones y lanza
   `SearchSpaceExhaustedError` (ver `optimization/proposers.py`).
+- **graders many-to-many y panel** (v0.9.0): `set_match` puntúa conjuntos
+  (completeness/precision/recall/F1 de `structured_output["detected"]` vs
+  `Expected.must_include`, alias en el case via `Expected.aliases`); `judge_panel`
+  expone `JudgePanelGrader` en YAML (default 3 jueces/majority). El bloque
+  `graders:` del loader soporta `deterministic`/`set_match`/`llm_judge`/`judge_panel`;
+  el tuning por-tipo va en `GraderSpec.params`.
 
 ## Convenciones
 

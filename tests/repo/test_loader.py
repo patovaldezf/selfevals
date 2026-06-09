@@ -382,3 +382,111 @@ def test_resolve_agent_callable_unknown_attribute() -> None:
     )
     with pytest.raises(LoaderError, match="has no attribute"):
         resolve_agent_callable(ep)
+
+
+# --- grader spec parsing (set_match, judge_panel) -------------------------
+
+
+def _body_with_graders(graders: list[dict]) -> dict:
+    return {
+        "workspace": WS,
+        "experiment": _experiment_block(),
+        "dataset": {"cases_inline": [_inline_case()]},
+        "agent": {"entrypoint": "tests.repo.fixtures.fake_agent:run"},
+        "graders": graders,
+    }
+
+
+def test_set_match_grader_parsed_with_params(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [{"type": "set_match", "name": "intention_f1", "params": {"gating": "f1", "threshold": 0.8}}]
+    )
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    g = next(g for g in spec.graders if g.name == "intention_f1")
+    assert g.type == "set_match"
+    assert g.params == {"gating": "f1", "threshold": 0.8}
+
+
+def test_set_match_grader_defaults_empty_params(tmp_path: Path) -> None:
+    body = _body_with_graders([{"type": "set_match", "name": "im"}])
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    g = next(g for g in spec.graders if g.name == "im")
+    assert g.params == {}
+
+
+def test_set_match_bad_gating_rejected(tmp_path: Path) -> None:
+    body = _body_with_graders([{"type": "set_match", "name": "im", "params": {"gating": "nope"}}])
+    with pytest.raises(LoaderError, match=r"params\.gating must be one of"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_set_match_bad_threshold_rejected(tmp_path: Path) -> None:
+    body = _body_with_graders([{"type": "set_match", "name": "im", "params": {"threshold": 2.0}}])
+    with pytest.raises(LoaderError, match=r"params.threshold must be in \[0, 1\]"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_judge_panel_grader_parsed(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [
+            {
+                "type": "judge_panel",
+                "name": "quality_panel",
+                "rubric": "Is the answer correct?",
+                "n_judges": 3,
+                "consensus": "majority",
+                "judge_entrypoint": "tests.repo.fixtures.fake_agent:run",
+            }
+        ]
+    )
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    g = next(g for g in spec.graders if g.name == "quality_panel")
+    assert g.type == "judge_panel"
+    assert g.n_judges == 3
+    assert g.consensus == "majority"
+    assert g.rubric == "Is the answer correct?"
+
+
+def test_judge_panel_defaults_n_judges_and_consensus(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [
+            {
+                "type": "judge_panel",
+                "name": "qp",
+                "rubric": "ok?",
+                "judge_entrypoint": "tests.repo.fixtures.fake_agent:run",
+            }
+        ]
+    )
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    g = next(g for g in spec.graders if g.name == "qp")
+    assert g.n_judges == 3
+    assert g.consensus == "majority"
+
+
+def test_judge_panel_requires_rubric(tmp_path: Path) -> None:
+    body = _body_with_graders([{"type": "judge_panel", "name": "qp"}])
+    with pytest.raises(LoaderError, match=r"\(judge_panel\) requires a non-empty `rubric`"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_judge_panel_bad_n_judges_rejected(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [{"type": "judge_panel", "name": "qp", "rubric": "ok?", "n_judges": 0}]
+    )
+    with pytest.raises(LoaderError, match="n_judges must be an integer >= 1"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_judge_panel_bad_consensus_rejected(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [{"type": "judge_panel", "name": "qp", "rubric": "ok?", "consensus": "plurality"}]
+    )
+    with pytest.raises(LoaderError, match="consensus must be one of"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_unknown_grader_type_lists_supported(tmp_path: Path) -> None:
+    body = _body_with_graders([{"type": "telepathy", "name": "x"}])
+    with pytest.raises(LoaderError, match=r"judge_panel.*set_match|set_match.*judge_panel"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
