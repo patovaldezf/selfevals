@@ -48,6 +48,7 @@ from selfevals.optimization.proposers import (
     Proposer,
     RandomProposer,
 )
+from selfevals.repo.datasets import build_dataset
 from selfevals.repo.loader import (
     AgentEntrypoint,
     AgentModelDecl,
@@ -56,6 +57,7 @@ from selfevals.repo.loader import (
     EmbeddedAgentSpec,
     ExperimentSpec,
     HttpAgentSpec,
+    InlineDatasetSource,
     LoaderError,
     resolve_agent_callable,
 )
@@ -69,6 +71,8 @@ from selfevals.runner.adapters import (
 )
 from selfevals.runner.executor import Executor
 from selfevals.runner.sandbox import SandboxPolicy
+from selfevals.schemas._base import EntityRef
+from selfevals.schemas.dataset import Dataset
 from selfevals.schemas.enums import ProposerStrategy
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.fleet import ModelRef
@@ -374,6 +378,70 @@ def _persist_cases(scope: WorkspaceScope, spec: ExperimentSpec) -> None:
         scope.put_entity(case)
 
 
+def _materialize_inline_dataset(scope: WorkspaceScope, spec: ExperimentSpec) -> None:
+    """Persist a real Dataset over an inline experiment's cases and link it.
+
+    The `dataset:` block's inline cases used to vanish into the run with no
+    Dataset entity — leaving `experiment.datasets.optimization` pointing at a
+    placeholder that never existed. Here we materialize one: build a Dataset
+    over the just-persisted cases (manifest hash + statistics) and rewrite the
+    experiment's dataset refs (`datasets.optimization`, `frozen.datasets[0]`) to
+    point at it. Ref-sourced experiments are resolved elsewhere (F6) and skipped.
+
+    Idempotent across reruns: the dataset id is derived from the experiment id,
+    so a second launch updates the same Dataset row in place rather than
+    spawning a new one. Cases are already in storage (`_persist_cases`), so this
+    only writes the manifest.
+    """
+    source = spec.dataset_source
+    if not isinstance(source, InlineDatasetSource) or not spec.cases:
+        return
+
+    dataset_id = _inline_dataset_id(spec.experiment.id)
+    dataset_type = source.dataset_type
+    if dataset_type is None:
+        # No declared type — adopt the cases' shared dataset_type (they all carry
+        # one via taxonomy; inline suites are typically homogeneous).
+        dataset_type = spec.cases[0].taxonomy.dataset_type
+    name = source.name or f"{spec.experiment.name} dataset"
+
+    existing_version = 1
+    try:
+        prior = scope.get_entity(Dataset, dataset_id)
+        if isinstance(prior, Dataset):
+            existing_version = prior.version
+    except Exception:
+        existing_version = 0  # not yet persisted → fresh insert at version 1
+
+    dataset = build_dataset(
+        workspace_id=spec.workspace_id,
+        name=name,
+        dataset_type=dataset_type,
+        cases=spec.cases,
+        description=source.description,
+        split_allocation=source.split_allocation,
+        dataset_id=dataset_id,
+    )
+    if existing_version:
+        dataset.version = existing_version
+    scope.put_entity(dataset)
+
+    ref = EntityRef(id=dataset.id, version=dataset.version)
+    spec.experiment.datasets.optimization = ref
+    spec.experiment.frozen.datasets = [ref]
+
+
+def _inline_dataset_id(experiment_id: str) -> str:
+    """A stable Dataset id for an experiment's inline cases (idempotent reruns).
+
+    Reuses the experiment's ULID suffix under the `ds_` prefix so the id is
+    valid (prefixed ULID shape) and 1:1 with the experiment — relaunching the
+    same experiment rewrites the same Dataset row.
+    """
+    suffix = experiment_id.split("_", 1)[1] if "_" in experiment_id else experiment_id
+    return f"ds_{suffix}"
+
+
 def build_loop(
     spec: ExperimentSpec,
     *,
@@ -415,8 +483,9 @@ def build_loop(
                 unregister_grader(name)
 
     if scope is not None:
-        scope.put_entity(spec.experiment)
         _persist_cases(scope, spec)
+        _materialize_inline_dataset(scope, spec)
+        scope.put_entity(spec.experiment)
 
     executor = Executor(
         adapter=adapter,

@@ -132,6 +132,92 @@ def test_build_loop_without_scope_does_not_persist_cases(tmp_path: object) -> No
     assert all(c.experiment_id is None for c in spec.cases)
 
 
+def _inline_spec(ws: str) -> object:
+    """A pingpong spec with cases inlined, ready for build_loop."""
+    import json as _json
+    from pathlib import Path
+
+    import yaml
+
+    from selfevals.repo.loader import build_spec_from_mapping
+
+    repo_root = Path(__file__).resolve().parents[2]
+    raw = yaml.safe_load((repo_root / "evals/experiments/example_pingpong.yaml").read_text())
+    rows = [
+        _json.loads(line)
+        for line in (repo_root / "evals/datasets/pingpong.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    raw["dataset"] = {"cases_inline": rows, "name": "pingpong inline", "dataset_type": "capability"}
+    return build_spec_from_mapping(raw, workspace_id=ws)
+
+
+def test_build_loop_materializes_inline_dataset(tmp_path: object) -> None:
+    """An inline run materializes a real Dataset over its cases and rewrites the
+    experiment's dataset refs to point at it — no more dangling placeholder."""
+    from pathlib import Path
+
+    from selfevals.runner.launch import build_loop, ensure_workspace
+    from selfevals.schemas.dataset import Dataset, DatasetStatus
+    from selfevals.storage.interface import ListFilter
+    from selfevals.storage.sqlite import SQLiteStorage
+
+    ws = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
+    spec = _inline_spec(ws)
+    db = Path(str(tmp_path)) / "ds.sqlite"
+    storage = SQLiteStorage(str(db))
+    try:
+        ensure_workspace(storage, spec)  # type: ignore[arg-type]
+        with storage.open(ws) as scope:
+            build_loop(spec, scope=scope, repetitions_per_case=1)  # type: ignore[arg-type]
+        with storage.open(ws) as scope:
+            datasets = [
+                d for d in scope.list_entities(Dataset, ListFilter()) if isinstance(d, Dataset)
+            ]
+    finally:
+        storage.close()
+
+    assert len(datasets) == 1
+    ds = datasets[0]
+    assert ds.status == DatasetStatus.ACTIVE
+    assert ds.name == "pingpong inline"
+    assert len(ds.cases) == len(spec.cases)  # type: ignore[attr-defined]
+    assert ds.manifest_hash is not None
+    assert ds.statistics is not None and ds.statistics.total_cases == len(ds.cases)
+    # The experiment now references the materialized dataset, not a placeholder.
+    assert spec.experiment.datasets.optimization.id == ds.id  # type: ignore[attr-defined]
+    assert [r.id for r in spec.experiment.frozen.datasets] == [ds.id]  # type: ignore[attr-defined]
+
+
+def test_inline_dataset_materialization_is_idempotent(tmp_path: object) -> None:
+    """Relaunching the same experiment updates the same Dataset row in place
+    (id derived from the experiment id) rather than spawning a duplicate."""
+    from pathlib import Path
+
+    from selfevals.runner.launch import build_loop, ensure_workspace
+    from selfevals.schemas.dataset import Dataset
+    from selfevals.storage.interface import ListFilter
+    from selfevals.storage.sqlite import SQLiteStorage
+
+    ws = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
+    spec = _inline_spec(ws)
+    db = Path(str(tmp_path)) / "ds.sqlite"
+    storage = SQLiteStorage(str(db))
+    try:
+        ensure_workspace(storage, spec)  # type: ignore[arg-type]
+        for _ in range(2):
+            with storage.open(ws) as scope:
+                build_loop(spec, scope=scope, repetitions_per_case=1)  # type: ignore[arg-type]
+        with storage.open(ws) as scope:
+            datasets = [
+                d for d in scope.list_entities(Dataset, ListFilter()) if isinstance(d, Dataset)
+            ]
+    finally:
+        storage.close()
+
+    assert len(datasets) == 1
+
+
 def test_build_adapter_cli() -> None:
     spec = CliAgentSpec(command=["./bin/agent"], env={"TOKEN": "x"}, timeout_seconds=30.0)
     adapter = build_adapter(spec)
