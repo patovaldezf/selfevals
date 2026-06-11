@@ -23,14 +23,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from selfevals.api.broker import SpanBroker
+from selfevals.api.broker import SpanBrokerProtocol
 from selfevals.runner.otlp_receiver import SpanPublisher
 
 
 class BrokerPublisher(SpanPublisher):
     """SpanPublisher impl that forwards to a SpanBroker (OTLP wire path)."""
 
-    def __init__(self, broker: SpanBroker) -> None:
+    def __init__(self, broker: SpanBrokerProtocol) -> None:
         self._broker = broker
 
     def mark_active(self, workspace_id: str, run_id: str) -> None:

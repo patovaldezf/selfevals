@@ -24,9 +24,24 @@ from fastapi import HTTPException
 from selfevals._errors import SelfEvalsUserError
 from selfevals.api.broker import get_broker
 from selfevals.api.recorder_sink import BrokerSpanSink
+from selfevals.api.run_jobs import (
+    RunJobQueue,
+    create_run_job,
+    lease_run_job,
+    mark_run_job_cancelled,
+    mark_run_job_failed,
+    mark_run_job_running,
+    mark_run_job_succeeded,
+)
+from selfevals.api.run_queue import configured_run_queue
 from selfevals.api.schemas import RunExperimentRequest, RunExperimentResponse
 from selfevals.cli import _friendly
-from selfevals.repo.loader import ExperimentSpec, LoaderError, build_spec_from_mapping
+from selfevals.repo.loader import (
+    ExperimentSpec,
+    LoaderError,
+    build_spec_from_mapping,
+    deserialize_experiment_spec,
+)
 from selfevals.runner.launch import (
     build_loop,
     ensure_workspace,
@@ -35,7 +50,7 @@ from selfevals.runner.launch import (
 )
 from selfevals.schemas.enums import ExperimentState
 from selfevals.schemas.experiment import Experiment
-from selfevals.storage.sqlite import SQLiteStorage
+from selfevals.storage.factory import open_storage
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +64,7 @@ _ACTIVE_STATES = {
 
 def launch_experiment_run(
     *,
-    db_path: str,
+    storage_url: str,
     workspace_id: str,
     body: RunExperimentRequest,
 ) -> RunExperimentResponse:
@@ -62,7 +77,7 @@ def launch_experiment_run(
     spec = _load_spec(workspace_id=workspace_id, body=body)
     _apply_overrides(spec, body)
 
-    storage = SQLiteStorage(db_path)
+    storage = open_storage(storage_url)
     try:
         ensure_workspace(storage, spec)
         with storage.open(spec.workspace_id) as scope:
@@ -77,22 +92,28 @@ def launch_experiment_run(
             # Persist up front so a poll right after the 202 finds the
             # experiment in its starting state.
             scope.put_entity(spec.experiment)
+        reps = body.reps if body.reps is not None else 1
+        job = create_run_job(storage, spec=spec, reps=reps)
     finally:
         storage.close()
 
-    reps = body.reps if body.reps is not None else 1
-    thread = threading.Thread(
-        target=_run_in_thread,
-        kwargs={"db_path": db_path, "spec": spec, "reps": reps},
-        name=f"run-{spec.experiment.id}",
-        daemon=True,
-    )
-    thread.start()
+    queue = configured_run_queue()
+    if queue is not None:
+        queue.enqueue(job)
+    else:
+        thread = threading.Thread(
+            target=_run_in_thread,
+            kwargs={"storage_url": storage_url, "workspace_id": spec.workspace_id, "job_id": job.id},
+            name=f"run-{spec.experiment.id}",
+            daemon=True,
+        )
+        thread.start()
 
     return RunExperimentResponse(
         experiment_id=spec.experiment.id,
         workspace_id=spec.workspace_id,
         state=str(spec.experiment.state),
+        job_id=job.id,
     )
 
 
@@ -124,7 +145,18 @@ def _apply_overrides(spec: ExperimentSpec, body: RunExperimentRequest) -> None:
             spec.experiment.run.persist_traces = env_policy
 
 
-def _run_in_thread(*, db_path: str, spec: ExperimentSpec, reps: int) -> None:
+def _run_in_thread(*, storage_url: str, workspace_id: str, job_id: str) -> None:
+    execute_run_job(storage_url=storage_url, workspace_id=workspace_id, job_id=job_id, owner="api-thread")
+
+
+def execute_run_job(
+    *,
+    storage_url: str,
+    workspace_id: str,
+    job_id: str,
+    owner: str,
+    queue: RunJobQueue | None = None,
+) -> bool:
     """Background worker: own storage + own event loop. Never blocks FastAPI.
 
     The loop drives `spec.experiment.state` (draft → … → completed) and now
@@ -139,52 +171,41 @@ def _run_in_thread(*, db_path: str, spec: ExperimentSpec, reps: int) -> None:
     The broker is a process-wide singleton; if `serve` never bound a loop (e.g.
     a bare run with no SSE consumers) the sink degrades to a silent no-op.
     """
-    storage = SQLiteStorage(db_path)
-    scope = None
-    try:
-        scope = storage.open(spec.workspace_id)
-        span_sink = BrokerSpanSink(get_broker())
-        # Same object store the `/payloads` endpoint reads from, so trace
-        # prompts/responses offloaded here resolve there.
-        payload_router = payload_router_for_db(db_path, spec.workspace_id)
-        loop = build_loop(
-            spec,
-            scope=scope,
-            repetitions_per_case=reps,
-            span_sink=span_sink,
-            payload_router=payload_router,
-        )
-        asyncio.run(loop.run())
-    except Exception:
-        logger.exception("experiment run failed: %s", spec.experiment.id)
-        _abort_experiment(storage, spec)
-    finally:
-        if scope is not None:
-            scope.close()
-        storage.close()
-
-
-def _abort_experiment(storage: SQLiteStorage, spec: ExperimentSpec) -> None:
-    """Move a failed run to `aborted` (no `failed` state exists for experiments).
-
-    Reloads from storage to avoid clobbering whatever state the loop reached,
-    and tolerates an already-terminal experiment (e.g. it completed then a
-    persistence step failed) by leaving it alone.
-    """
-    try:
-        with storage.open(spec.workspace_id) as scope:
-            if not scope.exists(Experiment, spec.experiment.id):
-                return
-            exp = scope.get_entity(Experiment, spec.experiment.id)
-            assert isinstance(exp, Experiment)
-            if ExperimentState.ABORTED in _legal_next(exp.state):
-                exp.transition_to(ExperimentState.ABORTED)
-                scope.put_entity(exp)
-    except Exception:
-        logger.exception("failed to mark experiment aborted: %s", spec.experiment.id)
-
-
-def _legal_next(state: ExperimentState) -> set[ExperimentState]:
-    from selfevals.schemas.experiment import _LEGAL_TRANSITIONS
-
-    return _LEGAL_TRANSITIONS.get(state, set())
+    storage = open_storage(storage_url)
+    with lease_run_job(storage, workspace_id=workspace_id, job_id=job_id, owner=owner) as job:
+        if job is None:
+            storage.close()
+            return False
+        if job.should_cancel:
+            mark_run_job_cancelled(storage, job=job)
+            storage.close()
+            return True
+        job = mark_run_job_running(storage, job=job, owner=owner)
+        spec = deserialize_experiment_spec(job.spec_payload)
+        scope = None
+        try:
+            scope = storage.open(spec.workspace_id)
+            span_sink = BrokerSpanSink(get_broker())
+            # Same object store the `/payloads` endpoint reads from, so trace
+            # prompts/responses offloaded here resolve there.
+            payload_router = payload_router_for_db(storage_url, spec.workspace_id)
+            loop = build_loop(
+                spec,
+                scope=scope,
+                repetitions_per_case=job.reps,
+                span_sink=span_sink,
+                payload_router=payload_router,
+            )
+            asyncio.run(loop.run())
+            mark_run_job_succeeded(storage, job=job)
+            return True
+        except Exception as exc:
+            logger.exception("experiment run failed: %s", spec.experiment.id)
+            job, should_retry = mark_run_job_failed(storage, job=job, error=str(exc))
+            if should_retry and queue is not None:
+                queue.requeue(job)
+            return False
+        finally:
+            if scope is not None:
+                scope.close()
+            storage.close()

@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol, cast
 
 from pydantic import BaseModel
 
@@ -55,8 +55,7 @@ from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.iteration import DecisionRecord, IterationRecord
 from selfevals.schemas.trace import LLMCallSpan, ToolCallSpan, Trace
 from selfevals.schemas.workspace import Workspace
-from selfevals.storage.interface import ListFilter
-from selfevals.storage.sqlite import SQLiteStorage
+from selfevals.storage.interface import ListFilter, StorageInterface
 from selfevals.trace.span_view import span_view
 
 
@@ -70,20 +69,33 @@ class AnchorPoint(BaseModel):
     created_at: str
 
 
-def list_workspaces(storage: SQLiteStorage) -> list[WorkspaceSummary]:
+class _ConnectionBacked(Protocol):
+    @property
+    def connection(self) -> Any: ...
+
+
+def _connection(storage: StorageInterface) -> Any:
+    return cast(_ConnectionBacked, storage).connection
+
+
+def list_workspaces(storage: StorageInterface) -> list[WorkspaceSummary]:
     """Cross-workspace listing. Direct SQL because the typed interface is
     intentionally scoped — no way to list without a workspace_id."""
-    rows = storage.connection.execute(
+    hot = getattr(storage, "list_workspace_summaries", None)
+    if callable(hot):
+        return cast(list[WorkspaceSummary], hot())
+    conn = _connection(storage)
+    rows = conn.execute(
         "SELECT payload FROM entities WHERE entity_type = 'Workspace' ORDER BY created_at DESC"
     ).fetchall()
     summaries: list[WorkspaceSummary] = []
     for (payload,) in rows:
         ws = Workspace.model_validate(json.loads(payload))
-        exp_count = storage.connection.execute(
+        exp_count = conn.execute(
             "SELECT COUNT(1) FROM entities WHERE entity_type = 'Experiment' AND workspace_id = ?",
             (ws.id,),
         ).fetchone()[0]
-        last_run = storage.connection.execute(
+        last_run = conn.execute(
             "SELECT MAX(updated_at) FROM entities "
             "WHERE entity_type = 'IterationRecord' AND workspace_id = ?",
             (ws.id,),
@@ -103,7 +115,7 @@ def list_workspaces(storage: SQLiteStorage) -> list[WorkspaceSummary]:
     return summaries
 
 
-def workspace_detail(storage: SQLiteStorage, *, workspace_id: str) -> WorkspaceResponse | None:
+def workspace_detail(storage: StorageInterface, *, workspace_id: str) -> WorkspaceResponse | None:
     try:
         with storage.open(workspace_id) as scope:
             ws = scope.get_entity(Workspace, workspace_id)
@@ -144,7 +156,7 @@ def workspace_detail(storage: SQLiteStorage, *, workspace_id: str) -> WorkspaceR
 
 
 def list_experiments(
-    storage: SQLiteStorage,
+    storage: StorageInterface,
     *,
     workspace_id: str,
     limit: int = 100,
@@ -168,6 +180,29 @@ def list_experiments(
     in one place. If volumes grow, `state` is the field to promote to a real
     column (same note as m0001), and `target_features` to a join/`json_each`.
     """
+    hot = getattr(storage, "list_experiments_page", None)
+    if callable(hot):
+        experiments, total, hot_iteration_counts = hot(
+            workspace_id=workspace_id,
+            limit=limit,
+            offset=offset,
+            state=str(state) if state is not None else None,
+            feature=feature,
+        )
+        return ExperimentListPage(
+            items=[
+                ExperimentSummary(
+                    **_experiment_summary_dict(
+                        exp, iteration_count=hot_iteration_counts.get(exp.id, 0)
+                    )
+                )
+                for exp in experiments
+            ],
+            total=total,
+            limit=limit,
+            offset=offset,
+            has_more=(offset + limit) < total,
+        )
     with storage.open(workspace_id) as scope:
         all_experiments = [
             e
@@ -206,7 +241,7 @@ def list_experiments(
 
 
 def experiment_detail(
-    storage: SQLiteStorage, *, workspace_id: str, experiment_id: str
+    storage: StorageInterface, *, workspace_id: str, experiment_id: str
 ) -> ExperimentDetailResponse | None:
     result_dict: dict[str, Any] | None = None
     with storage.open(workspace_id) as scope:
@@ -234,7 +269,7 @@ def experiment_detail(
 
 
 def experiment_iterations(
-    storage: SQLiteStorage, *, workspace_id: str, experiment_id: str
+    storage: StorageInterface, *, workspace_id: str, experiment_id: str
 ) -> list[IterationSummary]:
     with storage.open(workspace_id) as scope:
         iterations = _experiment_iterations(scope, experiment_id)
@@ -243,7 +278,7 @@ def experiment_iterations(
 
 
 def experiment_cases(
-    storage: SQLiteStorage, *, workspace_id: str, experiment_id: str
+    storage: StorageInterface, *, workspace_id: str, experiment_id: str
 ) -> CaseListResponse:
     """List the eval cases persisted under an experiment.
 
@@ -253,15 +288,21 @@ def experiment_cases(
     the set is reported honestly, not silently trimmed to the optimization
     cases. Ordered by name for a stable, scannable list.
     """
-    with storage.open(workspace_id) as scope:
-        cases = [
-            c
-            for c in scope.list_entities(
-                EvalCase, ListFilter(where={"experiment_id": experiment_id})
-            )
-            if isinstance(c, EvalCase)
-        ]
-        trace_refs = _latest_trace_per_case(scope, experiment_id)
+    hot_cases = getattr(storage, "eval_cases_for_experiment", None)
+    hot_refs = getattr(storage, "latest_trace_refs_by_case", None)
+    if callable(hot_cases) and callable(hot_refs):
+        cases = hot_cases(workspace_id, experiment_id)
+        trace_refs = hot_refs(workspace_id, experiment_id)
+    else:
+        with storage.open(workspace_id) as scope:
+            cases = [
+                c
+                for c in scope.list_entities(
+                    EvalCase, ListFilter(where={"experiment_id": experiment_id})
+                )
+                if isinstance(c, EvalCase)
+            ]
+            trace_refs = _latest_trace_per_case(scope, experiment_id)
     cases.sort(key=lambda c: c.name)
     summaries = [_case_summary(c, trace_refs.get(c.id)) for c in cases]
     holdout_count = sum(1 for c in cases if c.holdout)
@@ -329,7 +370,7 @@ def _case_summary(case: EvalCase, trace_ref: tuple[str, str] | None = None) -> C
 
 
 def experiment_results(
-    storage: SQLiteStorage, *, workspace_id: str, experiment_id: str
+    storage: StorageInterface, *, workspace_id: str, experiment_id: str
 ) -> ExperimentResultsResponse | None:
     """Per-scenario results for the experiment's best iteration (the FE's
     expected/detected/matched grid).
@@ -363,21 +404,27 @@ def experiment_results(
             return ExperimentResultsResponse(experiment_id=experiment_id, iteration=None, cases=[], total=0)
         best_iter = best.iteration
         traces_by_case: dict[str, Trace] = {}
-        for t in scope.list_entities(
-            Trace,
-            ListFilter(where={"run.experiment_id": experiment_id, "run.iteration": best_iter}),
-        ):
+        hot_traces = getattr(storage, "traces_for_experiment_iteration", None)
+        traces = (
+            hot_traces(workspace_id, experiment_id, best_iter)
+            if callable(hot_traces)
+            else scope.list_entities(
+                Trace,
+                ListFilter(where={"run.experiment_id": experiment_id, "run.iteration": best_iter}),
+            )
+        )
+        for t in traces:
             if not isinstance(t, Trace) or t.run.eval_case_id is None:
                 continue
             # First trace per case (rep 0) is representative for the grid view.
             traces_by_case.setdefault(t.run.eval_case_id, t)
-        cases = {
-            c.id: c
-            for c in scope.list_entities(
-                EvalCase, ListFilter(where={"experiment_id": experiment_id})
-            )
-            if isinstance(c, EvalCase)
-        }
+        hot_cases = getattr(storage, "eval_cases_for_experiment", None)
+        case_rows = (
+            hot_cases(workspace_id, experiment_id)
+            if callable(hot_cases)
+            else scope.list_entities(EvalCase, ListFilter(where={"experiment_id": experiment_id}))
+        )
+        cases = {c.id: c for c in case_rows if isinstance(c, EvalCase)}
 
     rows: list[CaseResultRow] = []
     # Every case the experiment declared, whether or not its trace was kept.
@@ -441,7 +488,7 @@ def _detected_from_trace(trace: Trace) -> dict[str, Any]:
 
 
 def experiment_decisions(
-    storage: SQLiteStorage, *, workspace_id: str, experiment_id: str
+    storage: StorageInterface, *, workspace_id: str, experiment_id: str
 ) -> list[dict[str, Any]]:
     with storage.open(workspace_id) as scope:
         decisions = _experiment_decisions(scope, experiment_id)
@@ -463,7 +510,7 @@ def experiment_decisions(
 
 
 def iteration_detail(
-    storage: SQLiteStorage, *, workspace_id: str, iteration_id: str
+    storage: StorageInterface, *, workspace_id: str, iteration_id: str
 ) -> dict[str, Any] | None:
     with storage.open(workspace_id) as scope:
         try:
@@ -480,7 +527,7 @@ def iteration_detail(
 
 
 def load_iteration_funnel(
-    storage: SQLiteStorage, *, workspace_id: str, iteration_id: str
+    storage: StorageInterface, *, workspace_id: str, iteration_id: str
 ) -> FunnelResponse | None:
     """The grader funnel drill-down for a single iteration (B2).
 
@@ -508,7 +555,7 @@ def load_iteration_funnel(
 
 
 def load_compare(
-    storage: SQLiteStorage,
+    storage: StorageInterface,
     *,
     workspace_id: str,
     experiment_id: str,
@@ -585,21 +632,25 @@ def load_compare(
     )
 
 
-def load_trace(storage: SQLiteStorage, *, workspace_id: str, trace_id: str) -> TraceResponse | None:
+def load_trace(storage: StorageInterface, *, workspace_id: str, trace_id: str) -> TraceResponse | None:
     """Look up a Trace by either its entity id (`tr_...`) or its run_id
     (`run_...`). Both are common navigation targets — IterationRecord
     persists `run_id`s while internal storage keys by entity id."""
     experiment_name: str | None = None
+    hot = getattr(storage, "trace_by_id_or_run_id", None)
     with storage.open(workspace_id) as scope:
-        try:
-            trace = scope.get_entity(Trace, trace_id)
-        except Exception:
-            trace = None
+        trace = hot(workspace_id, trace_id) if callable(hot) else None
+        if trace is None:
+            try:
+                trace = scope.get_entity(Trace, trace_id)
+            except Exception:
+                trace = None
         if trace is None:
             # Fall back to a run_id lookup. The generic entities table
             # does not index json_extract, but the workspace-scoped
             # table is small enough that a single scan is fine.
-            row = storage.connection.execute(
+            conn = _connection(storage)
+            row = conn.execute(
                 "SELECT payload FROM entities "
                 "WHERE workspace_id = ? AND entity_type = 'Trace' "
                 "AND json_extract(payload, '$.run.run_id') = ? LIMIT 1",
@@ -637,7 +688,7 @@ def load_trace(storage: SQLiteStorage, *, workspace_id: str, trace_id: str) -> T
 
 
 def load_thread(
-    storage: SQLiteStorage, *, workspace_id: str, thread_id: str
+    storage: StorageInterface, *, workspace_id: str, thread_id: str
 ) -> ThreadResponse | None:
     """Assemble every Trace sharing `thread_id` into an ordered conversation.
 
@@ -647,16 +698,20 @@ def load_thread(
     thread view shows the grade per turn, not just the transcript.
     Returns None when no trace carries the thread_id.
     """
-    rows = storage.connection.execute(
-        "SELECT payload FROM entities "
-        "WHERE workspace_id = ? AND entity_type = 'Trace' "
-        "AND json_extract(payload, '$.run.thread_id') = ?",
-        (workspace_id, thread_id),
-    ).fetchall()
-    if not rows:
+    hot = getattr(storage, "traces_by_thread_id", None)
+    if callable(hot):
+        traces = hot(workspace_id, thread_id)
+    else:
+        conn = _connection(storage)
+        rows = conn.execute(
+            "SELECT payload FROM entities "
+            "WHERE workspace_id = ? AND entity_type = 'Trace' "
+            "AND json_extract(payload, '$.run.thread_id') = ?",
+            (workspace_id, thread_id),
+        ).fetchall()
+        traces = [Trace.model_validate(json.loads(payload)) for (payload,) in rows]
+    if not traces:
         return None
-
-    traces = [Trace.model_validate(json.loads(payload)) for (payload,) in rows]
 
     def _sort_key(t: Trace) -> tuple[int, int, datetime]:
         # Explicitly-positioned turns first (by position), then the rest by
@@ -691,7 +746,7 @@ def load_thread(
     return ThreadResponse(thread_id=thread_id, turn_count=len(turns), turns=turns)
 
 
-def anchor_set_history(storage: SQLiteStorage, *, workspace_id: str) -> list[AnchorPoint]:
+def anchor_set_history(storage: StorageInterface, *, workspace_id: str) -> list[AnchorPoint]:
     """Longitudinal view: latest primary-metric value per experiment.
 
     Anchor-set proper requires repeated reruns of a canonical case

@@ -18,6 +18,17 @@ from selfevals.storage.errors import (
     StorageError,
     WorkspaceMismatchError,
 )
+from selfevals.storage.factory import (
+    DEFAULT_SQLITE_PATH,
+    SQLITE_DB_ENV,
+    STORAGE_URL_ENV,
+    is_sqlite_storage_url,
+    object_store_base_for_storage_url,
+    open_storage,
+    resolve_storage_url,
+    sqlite_path_from_url,
+    storage_url_label,
+)
 from selfevals.storage.filesystem import (
     FilesystemObjectStore,
     make_pointer,
@@ -33,6 +44,9 @@ from selfevals.storage.seed import SeededWorkspace, seed_workspace
 from selfevals.storage.sqlite import SQLiteStorage
 
 __all__ = [
+    "DEFAULT_SQLITE_PATH",
+    "SQLITE_DB_ENV",
+    "STORAGE_URL_ENV",
     "EntityNotFoundError",
     "FilesystemObjectStore",
     "IntegrityViolationError",
@@ -47,7 +61,13 @@ __all__ = [
     "StorageInterface",
     "WorkspaceMismatchError",
     "WorkspaceScope",
+    "is_sqlite_storage_url",
     "make_pointer",
+    "object_store_base_for_storage_url",
+    "open_storage",
     "parse_pointer",
+    "resolve_storage_url",
     "seed_workspace",
+    "sqlite_path_from_url",
+    "storage_url_label",
 ]

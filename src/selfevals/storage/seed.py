@@ -172,6 +172,11 @@ def _find_workspace_by_slug(
     clean we cheat slightly and use the SQLite path; abstraction will
     move into the interface if Postgres ever needs to do this.
     """
+    hot_lookup = getattr(storage, "workspace_by_slug_owner", None)
+    if callable(hot_lookup):
+        found = hot_lookup(slug=slug, user_id=user_id)
+        return found if isinstance(found, Workspace) else None
+
     # We can't iterate every workspace via the typed interface (there is
     # no "all workspaces" view in WorkspaceScope on purpose). For
     # seed_workspace we only need idempotency by slug+owner, so we use

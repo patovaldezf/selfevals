@@ -13,8 +13,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(
         "--db",
-        default=os.environ.get("SELFEVALS_DB", "./selfevals.sqlite"),
-        help="Path to the SQLite database file.",
+        default=None,
+        help=(
+            "SQLite path or storage URL. Defaults to SELFEVALS_STORAGE_URL, "
+            "then SELFEVALS_DB, then ./selfevals.sqlite."
+        ),
     )
     parser.add_argument(
         "--reload",
@@ -22,7 +25,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Enable uvicorn auto-reload (dev only).",
     )
     args = parser.parse_args(argv)
-    os.environ["SELFEVALS_DB"] = args.db
+    if args.db is not None:
+        os.environ["SELFEVALS_DB"] = args.db
+        os.environ["SELFEVALS_STORAGE_URL"] = args.db
 
     try:
         import uvicorn

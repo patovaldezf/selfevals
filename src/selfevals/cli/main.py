@@ -7,6 +7,7 @@ It dispatches to subcommand handlers in `selfevals.cli.commands`.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Sequence
 
@@ -30,8 +31,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"selfevals {__version__}")
     parser.add_argument(
         "--db",
-        default="./selfevals.sqlite",
-        help="Path to SQLite database file (default: ./selfevals.sqlite).",
+        default=None,
+        help=(
+            "SQLite path or storage URL. Defaults to SELFEVALS_STORAGE_URL, "
+            "then SELFEVALS_DB, then ./selfevals.sqlite."
+        ),
     )
 
     sub = parser.add_subparsers(dest="command", required=True, metavar="<command>")
@@ -422,6 +426,35 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Enable uvicorn auto-reload (dev only).",
     )
     p_serve.set_defaults(func=commands.cmd_serve)
+
+    p_worker = make_subparser(
+        sub,
+        "worker",
+        help_text="Run durable background workers.",
+        examples=[
+            "SELFEVALS_REDIS_URL=redis://localhost:6379/0 selfevals worker runs",
+            "selfevals worker runs --once",
+        ],
+    )
+    worker_sub = p_worker.add_subparsers(dest="worker_command", required=True)
+    p_worker_runs = worker_sub.add_parser(
+        "runs",
+        help="Consume durable experiment run jobs from Redis Streams.",
+        description="Run the worker that replaces API daemon threads for launched experiments.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_worker_runs.add_argument(
+        "--redis-url",
+        default=os.environ.get("SELFEVALS_REDIS_URL"),
+        help="Redis URL for the run job stream (default: SELFEVALS_REDIS_URL).",
+    )
+    p_worker_runs.add_argument("--consumer", default=None, help="Worker consumer name.")
+    p_worker_runs.add_argument(
+        "--once",
+        action="store_true",
+        help="Process at most one available job and exit.",
+    )
+    p_worker_runs.set_defaults(func=commands.cmd_worker_runs)
 
     return parser
 

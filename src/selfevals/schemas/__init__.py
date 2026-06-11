@@ -73,6 +73,7 @@ from selfevals.schemas.iteration import (
     ProposalRejectedError,
     ProposerInputs,
 )
+from selfevals.schemas.job import RunJob, RunJobStatus
 from selfevals.schemas.registry import (
     FeatureRegistry,
     RiskDimension,
@@ -199,6 +200,8 @@ __all__ = [
     "RiskProfile",
     "RiskRegistry",
     "RunInfo",
+    "RunJob",
+    "RunJobStatus",
     "RunSpec",
     "SearchSpace",
     "Slug",
