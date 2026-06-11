@@ -35,9 +35,15 @@ from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.iteration import DecisionRecord, IterationRecord
 from selfevals.schemas.trace import Trace
 from selfevals.schemas.workspace import Workspace
-from selfevals.storage.interface import ListFilter
+from selfevals.storage.factory import (
+    open_storage,
+    resolve_storage_url,
+    sqlite_path_from_url,
+    storage_url_label,
+)
+from selfevals.storage.interface import ListFilter, StorageInterface
 from selfevals.storage.seed import seed_failure_taxonomy, seed_workspace
-from selfevals.storage.sqlite import SQLiteStorage
+from selfevals.worker.runs import RunWorkerConfig, run_worker
 
 if TYPE_CHECKING:
     from selfevals.schemas._base import BaseEntity
@@ -52,8 +58,8 @@ class CommandError(SelfEvalsUserError):
     """
 
 
-def _storage(args: argparse.Namespace) -> SQLiteStorage:
-    """Open the SQLite db, translating sqlite errors into friendly messages.
+def _storage(args: argparse.Namespace) -> StorageInterface:
+    """Open configured storage, translating sqlite errors into friendly messages.
 
     The two errors users actually hit (locked from a concurrent
     process, corrupted db pointed at by `--db`) both surface from the
@@ -62,11 +68,11 @@ def _storage(args: argparse.Namespace) -> SQLiteStorage:
     """
     import sqlite3
 
-    db_path = Path(args.db)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    storage_url = resolve_storage_url(args.db)
     try:
-        return SQLiteStorage(db_path)
+        return open_storage(storage_url)
     except sqlite3.Error as exc:
+        db_path = Path(sqlite_path_from_url(storage_url))
         raise _friendly.wrap_sqlite_error(exc, db_path=db_path) from exc
 
 
@@ -445,7 +451,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             # Object store next to the SQLite db, so large trace payloads
             # (prompts/responses) offload to a pointer the `/payloads` endpoint
             # resolves. Ephemeral `--no-persist` runs skip it (inline only).
-            payload_router = payload_router_for_db(args.db, spec.workspace_id)
+            payload_router = payload_router_for_db(resolve_storage_url(args.db), spec.workspace_id)
         # `build_loop` owns adapter/proposer/grader wiring and persists the
         # experiment via `scope` — the same canonical path the HTTP
         # `experiments/run` endpoint uses, so the two never drift.
@@ -520,7 +526,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
     import subprocess
     from pathlib import Path
 
-    os.environ["SELFEVALS_DB"] = str(args.db)
+    storage_url = resolve_storage_url(args.db)
+    os.environ["SELFEVALS_DB"] = storage_url
+    os.environ["SELFEVALS_STORAGE_URL"] = storage_url
 
     # Auto-detect a built web bundle if --web-dist wasn't given and the
     # user didn't disable web mode. Looks for `web/build/index.js`
@@ -581,7 +589,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         print(f"  Web : http://{args.host}:{web_port}")
     else:
         print("  Web : disabled (no build at web/build/index.js; pass --web-dist)")
-    print(f"  DB  : {args.db}")
+    print(f"  DB  : {storage_url_label(storage_url)}")
     print("  ^C to stop.")
 
     try:
@@ -597,4 +605,24 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 web_proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 web_proc.kill()
+    return 0
+
+
+def cmd_worker_runs(args: argparse.Namespace) -> int:
+    redis_url = args.redis_url
+    if not redis_url:
+        raise SelfEvalsUserError(
+            "run worker requires Redis: pass --redis-url or set SELFEVALS_REDIS_URL"
+        )
+    storage_url = resolve_storage_url(args.db)
+    processed = run_worker(
+        RunWorkerConfig(
+            storage_url=storage_url,
+            redis_url=redis_url,
+            consumer=args.consumer,
+            once=args.once,
+        )
+    )
+    if args.once:
+        print(f"processed run jobs: {processed}")
     return 0

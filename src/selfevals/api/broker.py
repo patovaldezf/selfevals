@@ -19,10 +19,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,26 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class _Closed:
     final_state: str = "completed"
+
+
+class SpanBrokerProtocol(Protocol):
+    def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None: ...
+
+    def active_runs(self) -> list[tuple[str, str]]: ...
+
+    def mark_run_active_threadsafe(self, workspace_id: str, run_id: str) -> None: ...
+
+    def subscribe(
+        self, workspace_id: str, run_id: str
+    ) -> AsyncIterator[dict[str, Any] | _Closed]: ...
+
+    def publish_threadsafe(
+        self, workspace_id: str, run_id: str, span_payload: dict[str, Any]
+    ) -> None: ...
+
+    def close_run_threadsafe(
+        self, workspace_id: str, run_id: str, final_state: str = "completed"
+    ) -> None: ...
 
 
 _QUEUE_MAXSIZE = 256
@@ -192,16 +213,26 @@ class SpanBroker:
                 sub.queue.put_nowait(close_event)
 
 
+REDIS_URL_ENV = "SELFEVALS_REDIS_URL"
+
 # Module-level singleton bound at build_app() time.
-_broker: SpanBroker | None = None
+_broker: SpanBrokerProtocol | None = None
 
 
-def get_broker() -> SpanBroker:
+def get_broker() -> SpanBrokerProtocol:
     """Return the process-wide broker, lazily constructed."""
     global _broker
-    if _broker is None:
-        _broker = SpanBroker()
-    return _broker
+    broker = _broker
+    if broker is None:
+        redis_url = os.environ.get(REDIS_URL_ENV)
+        if redis_url:
+            from selfevals.api.redis_broker import RedisSpanBroker
+
+            broker = RedisSpanBroker(redis_url)
+        else:
+            broker = SpanBroker()
+        _broker = broker
+    return broker
 
 
 def reset_for_tests() -> None:

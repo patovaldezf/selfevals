@@ -27,8 +27,7 @@ from selfevals.schemas.failure_mode import FailureMode, FailureModeExample
 from selfevals.schemas.trace import GraderResult, Trace
 
 if TYPE_CHECKING:
-    from selfevals.storage.interface import ObjectStoreInterface, WorkspaceScope
-    from selfevals.storage.sqlite import SQLiteStorage
+    from selfevals.storage.interface import ObjectStoreInterface, StorageInterface, WorkspaceScope
 
 
 class AnalysisIngestError(ValueError):
@@ -44,7 +43,7 @@ class IngestSummary:
 
 
 def ingest_result(
-    storage: SQLiteStorage,
+    storage: StorageInterface,
     *,
     workspace_id: str,
     experiment_id: str,

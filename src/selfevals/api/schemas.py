@@ -17,6 +17,109 @@ from pydantic import BaseModel, Field, model_validator
 class HealthResponse(BaseModel):
     status: str
     db_path: str
+    storage_url: str | None = None
+    storage_backend: str = "sqlite"
+
+
+class MetricsWindow(BaseModel):
+    start: datetime | None = None
+    end: datetime | None = None
+
+
+class PassRateMetricRow(BaseModel):
+    grader: str
+    label: str
+    count: int
+    rate: float
+
+
+class PassRateMetricsResponse(BaseModel):
+    workspace_id: str
+    window: MetricsWindow
+    experiment_id: str | None = None
+    total: int
+    items: list[PassRateMetricRow] = Field(default_factory=list)
+
+
+class FailureModeMetricRow(BaseModel):
+    failure_mode: str
+    count: int
+    rate: float
+
+
+class FailureModeMetricsResponse(BaseModel):
+    workspace_id: str
+    window: MetricsWindow
+    experiment_id: str | None = None
+    total: int
+    items: list[FailureModeMetricRow] = Field(default_factory=list)
+
+
+class ToolMetricRow(BaseModel):
+    tool_name: str
+    status: str
+    count: int
+    error_count: int
+    avg_duration_ms: float | None = None
+    retry_count: int = 0
+
+
+class ToolMetricsResponse(BaseModel):
+    workspace_id: str
+    window: MetricsWindow
+    experiment_id: str | None = None
+    total: int
+    items: list[ToolMetricRow] = Field(default_factory=list)
+
+
+class CostMetricRow(BaseModel):
+    provider: str
+    model: str
+    call_count: int
+    total_cost_usd: float
+    avg_cost_usd: float
+
+
+class CostMetricsResponse(BaseModel):
+    workspace_id: str
+    window: MetricsWindow
+    experiment_id: str | None = None
+    total: int
+    items: list[CostMetricRow] = Field(default_factory=list)
+
+
+class TokenMetricRow(BaseModel):
+    provider: str
+    model: str
+    call_count: int
+    input_tokens: int
+    output_tokens: int
+    reasoning_tokens: int
+    total_tokens: int
+
+
+class TokenMetricsResponse(BaseModel):
+    workspace_id: str
+    window: MetricsWindow
+    experiment_id: str | None = None
+    total: int
+    items: list[TokenMetricRow] = Field(default_factory=list)
+
+
+class LatencyMetricRow(BaseModel):
+    metric: str
+    count: int
+    p50_ms: float | None = None
+    p95_ms: float | None = None
+    p99_ms: float | None = None
+
+
+class LatencyMetricsResponse(BaseModel):
+    workspace_id: str
+    window: MetricsWindow
+    experiment_id: str | None = None
+    total: int
+    items: list[LatencyMetricRow] = Field(default_factory=list)
 
 
 class WorkspaceSummary(BaseModel):
@@ -430,7 +533,7 @@ class RunExperimentRequest(BaseModel):
 
 
 class RunExperimentResponse(BaseModel):
-    """202 acknowledgement: the run is queued on a background thread.
+    """202 acknowledgement: the run is queued for execution.
 
     The FE polls `GET .../experiments/{experiment_id}` (state climbs
     queued → running → completed/aborted) to follow progress. `run_id` is
@@ -442,3 +545,4 @@ class RunExperimentResponse(BaseModel):
     workspace_id: str
     state: str
     run_id: str | None = None
+    job_id: str | None = None

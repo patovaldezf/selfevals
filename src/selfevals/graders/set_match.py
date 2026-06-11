@@ -20,7 +20,10 @@ normalization (legacy aliases, casing) lives in the *case* via
 `EvalCase.expected.aliases`, never hard-coded here. PASS/FAIL is gated by a
 configurable dimension (`completeness` ≥ 1.0 by default, or `f1` ≥ threshold).
 
-Detected set source: `AdapterResponse.structured_output["detected"]` (a list).
+Detected set source: a path selector over `AdapterResponse.structured_output`,
+`extract` (default `"detected"` — the historical hard-coded key). The selector
+(`graders._select`) lets a case point at any slice of a structured contract
+(`"candidates[].id"`, `"intents"`) without the grader knowing the shape.
 Expected set source: `EvalCase.expected.must_include` (reuses the existing
 field — the set the case already declares as required).
 
@@ -34,6 +37,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
+from selfevals.graders._select import select_str_list, validate_path
 from selfevals.graders.base import (
     BreakdownNode,
     GradeLabel,
@@ -83,22 +87,17 @@ def _normalize(items: list[str], aliases: dict[str, str], *, case_sensitive: boo
     return out
 
 
-def _extract_detected(context: GraderContext) -> list[str] | None:
-    """Pull the detected set from `structured_output['detected']`.
+def _extract_detected(context: GraderContext, extract: str) -> list[str] | None:
+    """Pull the detected set from `structured_output` at the `extract` path.
 
-    Returns None (not []) when the key is absent or not a list of strings, so
-    the caller can distinguish "agent produced nothing usable" (hard FAIL) from
-    "agent legitimately detected the empty set".
+    Returns None (not []) when the path is absent or does not resolve to a list
+    of strings, so the caller can distinguish "agent produced nothing usable"
+    (hard FAIL) from "agent legitimately detected the empty set".
     """
     response = context.response
     if response is None or response.structured_output is None:
         return None
-    detected = response.structured_output.get("detected")
-    if not isinstance(detected, list):
-        return None
-    if not all(isinstance(x, str) for x in detected):
-        return None
-    return list(detected)
+    return select_str_list(response.structured_output, extract)
 
 
 def _compute_scores(detected: list[str], expected: list[str]) -> _Scores:
@@ -218,6 +217,7 @@ class SetMatchGrader(Grader):
         gating: GatingDimension = "completeness",
         threshold: float = 1.0,
         case_sensitive: bool = False,
+        extract: str = "detected",
     ) -> None:
         if not name:
             raise ValueError("grader name must be non-empty")
@@ -227,16 +227,18 @@ class SetMatchGrader(Grader):
             )
         if not 0.0 <= threshold <= 1.0:
             raise ValueError(f"set_match threshold must be in [0, 1]; got {threshold!r}")
+        validate_path(extract)
         self.name = name
         self._gating: GatingDimension = gating
         self._threshold = threshold
         self._case_sensitive = case_sensitive
+        self._extract = extract
 
     async def grade(self, context: GraderContext) -> GradeResult:
         expected_spec: Expected = context.case.expected
         aliases = expected_spec.aliases
 
-        raw_detected = _extract_detected(context)
+        raw_detected = _extract_detected(context, self._extract)
         if raw_detected is None:
             return GradeResult(
                 grader=self.name,

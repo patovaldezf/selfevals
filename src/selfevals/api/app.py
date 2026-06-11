@@ -1,4 +1,4 @@
-"""FastAPI app — read-mostly HTTP bridge over the SQLite store.
+"""FastAPI app — read-mostly HTTP bridge over configured storage.
 
 Mounted on `/` (no version prefix; this is a single internal service).
 Endpoints map 1:1 to the pages of the web UI; payload shapes match
@@ -12,9 +12,9 @@ Auth: stubbed via a single `X-SelfEvals-User` header (default
 from __future__ import annotations
 
 import asyncio
-import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -23,6 +23,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 
 from selfevals.api.broker import get_broker
+from selfevals.api.metrics import (
+    cost_metrics,
+    failure_mode_metrics,
+    latency_metrics,
+    pass_rate_metrics,
+    token_metrics,
+    tool_metrics,
+)
 from selfevals.api.queries import (
     AnchorPoint,
     anchor_set_history,
@@ -40,23 +48,30 @@ from selfevals.api.queries import (
     load_trace,
     workspace_detail,
 )
+from selfevals.api.run_jobs import request_cancel_run_job
 from selfevals.api.run_launcher import launch_experiment_run
 from selfevals.api.schemas import (
     ActiveRun,
     ActiveRunsResponse,
     CaseListResponse,
     CompareResponse,
+    CostMetricsResponse,
     CreateWorkspaceRequest,
     DecisionRecordResponse,
     ExperimentDetailResponse,
     ExperimentListPage,
     ExperimentResultsResponse,
+    FailureModeMetricsResponse,
     FunnelResponse,
     HealthResponse,
     IterationListResponse,
+    LatencyMetricsResponse,
+    PassRateMetricsResponse,
     RunExperimentRequest,
     RunExperimentResponse,
     ThreadResponse,
+    TokenMetricsResponse,
+    ToolMetricsResponse,
     TraceResponse,
     WorkspaceListResponse,
     WorkspaceResponse,
@@ -64,10 +79,17 @@ from selfevals.api.schemas import (
 from selfevals.api.sse import stream_trace
 from selfevals.schemas.enums import ExperimentState
 from selfevals.storage.errors import ObjectNotFoundError, PointerHashMismatchError
+from selfevals.storage.factory import (
+    DEFAULT_SQLITE_PATH,
+    object_store_base_for_storage_url,
+    open_storage,
+    resolve_storage_url,
+    sqlite_path_from_url,
+    storage_url_label,
+)
 from selfevals.storage.filesystem import FilesystemObjectStore, parse_pointer
-from selfevals.storage.sqlite import SQLiteStorage
+from selfevals.storage.interface import StorageInterface
 
-DEFAULT_DB_PATH = "./selfevals.sqlite"
 _USER_HEADER = "X-SelfEvals-User"
 
 UserHeader = Annotated[
@@ -76,19 +98,19 @@ UserHeader = Annotated[
 ]
 
 
-def _resolve_db_path(db_path: str | None) -> str:
-    return db_path or os.environ.get("SELFEVALS_DB", DEFAULT_DB_PATH)
+DEFAULT_DB_PATH = DEFAULT_SQLITE_PATH
 
 
 def build_app(*, db_path: str | None = None) -> FastAPI:
-    """Construct the FastAPI app, parameterized on the SQLite db path."""
-    resolved = _resolve_db_path(db_path)
-    Path(resolved).parent.mkdir(parents=True, exist_ok=True)
+    """Construct the FastAPI app, parameterized on the storage URL/path."""
+    resolved = resolve_storage_url(db_path)
+    if not resolved.startswith(("postgresql://", "postgres://")):
+        Path(sqlite_path_from_url(resolved)).parent.mkdir(parents=True, exist_ok=True)
     # Object store lives next to the SQLite file (same layout as
     # `selfevals analyze` — see cli/analyze_commands.py:29). The store
     # is process-local and cheap to construct, so we build one app-wide
     # instance rather than per-request.
-    object_store = FilesystemObjectStore(Path(resolved).parent / "objects")
+    object_store = FilesystemObjectStore(object_store_base_for_storage_url(resolved))
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -115,15 +137,21 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
-    def _storage() -> SQLiteStorage:
-        return SQLiteStorage(resolved)
+    def _storage() -> StorageInterface:
+        return open_storage(resolved)
 
-    def _storage_factory() -> SQLiteStorage:
-        return SQLiteStorage(resolved)
+    def _storage_factory() -> StorageInterface:
+        return open_storage(resolved)
 
     @app.get("/api/health", response_model=HealthResponse, tags=["meta"])
     def health() -> HealthResponse:
-        return HealthResponse(status="ok", db_path=resolved)
+        backend = "postgres" if resolved.startswith(("postgresql://", "postgres://")) else "sqlite"
+        return HealthResponse(
+            status="ok",
+            db_path=storage_url_label(resolved),
+            storage_url=storage_url_label(resolved),
+            storage_backend=backend,
+        )
 
     @app.get(
         "/api/workspaces",
@@ -131,7 +159,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
         tags=["workspaces"],
     )
     def workspaces_index(
-        storage: SQLiteStorage = Depends(_storage),
+        storage: StorageInterface = Depends(_storage),
         _user: UserHeader = None,
     ) -> WorkspaceListResponse:
         try:
@@ -146,7 +174,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     )
     def workspaces_show(
         workspace_id: str,
-        storage: SQLiteStorage = Depends(_storage),
+        storage: StorageInterface = Depends(_storage),
         _user: UserHeader = None,
     ) -> WorkspaceResponse:
         try:
@@ -165,7 +193,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     )
     def workspaces_create(
         body: CreateWorkspaceRequest,
-        storage: SQLiteStorage = Depends(_storage),
+        storage: StorageInterface = Depends(_storage),
         user: UserHeader = None,
     ) -> WorkspaceResponse:
         from selfevals.storage.seed import seed_workspace
@@ -193,13 +221,167 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
             storage.close()
 
     @app.get(
+        "/api/workspaces/{workspace_id}/metrics/pass-rate",
+        response_model=PassRateMetricsResponse,
+        tags=["metrics"],
+    )
+    def metrics_pass_rate(
+        workspace_id: str,
+        storage: StorageInterface = Depends(_storage),
+        start: Annotated[datetime | None, Query(alias="from")] = None,
+        end: Annotated[datetime | None, Query(alias="to")] = None,
+        experiment_id: str | None = None,
+        grader: str | None = None,
+        _user: UserHeader = None,
+    ) -> PassRateMetricsResponse:
+        try:
+            return pass_rate_metrics(
+                storage,
+                workspace_id=workspace_id,
+                start=start,
+                end=end,
+                experiment_id=experiment_id,
+                grader=grader,
+            )
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/metrics/failure-modes",
+        response_model=FailureModeMetricsResponse,
+        tags=["metrics"],
+    )
+    def metrics_failure_modes(
+        workspace_id: str,
+        storage: StorageInterface = Depends(_storage),
+        start: Annotated[datetime | None, Query(alias="from")] = None,
+        end: Annotated[datetime | None, Query(alias="to")] = None,
+        experiment_id: str | None = None,
+        grader: str | None = None,
+        _user: UserHeader = None,
+    ) -> FailureModeMetricsResponse:
+        try:
+            return failure_mode_metrics(
+                storage,
+                workspace_id=workspace_id,
+                start=start,
+                end=end,
+                experiment_id=experiment_id,
+                grader=grader,
+            )
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/metrics/tools",
+        response_model=ToolMetricsResponse,
+        tags=["metrics"],
+    )
+    def metrics_tools(
+        workspace_id: str,
+        storage: StorageInterface = Depends(_storage),
+        start: Annotated[datetime | None, Query(alias="from")] = None,
+        end: Annotated[datetime | None, Query(alias="to")] = None,
+        experiment_id: str | None = None,
+        tool_name: str | None = None,
+        _user: UserHeader = None,
+    ) -> ToolMetricsResponse:
+        try:
+            return tool_metrics(
+                storage,
+                workspace_id=workspace_id,
+                start=start,
+                end=end,
+                experiment_id=experiment_id,
+                tool_name=tool_name,
+            )
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/metrics/cost",
+        response_model=CostMetricsResponse,
+        tags=["metrics"],
+    )
+    def metrics_cost(
+        workspace_id: str,
+        storage: StorageInterface = Depends(_storage),
+        start: Annotated[datetime | None, Query(alias="from")] = None,
+        end: Annotated[datetime | None, Query(alias="to")] = None,
+        experiment_id: str | None = None,
+        model: str | None = None,
+        _user: UserHeader = None,
+    ) -> CostMetricsResponse:
+        try:
+            return cost_metrics(
+                storage,
+                workspace_id=workspace_id,
+                start=start,
+                end=end,
+                experiment_id=experiment_id,
+                model=model,
+            )
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/metrics/tokens",
+        response_model=TokenMetricsResponse,
+        tags=["metrics"],
+    )
+    def metrics_tokens(
+        workspace_id: str,
+        storage: StorageInterface = Depends(_storage),
+        start: Annotated[datetime | None, Query(alias="from")] = None,
+        end: Annotated[datetime | None, Query(alias="to")] = None,
+        experiment_id: str | None = None,
+        model: str | None = None,
+        _user: UserHeader = None,
+    ) -> TokenMetricsResponse:
+        try:
+            return token_metrics(
+                storage,
+                workspace_id=workspace_id,
+                start=start,
+                end=end,
+                experiment_id=experiment_id,
+                model=model,
+            )
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/metrics/latency",
+        response_model=LatencyMetricsResponse,
+        tags=["metrics"],
+    )
+    def metrics_latency(
+        workspace_id: str,
+        storage: StorageInterface = Depends(_storage),
+        start: Annotated[datetime | None, Query(alias="from")] = None,
+        end: Annotated[datetime | None, Query(alias="to")] = None,
+        experiment_id: str | None = None,
+        _user: UserHeader = None,
+    ) -> LatencyMetricsResponse:
+        try:
+            return latency_metrics(
+                storage,
+                workspace_id=workspace_id,
+                start=start,
+                end=end,
+                experiment_id=experiment_id,
+            )
+        finally:
+            storage.close()
+
+    @app.get(
         "/api/workspaces/{workspace_id}/experiments",
         response_model=ExperimentListPage,
         tags=["experiments"],
     )
     def experiments_index(
         workspace_id: str,
-        storage: SQLiteStorage = Depends(_storage),
+        storage: StorageInterface = Depends(_storage),
         limit: Annotated[int, Query(ge=1, le=500)] = 100,
         offset: Annotated[int, Query(ge=0)] = 0,
         state: Annotated[
@@ -239,10 +421,39 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
         # on a daemon thread. Returns 202 immediately; the FE polls the
         # experiment detail (state climbs to completed/aborted).
         return launch_experiment_run(
-            db_path=resolved,
+            storage_url=resolved,
             workspace_id=workspace_id,
             body=body,
         )
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/experiments/{experiment_id}/cancel",
+        response_model=RunExperimentResponse,
+        status_code=202,
+        tags=["experiments"],
+    )
+    def experiments_cancel(
+        workspace_id: str,
+        experiment_id: str,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> RunExperimentResponse:
+        try:
+            job = request_cancel_run_job(
+                storage,
+                workspace_id=workspace_id,
+                experiment_id=experiment_id,
+            )
+            if job is None:
+                raise HTTPException(status_code=404, detail="run job not found")
+            return RunExperimentResponse(
+                experiment_id=experiment_id,
+                workspace_id=workspace_id,
+                state=str(job.status),
+                job_id=job.id,
+            )
+        finally:
+            storage.close()
 
     @app.get(
         "/api/workspaces/{workspace_id}/experiments/{experiment_id}",
@@ -252,7 +463,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     def experiments_show(
         workspace_id: str,
         experiment_id: str,
-        storage: SQLiteStorage = Depends(_storage),
+        storage: StorageInterface = Depends(_storage),
         _user: UserHeader = None,
     ) -> ExperimentDetailResponse:
         try:
@@ -278,7 +489,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     def experiments_iterations(
         workspace_id: str,
         experiment_id: str,
-        storage: SQLiteStorage = Depends(_storage),
+        storage: StorageInterface = Depends(_storage),
         _user: UserHeader = None,
     ) -> IterationListResponse:
         try:
@@ -300,7 +511,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     def experiments_cases(
         workspace_id: str,
         experiment_id: str,
-        storage: SQLiteStorage = Depends(_storage),
+        storage: StorageInterface = Depends(_storage),
         _user: UserHeader = None,
     ) -> CaseListResponse:
         # The eval cases a run executed, persisted at launch. Holdout cases are
@@ -324,7 +535,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     def experiments_results(
         workspace_id: str,
         experiment_id: str,
-        storage: SQLiteStorage = Depends(_storage),
+        storage: StorageInterface = Depends(_storage),
         _user: UserHeader = None,
     ) -> ExperimentResultsResponse:
         # Per-scenario expected/detected/matched for the best iteration. Cases
@@ -353,7 +564,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     def experiments_decisions(
         workspace_id: str,
         experiment_id: str,
-        storage: SQLiteStorage = Depends(_storage),
+        storage: StorageInterface = Depends(_storage),
         _user: UserHeader = None,
     ) -> list[DecisionRecordResponse]:
         try:
@@ -378,7 +589,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
         experiment_id: str,
         a: Annotated[str, Query(description="Iteration A record id.")],
         b: Annotated[str, Query(description="Iteration B record id.")],
-        storage: SQLiteStorage = Depends(_storage),
+        storage: StorageInterface = Depends(_storage),
         _user: UserHeader = None,
     ) -> CompareResponse:
         try:
@@ -420,7 +631,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     def iterations_show(
         workspace_id: str,
         iteration_id: str,
-        storage: SQLiteStorage = Depends(_storage),
+        storage: StorageInterface = Depends(_storage),
         _user: UserHeader = None,
     ) -> dict[str, Any]:
         try:
@@ -443,7 +654,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     def iterations_funnel(
         workspace_id: str,
         iteration_id: str,
-        storage: SQLiteStorage = Depends(_storage),
+        storage: StorageInterface = Depends(_storage),
         _user: UserHeader = None,
     ) -> FunnelResponse:
         try:
@@ -482,7 +693,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     def traces_show(
         workspace_id: str,
         trace_id: str,
-        storage: SQLiteStorage = Depends(_storage),
+        storage: StorageInterface = Depends(_storage),
         _user: UserHeader = None,
     ) -> TraceResponse:
         try:
@@ -501,7 +712,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     def threads_show(
         workspace_id: str,
         thread_id: str,
-        storage: SQLiteStorage = Depends(_storage),
+        storage: StorageInterface = Depends(_storage),
         _user: UserHeader = None,
     ) -> ThreadResponse:
         try:
@@ -545,7 +756,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     )
     def anchor_set(
         workspace_id: str,
-        storage: SQLiteStorage = Depends(_storage),
+        storage: StorageInterface = Depends(_storage),
         _user: UserHeader = None,
     ) -> list[AnchorPoint]:
         try:

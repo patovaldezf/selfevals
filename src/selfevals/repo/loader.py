@@ -35,6 +35,7 @@ from typing import Any, cast
 
 import yaml
 
+from selfevals.schemas.enums import SpanKind
 from selfevals.schemas.eval_case import EvalCase
 from selfevals.schemas.experiment import Experiment
 
@@ -169,6 +170,22 @@ class ExperimentSpec:
     graders: list[GraderSpec] = field(default_factory=list)
 
 
+def serialize_experiment_spec(spec: ExperimentSpec) -> dict[str, Any]:
+    """JSON-safe representation of a fully validated experiment spec."""
+    return {
+        "workspace": spec.workspace_id,
+        "experiment": spec.experiment.model_dump(mode="json"),
+        "dataset": {"cases_inline": [case.model_dump(mode="json") for case in spec.cases]},
+        "agent": _dump_agent_spec(spec.agent),
+        "graders": [_dump_grader_spec(grader) for grader in spec.graders],
+    }
+
+
+def deserialize_experiment_spec(payload: dict[str, Any]) -> ExperimentSpec:
+    """Rehydrate a worker-safe spec payload produced by `serialize_experiment_spec`."""
+    return build_spec_from_mapping(payload, workspace_id=str(payload.get("workspace") or ""))
+
+
 def load_experiment_spec(
     path: str | Path,
     *,
@@ -234,6 +251,53 @@ def build_spec_from_mapping(
         agent=agent,
         graders=graders,
     )
+
+
+def _dump_entrypoint(entrypoint: AgentEntrypoint) -> str:
+    return entrypoint.raw
+
+
+def _dump_agent_model(model: AgentModelDecl | None) -> dict[str, str] | None:
+    if model is None:
+        return None
+    return {"provider": model.provider, "name": model.name}
+
+
+def _dump_agent_spec(agent: AgentSpec) -> dict[str, Any]:
+    if isinstance(agent, EmbeddedAgentSpec):
+        return {"type": "embedded", "entrypoint": _dump_entrypoint(agent.entrypoint)}
+    if isinstance(agent, CliAgentSpec):
+        payload: dict[str, Any] = {"type": "cli", "command": list(agent.command)}
+        if agent.env is not None:
+            payload["env"] = dict(agent.env)
+        if agent.timeout_seconds is not None:
+            payload["timeout_seconds"] = agent.timeout_seconds
+        if agent.model is not None:
+            payload["model"] = _dump_agent_model(agent.model)
+        return payload
+    payload = {"type": "http", "url": agent.url}
+    if agent.headers is not None:
+        payload["headers"] = dict(agent.headers)
+    if agent.timeout_seconds is not None:
+        payload["timeout_seconds"] = agent.timeout_seconds
+    if agent.model is not None:
+        payload["model"] = _dump_agent_model(agent.model)
+    return payload
+
+
+def _dump_grader_spec(grader: GraderSpec) -> dict[str, Any]:
+    payload: dict[str, Any] = {"type": grader.type, "name": grader.name}
+    if grader.rubric is not None:
+        payload["rubric"] = grader.rubric
+    if grader.judge_entrypoint is not None:
+        payload["judge_entrypoint"] = _dump_entrypoint(grader.judge_entrypoint)
+    if grader.n_judges is not None:
+        payload["n_judges"] = grader.n_judges
+    if grader.consensus is not None:
+        payload["consensus"] = grader.consensus
+    if grader.params:
+        payload["params"] = dict(grader.params)
+    return payload
 
 
 def resolve_agent_callable(entrypoint: AgentEntrypoint) -> Any:
@@ -328,9 +392,19 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-_SUPPORTED_GRADER_TYPES = {"deterministic", "llm_judge", "judge_panel", "set_match"}
+_SUPPORTED_GRADER_TYPES = {"deterministic", "llm_judge", "judge_panel", "set_match", "funnel"}
 _SET_MATCH_GATINGS = {"completeness", "precision", "recall", "f1"}
 _CONSENSUS_RULES = {"majority", "unanimous", "weighted"}
+_FUNNEL_MATCH_KINDS = {
+    "exists",
+    "equals",
+    "set_match",
+    "by_key",
+    "by_index",
+    "tool_called",
+    "span_exists",
+}
+_SPAN_KINDS = {k.value for k in SpanKind}
 
 
 def _build_grader_specs(spec_path: Path, raw: dict[str, Any]) -> list[GraderSpec]:
@@ -380,6 +454,9 @@ def _build_grader_specs(spec_path: Path, raw: dict[str, Any]) -> list[GraderSpec
 
         if type_ == "set_match":
             params = _parse_set_match_params(spec_path, i, entry)
+
+        if type_ == "funnel":
+            params = _parse_funnel_params(spec_path, i, entry)
 
         specs.append(
             GraderSpec(
@@ -462,6 +539,197 @@ def _parse_set_match_params(spec_path: Path, i: int, entry: dict[str, Any]) -> d
             )
         params["case_sensitive"] = case_sensitive
     return params
+
+
+def _parse_funnel_params(spec_path: Path, i: int, entry: dict[str, Any]) -> dict[str, Any]:
+    """Parse a funnel's `params.levels` tree into validated nested dicts.
+
+    Stored as plain JSON-friendly dicts (not built `_Level`s) because building
+    a level's match — especially a nested `llm_judge` — needs adapter
+    resolution, which lives in `runner.launch`, not here. The loader stays
+    import-side-effect-free. `key` uniqueness is checked across the whole tree
+    (the aggregator rolls up by key).
+    """
+    from selfevals.graders._select import validate_path
+
+    raw = entry.get("params", {})
+    if not isinstance(raw, dict):
+        raise LoaderError(f"{spec_path}: graders[{i}].params must be a mapping, got {raw!r}")
+    levels_raw = raw.get("levels")
+    if not isinstance(levels_raw, list) or not levels_raw:
+        raise LoaderError(
+            f"{spec_path}: graders[{i}] (funnel) requires a non-empty `params.levels` list"
+        )
+    seen_keys: set[str] = set()
+
+    def _level(node: Any, path: str) -> dict[str, Any]:
+        if not isinstance(node, dict):
+            raise LoaderError(f"{spec_path}: graders[{i}].levels{path} must be a mapping")
+        key = node.get("key")
+        if not isinstance(key, str) or not key:
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].levels{path}.key must be a non-empty string"
+            )
+        if key in seen_keys:
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].levels key {key!r} is duplicated (keys must be "
+                f"unique across the funnel tree)"
+            )
+        seen_keys.add(key)
+
+        extract = node.get("extract", "")
+        if not isinstance(extract, str):
+            raise LoaderError(f"{spec_path}: graders[{i}].levels[{key}].extract must be a string")
+        try:
+            validate_path(extract)
+        except ValueError as exc:
+            raise LoaderError(f"{spec_path}: graders[{i}].levels[{key}].extract: {exc}") from exc
+
+        gate = node.get("gate", False)
+        if not isinstance(gate, bool):
+            raise LoaderError(f"{spec_path}: graders[{i}].levels[{key}].gate must be a boolean")
+        feeds = node.get("feeds_extract", False)
+        if not isinstance(feeds, bool):
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].levels[{key}].feeds_extract must be a boolean"
+            )
+        failure_mode = node.get("failure_mode")
+        if failure_mode is not None and not (isinstance(failure_mode, str) and failure_mode):
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].levels[{key}].failure_mode must be a non-empty string"
+            )
+
+        match = _funnel_match(spec_path, i, key, node.get("match"))
+
+        children_raw = node.get("children", [])
+        if not isinstance(children_raw, list):
+            raise LoaderError(f"{spec_path}: graders[{i}].levels[{key}].children must be a list")
+        children = [_level(c, f"{path}[{key}].children[{j}]") for j, c in enumerate(children_raw)]
+
+        out: dict[str, Any] = {
+            "key": key,
+            "extract": extract,
+            "gate": gate,
+            "feeds_extract": feeds,
+            "match": match,
+            "children": children,
+        }
+        if failure_mode is not None:
+            out["failure_mode"] = failure_mode
+        return out
+
+    levels = [_level(node, f"[{j}]") for j, node in enumerate(levels_raw)]
+    return {"levels": levels}
+
+
+def _funnel_match(spec_path: Path, i: int, key: str, match_raw: Any) -> dict[str, Any]:
+    """Validate one level's `match`: exactly one of `kind` / `grader`."""
+    if not isinstance(match_raw, dict):
+        raise LoaderError(f"{spec_path}: graders[{i}].levels[{key}].match must be a mapping")
+    has_kind = "kind" in match_raw
+    has_grader = "grader" in match_raw
+    if has_kind == has_grader:
+        raise LoaderError(
+            f"{spec_path}: graders[{i}].levels[{key}].match must have exactly one of "
+            f"`kind` (builtin) or `grader` (a declared grader name)"
+        )
+    if has_grader:
+        ref = match_raw.get("grader")
+        if not isinstance(ref, str) or not ref:
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].levels[{key}].match.grader must be a non-empty string"
+            )
+        # Existence deferred to launch.py (registry resolution gives the friendly
+        # unknown-grader error and avoids a declaration-ordering constraint).
+        return {"grader": ref}
+
+    kind = match_raw.get("kind")
+    if kind not in _FUNNEL_MATCH_KINDS:
+        raise LoaderError(
+            f"{spec_path}: graders[{i}].levels[{key}].match.kind must be one of "
+            f"{sorted(_FUNNEL_MATCH_KINDS)}; got {kind!r}"
+        )
+    out: dict[str, Any] = {"kind": kind}
+    # Carry through kind-specific params, validated where it matters.
+    if kind == "equals":
+        if "value" not in match_raw:
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].levels[{key}].match (equals) requires `value`"
+            )
+        out["value"] = match_raw["value"]
+    elif kind == "by_key":
+        bkey = match_raw.get("key")
+        if not isinstance(bkey, str) or not bkey:
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].levels[{key}].match (by_key) requires a string `key`"
+            )
+        if "value" not in match_raw:
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].levels[{key}].match (by_key) requires `value`"
+            )
+        out["key"] = bkey
+        out["value"] = match_raw["value"]
+    elif kind == "by_index":
+        index = match_raw.get("index")
+        if not isinstance(index, int) or isinstance(index, bool):
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].levels[{key}].match (by_index) requires an int `index`"
+            )
+        if "value" not in match_raw:
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].levels[{key}].match (by_index) requires `value`"
+            )
+        out["index"] = index
+        out["value"] = match_raw["value"]
+    elif kind == "tool_called":
+        tool = match_raw.get("tool")
+        if not isinstance(tool, str) or not tool:
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].levels[{key}].match (tool_called) requires a "
+                f"string `tool`"
+            )
+        out["tool"] = tool
+    elif kind == "span_exists":
+        span_kind = match_raw.get("span_kind")
+        if span_kind not in _SPAN_KINDS:
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].levels[{key}].match (span_exists) requires "
+                f"`span_kind` in {sorted(_SPAN_KINDS)}; got {span_kind!r}"
+            )
+        out["span_kind"] = span_kind
+    elif kind == "set_match":
+        # Validate the same way the standalone set_match grader does, so a funnel
+        # level can't smuggle a bad gating/threshold/case_sensitive past the loader
+        # only to crash (uncaught) when the grader is instantiated at launch.
+        gating = match_raw.get("gating")
+        if gating is not None and gating not in _SET_MATCH_GATINGS:
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].levels[{key}].match.gating must be one of "
+                f"{sorted(_SET_MATCH_GATINGS)}; got {gating!r}"
+            )
+        if gating is not None:
+            out["gating"] = gating
+        threshold = match_raw.get("threshold")
+        if threshold is not None:
+            if not isinstance(threshold, int | float) or isinstance(threshold, bool):
+                raise LoaderError(
+                    f"{spec_path}: graders[{i}].levels[{key}].match.threshold must be a number; "
+                    f"got {threshold!r}"
+                )
+            if not 0.0 <= float(threshold) <= 1.0:
+                raise LoaderError(
+                    f"{spec_path}: graders[{i}].levels[{key}].match.threshold must be in [0, 1]; "
+                    f"got {threshold!r}"
+                )
+            out["threshold"] = float(threshold)
+    case_sensitive = match_raw.get("case_sensitive")
+    if kind in ("equals", "by_key", "by_index", "set_match") and case_sensitive is not None:
+        if not isinstance(case_sensitive, bool):
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].levels[{key}].match.case_sensitive must be a boolean"
+            )
+        out["case_sensitive"] = case_sensitive
+    return out
 
 
 def _validate_primary_grader(

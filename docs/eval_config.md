@@ -251,13 +251,13 @@ Cases reference graders by name in `EvalCase.graders`. The names resolve
 through the grader registry (`src/selfevals/graders/registry.py`). The
 built-in registered names are:
 
-| Registered name         | Class                        | What it does                                                                                                                                                                                                                                                                                                |
-| ----------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `deterministic`         | `DeterministicGrader`        | Declarative rules from `Expected`: `must_include` (with optional `min_recall`), `must_not_include`, `required_tools`/`forbidden_tools`, `regex_match`, `structured_output`.                                                                                                                                 |
-| `artifact_completeness` | `ArtifactCompletenessGrader` | Checks an artifact carries each `Expected.required_sections` key with a non-empty value.                                                                                                                                                                                                                    |
-| `guardrail`             | `GuardrailGrader`            | Guardrail-style pass/fail checks.                                                                                                                                                                                                                                                                           |
-| `set_match`             | `SetMatchGrader`             | Many-to-many set scoring: compares the agent's `structured_output["detected"]` list against `Expected.must_include` and reports completeness / precision / recall / F1 with a per-element funnel. For tasks where the ground truth is a _set_ (intention-detection, entity-extraction), not a single label. |
-| `trajectory`            | `TrajectoryGrader`           | Diagnostic checks over the tool-call / decision _sequence_ (wraps an output grader).                                                                                                                                                                                                                        |
+| Registered name         | Class                        | What it does                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deterministic`         | `DeterministicGrader`        | Declarative rules from `Expected`: `must_include` (with optional `min_recall`), `must_not_include`, `required_tools`/`forbidden_tools`, `regex_match`, `structured_output`.                                                                                                                                                                                                                                    |
+| `artifact_completeness` | `ArtifactCompletenessGrader` | Checks an artifact carries each `Expected.required_sections` key with a non-empty value.                                                                                                                                                                                                                                                                                                                       |
+| `guardrail`             | `GuardrailGrader`            | Guardrail-style pass/fail checks.                                                                                                                                                                                                                                                                                                                                                                              |
+| `set_match`             | `SetMatchGrader`             | Many-to-many set scoring: compares a detected set against `Expected.must_include` and reports completeness / precision / recall / F1 with a per-element funnel. The detected set is read from a path selector over `structured_output` — `extract` (default `"detected"`; e.g. `"candidates[].id"`). For tasks where the ground truth is a _set_ (intention-detection, entity-extraction), not a single label. |
+| `trajectory`            | `TrajectoryGrader`           | Diagnostic checks over the tool-call / decision _sequence_ (wraps an output grader).                                                                                                                                                                                                                                                                                                                           |
 
 > Additional grader classes exist in `src/selfevals/graders/`
 > (`LLMJudgeGrader`) that are **not** auto-registered by name; they are
@@ -308,7 +308,7 @@ path avoids that ordering concern.
 
 The top-level `graders:` list configures graders the loader instantiates
 directly. Each entry is a mapping. The loader supports these `type`s:
-`deterministic`, `set_match`, `llm_judge`, and `judge_panel`.
+`deterministic`, `set_match`, `llm_judge`, `judge_panel`, and `funnel`.
 
 ```yaml
 graders:
@@ -355,13 +355,69 @@ canonical normalization (legacy aliases, casing) lives in the _case_ via
 `Expected.aliases` — a `{raw: canonical}` map applied to both sides before
 comparison — so the engine stays domain-agnostic and never imports client code.
 
+### `funnel` — declarative N-level scoring
+
+A real agent is judged in _stages_: did it **find** the right entity (L1), then
+did it **resolve** it correctly (L2), and was the resolution phrased well (L3)?
+A flat grader collapses that into one pass/fail and throws away _where_ the agent
+failed. The `funnel` grader preserves it. Each **level** extracts a slice of
+`structured_output` via a path selector, scores it with a **match**, and a
+`gate` level short-circuits its descendants when it fails (you don't grade the
+resolver if the finder never found anything). Every level emits a node in the
+breakdown tree, so the reporter/frontend drill into the funnel at arbitrary
+depth, with per-level failure modes.
+
+```yaml
+graders:
+  - type: funnel
+    name: identify_funnel
+    params:
+      levels:
+        - key: finder # stable id; unique across the whole tree
+          extract: candidates[].id # path selector over structured_output
+          gate: true # if this fails, skip my children
+          failure_mode: finder_missed
+          match: { kind: set_match, gating: completeness, threshold: 1.0 }
+          children:
+            - key: resolver # only graded if finder passed
+              extract: resolved.id
+              failure_mode: resolver_wrong
+              match: { kind: equals, value: abc }
+```
+
+**Match kinds.** A level's `match` is either a builtin (`kind:`) or a reference
+to another declared grader (`grader:` — including `llm_judge`/`judge_panel`,
+which lets a level run a judge over the response). Builtins:
+
+| `kind`        | reads              | passes when                                      |
+| ------------- | ------------------ | ------------------------------------------------ |
+| `exists`      | `extract`          | the path resolves to a non-empty value           |
+| `equals`      | `extract`          | equals `value` (optionally `case_sensitive`)     |
+| `set_match`   | `extract`          | delegates to `SetMatchGrader` (gating/threshold) |
+| `by_key`      | `extract` (a dict) | `result[key] == value`                           |
+| `by_index`    | `extract` (a list) | `result[index] == value`                         |
+| `tool_called` | the trace          | a tool span named `tool` exists                  |
+| `span_exists` | the trace          | a span of `span_kind` exists                     |
+
+The path selector grammar is small: `foo`, `foo.bar`, `foo[]` (the list),
+`foo[].bar` (project `bar` over the list). The same selector powers
+`set_match`'s `extract` param.
+
+**Why a funnel and not separate graders?** Separate graders all score the full
+case independently; the funnel models the _dependency_ — the resolver is only
+meaningful on the finder's hits. Gating encodes that, and the breakdown tree
+shows the conversion at each stage (how many cases cleared L1, then L2…), which
+is exactly the failure-localization an eval exists to produce.
+
 Rules for the block:
 
-- `type` must be `deterministic`, `set_match`, `llm_judge`, or `judge_panel`.
+- `type` must be `deterministic`, `set_match`, `llm_judge`, `judge_panel`, or
+  `funnel`.
 - `name` defaults to `type`; names must be unique within the block.
 - `set_match` accepts optional `params.gating`
   (`completeness`/`precision`/`recall`/`f1`, default `completeness`),
-  `params.threshold` (`[0,1]`, default `1.0`), and `params.case_sensitive`.
+  `params.threshold` (`[0,1]`, default `1.0`), `params.case_sensitive`, and
+  `params.extract` (a path selector, default `"detected"`).
 - `judge_panel` requires a non-empty `rubric`; `n_judges` defaults to `3`
   (≥1), `consensus` defaults to `majority`. Same `judge_entrypoint` fallback
   as `llm_judge`.
@@ -369,6 +425,10 @@ Rules for the block:
   (`"module:callable"`) is optional only when the agent is `embedded`
   (it falls back to the agent's entrypoint); `cli`/`http` agents must name
   one explicitly.
+- `funnel` requires a non-empty `params.levels`; every level needs a `key`
+  (unique across the tree) and a `match` with exactly one of `kind`/`grader`.
+  A `grader:` reference is resolved lazily, so it may name a grader declared
+  later in the block.
 
 ---
 
