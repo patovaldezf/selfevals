@@ -217,3 +217,49 @@ async def test_invalid_gating_rejected_at_construction() -> None:
 async def test_invalid_threshold_rejected_at_construction() -> None:
     with pytest.raises(ValueError, match="threshold"):
         SetMatchGrader(threshold=1.5)
+
+
+@pytest.mark.asyncio
+async def test_default_extract_reads_detected_key() -> None:
+    # Regression guard: the default `extract="detected"` is byte-identical to
+    # the historical hard-coded `structured_output["detected"]` lookup.
+    case = _case(Expected(must_include=["a", "b"]))
+    result = await SetMatchGrader().grade(_ctx(case, {"detected": ["a", "b"]}))
+    assert result.label is GradeLabel.PASS
+    assert result.details["completeness"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_extract_routes_to_custom_key() -> None:
+    case = _case(Expected(must_include=["price", "stock"]))
+    grader = SetMatchGrader(extract="intents")
+    result = await grader.grade(_ctx(case, {"intents": ["price", "stock"]}))
+    assert result.label is GradeLabel.PASS
+    assert result.details["detected"] == ["price", "stock"]
+
+
+@pytest.mark.asyncio
+async def test_extract_projects_over_entity_list() -> None:
+    # The seals contract: structured entities, set extracted via projection.
+    case = _case(Expected(must_include=["abc-uuid", "def-uuid"]))
+    grader = SetMatchGrader(extract="candidates[].id")
+    structured = {
+        "candidates": [{"id": "abc-uuid", "external_id": "00019"}, {"id": "def-uuid"}],
+    }
+    result = await grader.grade(_ctx(case, structured))
+    assert result.label is GradeLabel.PASS
+
+
+@pytest.mark.asyncio
+async def test_extract_missing_path_is_no_detected_fail() -> None:
+    case = _case(Expected(must_include=["a"]))
+    grader = SetMatchGrader(extract="candidates[].id")
+    result = await grader.grade(_ctx(case, {"other": 1}))
+    assert result.label is GradeLabel.FAIL
+    assert FM_NO_DETECTED in result.failure_modes
+
+
+@pytest.mark.asyncio
+async def test_invalid_extract_path_rejected_at_construction() -> None:
+    with pytest.raises(ValueError, match="segment"):
+        SetMatchGrader(extract="a..b")

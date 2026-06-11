@@ -390,3 +390,107 @@ def test_register_set_match_bakes_gating(restore_registry: None) -> None:
     assert isinstance(grader, SetMatchGrader)
     assert grader._gating == "f1"
     assert grader._threshold == 0.8
+
+
+# --- register_grader_specs: funnel wiring ---------------------------------
+
+
+def _funnel_spec(levels: list[dict[str, object]]) -> GraderSpec:
+    return GraderSpec(type="funnel", name="fnl", params={"levels": levels})
+
+
+def test_register_funnel_builds_levels(restore_registry: None) -> None:
+    from selfevals.graders.funnel import FunnelGrader
+    from selfevals.graders.registry import resolve_graders
+    from selfevals.runner.launch import register_grader_specs
+
+    spec = _SpecShim(
+        graders=[
+            _funnel_spec(
+                [
+                    {
+                        "key": "finder",
+                        "extract": "candidates[].id",
+                        "gate": True,
+                        "match": {"kind": "set_match", "gating": "completeness"},
+                        "children": [
+                            {
+                                "key": "resolver",
+                                "extract": "resolved.id",
+                                "match": {"kind": "equals", "value": "abc"},
+                            }
+                        ],
+                    }
+                ]
+            )
+        ],
+        agent=_embedded_agent(),
+    )
+    registered = register_grader_specs(spec)  # type: ignore[arg-type]
+    assert registered == ["fnl"]
+    grader = resolve_graders(["fnl"])[0]
+    assert isinstance(grader, FunnelGrader)
+    assert grader.name == "fnl"
+    assert grader._levels[0].key == "finder"
+    assert grader._levels[0].gate is True
+    assert grader._levels[0].children[0].key == "resolver"
+
+
+def test_register_funnel_set_match_without_extract_defaults_to_detected(
+    restore_registry: None,
+) -> None:
+    # A funnel set_match level with no `extract` must read "detected" (like the
+    # standalone grader), not select the root dict and always FAIL.
+    from selfevals.graders.funnel import FunnelGrader
+    from selfevals.graders.registry import resolve_graders
+    from selfevals.graders.set_match import SetMatchGrader
+    from selfevals.runner.launch import register_grader_specs
+
+    spec = _SpecShim(
+        graders=[_funnel_spec([{"key": "x", "match": {"kind": "set_match"}}])],
+        agent=_embedded_agent(),
+    )
+    register_grader_specs(spec)  # type: ignore[arg-type]
+    grader = resolve_graders(["fnl"])[0]
+    assert isinstance(grader, FunnelGrader)
+    nested = grader._levels[0].match
+    assert isinstance(nested, SetMatchGrader)
+    assert nested._extract == "detected"
+
+
+def test_register_funnel_resolves_nested_grader_ref(restore_registry: None) -> None:
+    # A funnel level referencing a declared set_match by name resolves through
+    # the registry — declaration order between them does not matter.
+    from selfevals.graders.funnel import FunnelGrader
+    from selfevals.graders.registry import resolve_graders
+    from selfevals.runner.launch import register_grader_specs
+
+    spec = _SpecShim(
+        graders=[
+            _funnel_spec(
+                [{"key": "x", "extract": "a", "match": {"grader": "intents"}}]
+            ),
+            GraderSpec(type="set_match", name="intents", params={"gating": "f1"}),
+        ],
+        agent=_embedded_agent(),
+    )
+    register_grader_specs(spec)  # type: ignore[arg-type]
+    grader = resolve_graders(["fnl"])[0]
+    assert isinstance(grader, FunnelGrader)
+    nested = grader._levels[0].match
+    assert nested.name == "intents"
+
+
+def test_register_funnel_unknown_ref_is_user_error(restore_registry: None) -> None:
+    from selfevals.graders.registry import resolve_graders
+    from selfevals.runner.launch import register_grader_specs
+
+    spec = _SpecShim(
+        graders=[_funnel_spec([{"key": "x", "extract": "a", "match": {"grader": "ghost"}}])],
+        agent=_embedded_agent(),
+    )
+    register_grader_specs(spec)  # type: ignore[arg-type]
+    # The ref is resolved lazily when the funnel is built; an unknown name raises
+    # the friendly unknown-grader error.
+    with pytest.raises(SelfEvalsUserError):
+        resolve_graders(["fnl"])[0]

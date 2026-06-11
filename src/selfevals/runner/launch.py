@@ -73,8 +73,8 @@ from selfevals.schemas.enums import ProposerStrategy
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.fleet import ModelRef
 from selfevals.schemas.workspace import Workspace
-from selfevals.storage.interface import WorkspaceScope
-from selfevals.storage.sqlite import SQLiteStorage
+from selfevals.storage.factory import object_store_base_for_storage_url
+from selfevals.storage.interface import StorageInterface, WorkspaceScope
 
 if TYPE_CHECKING:
     from selfevals.trace.payload_router import PayloadRouter
@@ -112,19 +112,17 @@ def trace_sampling_override() -> Literal["none", "all", "failed"] | None:
 
 
 def payload_router_for_db(db_path: str, workspace_id: str) -> PayloadRouter:
-    """Build a `PayloadRouter` whose object store sits next to the SQLite db.
+    """Build a `PayloadRouter` for the configured storage URL/path.
 
-    Same layout the analyze CLI and the HTTP `/payloads` endpoint use
-    (`<db>.parent/objects`), so a pointer written here resolves there. Callers
+    SQLite stores objects next to the db. Postgres uses the local
+    ``SELFEVALS_OBJECTS_DIR`` override or ``./objects`` until S3 lands. Callers
     that persist (`selfevals run`, the HTTP run launcher) pass the result into
     `build_loop` so the executor offloads large trace payloads; ephemeral
     `--no-persist` runs skip it and the executor inlines instead."""
-    from pathlib import Path
-
     from selfevals.storage.filesystem import FilesystemObjectStore
     from selfevals.trace.payload_router import PayloadRouter
 
-    store = FilesystemObjectStore(Path(db_path).parent / "objects")
+    store = FilesystemObjectStore(object_store_base_for_storage_url(db_path))
     return PayloadRouter(store, workspace_id=workspace_id)
 
 
@@ -243,6 +241,10 @@ def register_grader_specs(spec: ExperimentSpec) -> list[str]:
             register_grader(g_spec.name, _set_match_factory(g_spec.name, g_spec.params))
             registered.append(g_spec.name)
             continue
+        if g_spec.type == "funnel":
+            register_grader(g_spec.name, _funnel_factory(g_spec.name, g_spec.params))
+            registered.append(g_spec.name)
+            continue
         raise SelfEvalsUserError(f"unsupported grader type: {g_spec.type!r}")  # defensive
     return registered
 
@@ -290,9 +292,7 @@ def _judge_panel_factory(
             for k in range(n_judges)
         ]
         weights = [1.0] * n_judges if consensus == "weighted" else None
-        return JudgePanelGrader(
-            name=name, judges=judges, consensus_rule=consensus, weights=weights
-        )
+        return JudgePanelGrader(name=name, judges=judges, consensus_rule=consensus, weights=weights)
 
     return _build
 
@@ -308,6 +308,121 @@ def _set_match_factory(name: str, params: dict[str, object]) -> Callable[[], Gra
         return SetMatchGrader(
             name=name, gating=gating, threshold=threshold, case_sensitive=case_sensitive
         )
+
+    return _build
+
+
+def _funnel_factory(name: str, params: dict[str, object]) -> Callable[[], Grader]:
+    """Build a FunnelGrader from the loader's validated level dicts.
+
+    Level construction happens inside `_build()` (not here) so each
+    `resolve_case_graders` call gets fresh instances and so registry lookups for
+    nested `grader:` references resolve after every factory has registered —
+    declaration order between the funnel and the graders it references does not
+    matter (mirrors how `resolve_case_graders` instantiates lazily).
+    """
+    from selfevals.graders.funnel import (
+        FunnelGrader,
+        _ByIndexMatch,
+        _ByKeyMatch,
+        _EqualsMatch,
+        _ExistsMatch,
+        _Level,
+        _SpanExistsMatch,
+        _ToolCalledMatch,
+    )
+    from selfevals.graders.set_match import GatingDimension, SetMatchGrader
+    from selfevals.schemas.enums import SpanKind
+
+    levels_spec = cast("list[dict[str, object]]", params.get("levels", []))
+
+    def _default_fm(key: str, kind: str) -> str:
+        suffix = {
+            "exists": "absent",
+            "equals": "mismatch",
+            "by_key": "key_mismatch",
+            "by_index": "index_mismatch",
+            "tool_called": "tool_absent",
+            "span_exists": "span_absent",
+        }.get(kind, "fail")
+        return f"funnel_{key}_{suffix}"
+
+    def _build_match(key: str, extract: str, match: dict[str, object]) -> Grader:
+        match_name = f"{name}.{key}"
+        if "grader" in match:
+            ref = cast(str, match["grader"])
+            return resolve_graders([ref])[0]
+        kind = cast(str, match["kind"])
+        cs = bool(match.get("case_sensitive", False))
+        fm = _default_fm(key, kind)
+        if kind == "set_match":
+            gating = cast("GatingDimension", match.get("gating", "completeness"))
+            threshold = float(cast(float, match.get("threshold", 1.0)))
+            # An omitted level `extract` ("") means "the default detected slot"
+            # for set_match, matching the standalone grader's `extract="detected"`
+            # default — without this a bare `kind: set_match` level would select
+            # the root dict and always FAIL.
+            sm_extract = extract or "detected"
+            return SetMatchGrader(
+                name=match_name,
+                gating=gating,
+                threshold=threshold,
+                case_sensitive=cs,
+                extract=sm_extract,
+            )
+        if kind == "exists":
+            return _ExistsMatch(match_name, extract=extract, failure_mode=fm)
+        if kind == "equals":
+            return _EqualsMatch(
+                match_name,
+                extract=extract,
+                value=match["value"],
+                case_sensitive=cs,
+                failure_mode=fm,
+            )
+        if kind == "by_key":
+            return _ByKeyMatch(
+                match_name,
+                extract=extract,
+                key=cast(str, match["key"]),
+                value=match["value"],
+                case_sensitive=cs,
+                failure_mode=fm,
+            )
+        if kind == "by_index":
+            return _ByIndexMatch(
+                match_name,
+                extract=extract,
+                index=cast(int, match["index"]),
+                value=match["value"],
+                case_sensitive=cs,
+                failure_mode=fm,
+            )
+        if kind == "tool_called":
+            return _ToolCalledMatch(match_name, tool=cast(str, match["tool"]), failure_mode=fm)
+        if kind == "span_exists":
+            return _SpanExistsMatch(
+                match_name, span_kind=SpanKind(cast(str, match["span_kind"])), failure_mode=fm
+            )
+        raise SelfEvalsUserError(f"funnel: unknown match kind {kind!r}")  # defensive
+
+    def _build_level(node: dict[str, object]) -> _Level:
+        key = cast(str, node["key"])
+        extract = cast(str, node.get("extract", ""))
+        match = _build_match(key, extract, cast("dict[str, object]", node["match"]))
+        children_spec = cast("list[dict[str, object]]", node.get("children", []))
+        return _Level(
+            key=key,
+            extract=extract,
+            match=match,
+            gate=bool(node.get("gate", False)),
+            failure_mode=cast("str | None", node.get("failure_mode")),
+            feeds_extract=bool(node.get("feeds_extract", False)),
+            children=[_build_level(c) for c in children_spec],
+        )
+
+    def _build() -> Grader:
+        return FunnelGrader(name=name, levels=[_build_level(node) for node in levels_spec])
 
     return _build
 
@@ -402,7 +517,7 @@ def _wrap_user_callable(callable_obj: object, entrypoint: AgentEntrypoint) -> Ag
     return EmbeddedAdapter(_adapt)
 
 
-def ensure_workspace(storage: SQLiteStorage, spec: ExperimentSpec) -> None:
+def ensure_workspace(storage: StorageInterface, spec: ExperimentSpec) -> None:
     """Make sure the workspace row exists. Idempotent."""
     with storage.open(spec.workspace_id) as s:
         if s.exists(Workspace, spec.workspace_id):
