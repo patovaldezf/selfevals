@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>selfevals · Análisis de arquitectura para escala</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --bg:#0b0c0f; --bg2:#11141a; --panel:#141821; --panel2:#1a1f2b;
+  --ink:#e6e8ee; --mute:#8a93a6; --line:#262c3a;
+  --acc:#7cf3a0; --acc2:#69d1ff; --warn:#ffd166; --bad:#ff7a90; --code:#cfe1ff;
+  --orange:#ffb86b; --violet:#caa8ff; --accent-line:linear-gradient(180deg,#7cf3a0,#69d1ff);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,"Inter","SF Pro Text",sans-serif}
+body{max-width:1180px;margin:0 auto;padding:32px 28px 96px}
+h1,h2,h3,h4{font-family:"SF Pro Display",ui-sans-serif,system-ui;letter-spacing:-0.01em;margin:0 0 .4em}
+h1{font-size:34px;line-height:1.1;margin-top:8px;max-width:960px}
+h2{font-size:24px;margin-top:48px;border-bottom:1px solid var(--line);padding-bottom:10px}
+h3{font-size:18px;margin-top:28px;color:var(--acc2)}
+h4{font-size:14px;color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-top:18px}
+p{margin:.4em 0 .9em;color:#d2d7e0}
+a{color:var(--acc2);text-decoration:none;border-bottom:1px dotted #3a4458}
+code,kbd{font-family:"JetBrains Mono","SF Mono",ui-monospace,Menlo,monospace;font-size:12.5px}
+code{background:#0e1117;color:var(--code);padding:1px 6px;border-radius:4px;border:1px solid #1f2532}
+ol,ul{margin:.4em 0 .9em;padding-left:22px}
+li{margin:.25em 0;color:#d2d7e0}
+table{width:100%;border-collapse:collapse;margin:8px 0 16px;font-size:13px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mute);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;background:#101421}
+tr:hover td{background:#11141d}
+pre{background:#0a0d12;border:1px solid #1c2230;border-radius:10px;padding:14px 16px;overflow-x:auto;color:#dbe3f1;line-height:1.5}
+pre code{background:none;border:none;padding:0;color:inherit}
+.lede{font-size:16px;color:#c4cad6;max-width:860px}
+.meta{color:var(--mute);font-size:13px;margin-top:6px}
+.tag{display:inline-block;padding:2px 8px;border-radius:999px;background:#1a2030;color:var(--acc2);border:1px solid #243046;font-size:11.5px;letter-spacing:.04em}
+.tag.warn{color:var(--warn);border-color:#4b3d18;background:#211a0d}
+.tag.bad{color:var(--bad);border-color:#4a2230;background:#1f1116}
+.tag.good{color:var(--acc);border-color:#1f4530;background:#0e1c14}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.row4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;position:relative}
+.card.accent{border-left:3px solid;border-image:var(--accent-line) 1}
+.card.bad{border-color:#44222d;background:#171117}
+.card.warn{border-color:#453a1e;background:#18160f}
+.kpi{display:flex;flex-direction:column;gap:4px}
+.kpi b{font-size:24px;color:var(--acc)}
+.kpi span{color:var(--mute);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
+.toc{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;background:var(--panel);padding:14px;border-radius:10px;border:1px solid var(--line);margin:16px 0 24px}
+.toc a{display:block;padding:6px 8px;border-radius:6px;border:none}
+.toc a:hover{background:#1a2030}
+.toc a .num{color:var(--mute);margin-right:8px;font-family:"JetBrains Mono",monospace;font-size:11px}
+.hl-a{color:var(--acc)} .hl-b{color:var(--acc2)} .hl-w{color:var(--warn)} .hl-r{color:var(--bad)}
+.diagram{background:#0a0d12;border:1px solid #1c2230;border-radius:10px;padding:14px 18px;color:#cdd6e6;font-family:"JetBrains Mono",monospace;font-size:12px;line-height:1.55;white-space:pre;overflow-x:auto}
+.flow{display:grid;gap:8px;margin:8px 0 12px}
+.step{display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start;padding:10px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:10px}
+.step .n{width:28px;height:28px;border-radius:50%;background:#0f1320;border:1px solid #2a3349;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--acc2)}
+.step b{color:#fff}
+.step small{color:var(--mute);display:block;margin-top:3px;font-size:12px}
+.bd{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.bd span{background:#0f1320;border:1px solid #232b3d;padding:3px 9px;border-radius:6px;font-size:11.5px;color:#c9d2e3;font-family:"JetBrains Mono",monospace}
+.quote{border-left:3px solid var(--acc2);background:#10141d;padding:10px 14px;margin:8px 0;color:#dbe6f3}
+.quote .src{display:block;color:var(--mute);font-size:11.5px;margin-top:4px;font-family:"JetBrains Mono",monospace}
+.footnote{color:var(--mute);font-size:12.5px;margin-top:6px}
+@media (max-width:860px){
+  body{padding:24px 18px 72px}
+  h1{font-size:28px}
+  .row,.row3,.row4,.toc{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="tag bad">selfevals · arquitectura de escala</span>
+  <h1>Por qué estos bloqueadores importan antes de llevar <span class="hl-b">selfevals</span> a millones de registros</h1>
+  <p class="lede">La arquitectura actual es buena para producto inicial: simple, honesta, modular y barata de operar. El problema no es que SQLite + JSON sea "malo"; el problema es que los caminos calientes de un sistema de evals son <b>búsquedas por experimento, run, thread, case, iteración y tiempo</b>. Hoy esos campos viven dentro de JSON opaco o se reconstruyen en memoria.</p>
+  <div class="meta">Fuentes locales: <code>src/selfevals/storage/*</code>, <code>src/selfevals/api/*</code>, <code>docs/deploy.md</code> · Fuentes externas: Langfuse, LangSmith, ClickHouse/OpenTelemetry docs.</div>
+</header>
+
+<nav class="toc">
+  <a href="#resumen"><span class="num">00</span>Resumen ejecutivo</a>
+  <a href="#actual"><span class="num">01</span>Arquitectura actual</a>
+  <a href="#bloqueadores"><span class="num">02</span>Bloqueadores</a>
+  <a href="#costos"><span class="num">03</span>Costos y beneficios</a>
+  <a href="#similares"><span class="num">04</span>Servicios similares</a>
+  <a href="#objetivo"><span class="num">05</span>Arquitectura objetivo</a>
+  <a href="#plan"><span class="num">06</span>Plan de migración</a>
+  <a href="#decision"><span class="num">07</span>Decisión</a>
+  <a href="#fuentes"><span class="num">08</span>Fuentes</a>
+</nav>
+
+<section id="resumen">
+<h2>00 · Resumen ejecutivo</h2>
+<div class="row4">
+  <div class="card kpi"><span>Modelo actual</span><b>SQLite</b><p>Un archivo local con WAL.</p></div>
+  <div class="card kpi"><span>Entidad central</span><b>JSON</b><p><code>entities.payload</code> guarda modelos Pydantic.</p></div>
+  <div class="card kpi"><span>Escala sana hoy</span><b>&lt;100</b><p>El código documenta Fase A como baja escala.</p></div>
+  <div class="card kpi"><span>Riesgo a millones</span><b style="color:var(--bad)">Alto</b><p>Scans, memoria y single-process.</p></div>
+</div>
+
+<div class="card accent" style="margin-top:18px">
+  <h3 style="margin-top:0">Conclusión directa</h3>
+  <p>No escalaría selfevals a millones de traces/iterations con la arquitectura actual. Sí la mantendría para MVP, demos, uso local, equipos pequeños y validación de producto. Antes de millones necesita una fase clara de <b>scale architecture</b>: Postgres para datos operacionales, tablas/indexes reales para entidades calientes, paginación SQL real, workers persistentes y broker externo para eventos live.</p>
+  <p>La buena noticia: el repo ya dejó puertas correctas. Existe <code>StorageInterface</code>, <code>WorkspaceScope</code>, object store para payloads grandes, WAL, concurrencia acotada y documentación que reconoce el límite. Esto reduce mucho el costo de migrar.</p>
+</div>
+</section>
+
+<section id="actual">
+<h2>01 · Arquitectura actual: qué resuelve bien y dónde se queda corta</h2>
+
+<div class="diagram">┌──────────────────────────────────────────────────────────────┐
+│ FastAPI API                                                  │
+│  ├─ queries.py reconstruye vistas para web                   │
+│  ├─ run_launcher.py lanza threads daemon en el proceso       │
+│  └─ broker.py fan-out SSE en memoria                         │
+│                                                              │
+│ SQLiteStorage                                                │
+│  ├─ entities(entity_type, id, workspace_id, timestamps, JSON)│
+│  ├─ objects(pointer, workspace_id, key, hash, size)          │
+│  └─ WAL + optimistic concurrency                             │
+│                                                              │
+│ Filesystem Object Store                                      │
+│  └─ payloads grandes, prompts/responses, blobs               │
+└──────────────────────────────────────────────────────────────┘</div>
+
+<div class="row">
+  <div class="card">
+    <h3 style="margin-top:0">Qué sí está bien</h3>
+    <ul>
+      <li><b>Agilidad de esquema:</b> añadir entidades Pydantic no requiere DDL.</li>
+      <li><b>Aislamiento por workspace:</b> <code>WorkspaceScope</code> obliga a operar dentro de un workspace.</li>
+      <li><b>Objeto store:</b> payloads grandes se pueden sacar del JSON inline.</li>
+      <li><b>Operación simple:</b> un binario/servicio + un archivo SQLite + volumen persistente.</li>
+      <li><b>Documentación honesta:</b> deploy advierte que no se debe escalar horizontalmente aún.</li>
+    </ul>
+  </div>
+  <div class="card warn">
+    <h3 style="margin-top:0">Dónde se rompe</h3>
+    <ul>
+      <li><b>Índices insuficientes:</b> solo cubren workspace, tipo y timestamps.</li>
+      <li><b>Campos de negocio dentro de JSON:</b> <code>experiment_id</code>, <code>run_id</code>, <code>thread_id</code>, <code>iteration</code>.</li>
+      <li><b>Consultas reconstruidas en Python:</b> la API carga colecciones y pagina después.</li>
+      <li><b>Jobs no durables:</b> si muere el proceso, muere el thread.</li>
+      <li><b>Live events no distribuibles:</b> broker en memoria por proceso.</li>
+    </ul>
+  </div>
+</div>
+</section>
+
+<section id="bloqueadores">
+<h2>02 · Bloqueadores principales</h2>
+
+<div class="flow">
+  <div class="step"><div class="n">1</div><div><b>Storage genérico en SQLite con JSON opaco</b><small><code>m0001_initial.py:28</code> crea <code>entities</code> con <code>payload TEXT</code>. Beneficio: schema agility. Costo: la base no sabe que existe <code>experiment_id</code>, <code>run_id</code> o <code>thread_id</code>.</small></div></div>
+  <div class="step"><div class="n">2</div><div><b>Consultas por <code>json_extract</code> sin índices</b><small><code>sqlite.py:175</code> convierte filtros desconocidos en <code>json_extract(payload, '$...')</code>. En volumen alto, eso fuerza scans por tipo/workspace.</small></div></div>
+  <div class="step"><div class="n">3</div><div><b>Endpoints cargan colecciones completas en memoria</b><small><code>queries.py:146</code>, <code>245</code>, <code>331</code>. Varias vistas reconstruyen resultados desde experimentos, iteraciones, traces y cases completos.</small></div></div>
+  <div class="step"><div class="n">4</div><div><b>Lookups críticos por <code>run_id</code> y <code>thread_id</code> escanean JSON</b><small><code>queries.py:588</code> y <code>639</code>. El comentario ya dice que no está indexado y asume tabla pequeña.</small></div></div>
+  <div class="step"><div class="n">5</div><div><b>Runs en threads daemon dentro del proceso</b><small><code>run_launcher.py:83</code>. No hay cola persistente, leasing, retry durable ni recuperación robusta tras restart.</small></div></div>
+  <div class="step"><div class="n">6</div><div><b>Broker SSE en memoria y single-process</b><small><code>broker.py:13</code>. Correcto para una máquina; insuficiente para múltiples API replicas.</small></div></div>
+  <div class="step"><div class="n">7</div><div><b>Deploy documenta el límite</b><small><code>docs/deploy.md:96</code> dice no escalar a múltiples máquinas por SQLite single-writer y broker per-process.</small></div></div>
+</div>
+
+<h3>Por qué esto importa en términos prácticos</h3>
+<table>
+<thead><tr><th>Pregunta del producto</th><th>Consulta que necesita</th><th>Hoy</th><th>Con millones</th></tr></thead>
+<tbody>
+<tr><td>Mostrar experimentos recientes con conteo de iteraciones</td><td><code>experiments</code> paginados + <code>count(iterations)</code> por experimento</td><td>Carga experimentos e iteraciones, cuenta en Python.</td><td>Latencia crece con el workspace completo, no con la página.</td></tr>
+<tr><td>Abrir un trace por <code>run_id</code></td><td><code>WHERE workspace_id=? AND run_id=?</code></td><td><code>json_extract(payload, '$.run.run_id')</code>.</td><td>Scan de traces del workspace; navegación lenta.</td></tr>
+<tr><td>Ver conversación por <code>thread_id</code></td><td><code>WHERE thread_id=? ORDER BY position</code></td><td>Scan JSON + sort en Python.</td><td>Cada thread view compite con toda la tabla.</td></tr>
+<tr><td>Resultados por case de la mejor iteración</td><td>Join/lookup entre cases, iterations, traces y grader results</td><td>Reconstrucción desde entidades completas.</td><td>Uso de memoria y CPU sube con dataset histórico.</td></tr>
+<tr><td>Ejecutar corridas largas</td><td>Job durable con estado, retry, lease y logs</td><td>Thread daemon en proceso.</td><td>Deploy/restart puede dejar trabajo perdido o estado ambiguo.</td></tr>
+</tbody>
+</table>
+</section>
+
+<section id="costos">
+<h2>03 · Costos y beneficios vs arquitectura actual</h2>
+
+<h3>La arquitectura actual compra velocidad de producto</h3>
+<table>
+<thead><tr><th>Decisión actual</th><th>Beneficio</th><th>Costo oculto</th><th>Cuándo deja de convenir</th></tr></thead>
+<tbody>
+<tr><td><code>entities</code> genérico + JSON</td><td>Agregar modelos sin migraciones; código simple; tests rápidos.</td><td>Campos de negocio no son indexables de forma natural; joins difíciles.</td><td>Cuando la UI y API dependen de filtros por <code>experiment_id</code>, <code>run_id</code>, <code>thread_id</code>.</td></tr>
+<tr><td>SQLite local</td><td>Instalación simple, cero infraestructura, backup con un archivo.</td><td>Single-writer, coordinación local, no multi-node real.</td><td>Cuando hay ingest concurrente, dashboard, workers y varios usuarios.</td></tr>
+<tr><td>Python reconstructivo en endpoints</td><td>Menos SQL y menos tablas al principio.</td><td>La latencia depende del tamaño total, no del resultado pedido.</td><td>Cuando el workspace tiene cientos de miles o millones de traces.</td></tr>
+<tr><td>Thread daemon para runs</td><td>Implementación mínima, sin Redis/Celery/Temporal.</td><td>No hay retry durable ni recuperación limpia tras caída.</td><td>Cuando un run cuesta dinero, tarda minutos y debe terminar sí o sí.</td></tr>
+<tr><td>Broker SSE en memoria</td><td>Live UI inmediata en un proceso.</td><td>No hay replay, fan-out cross-node ni continuidad tras restart.</td><td>Cuando hay más de una API replica o usuarios reconectándose.</td></tr>
+</tbody>
+</table>
+
+<h3>La arquitectura de escala compra predictibilidad</h3>
+<table>
+<thead><tr><th>Cambio propuesto</th><th>Beneficio</th><th>Costo nuevo</th><th>Tradeoff real</th></tr></thead>
+<tbody>
+<tr><td>Tablas relacionales calientes: <code>experiments</code>, <code>iterations</code>, <code>traces</code>, <code>eval_cases</code>, <code>decisions</code>, <code>spans</code></td><td>Queries indexadas, joins explícitos, constraints, paginación real.</td><td>Migraciones, compatibilidad y más código de storage.</td><td>Menos agilidad de esquema, mucha más capacidad operativa.</td></tr>
+<tr><td>Postgres para operacional</td><td>Multi-writer, conexiones concurrentes, locks robustos, backups gestionados.</td><td>Infra, pooling, migrations, observabilidad de DB.</td><td>Vale cuando selfevals deja de ser local-first y pasa a servicio multiusuario.</td></tr>
+<tr><td>ClickHouse u OLAP para traces/spans de alto volumen</td><td>Analítica rápida por columnas, agregaciones y filtros sobre millones/billones de filas.</td><td>Segundo datastore, ingest pipeline, consistencia eventual.</td><td>Ideal si traces y spans se vuelven el dataset dominante.</td></tr>
+<tr><td>Redis/NATS/queue persistente</td><td>Retries, backpressure, leases, workers separados, recovery.</td><td>Operar cola, manejar idempotencia.</td><td>Indispensable cuando los runs son largos/caros.</td></tr>
+<tr><td>S3/blob store para payloads grandes</td><td>DB liviana, archivos grandes fuera del camino caliente.</td><td>Lifecycle, permisos, signed URLs.</td><td>selfevals ya tiene la abstracción; falta moverlo a backend cloud.</td></tr>
+</tbody>
+</table>
+</section>
+
+<section id="similares">
+<h2>04 · Cómo funcionan servicios similares hoy</h2>
+<p>El patrón moderno en plataformas de evals/observabilidad LLM no es "todo en una tabla JSON". Separan datos por perfil de acceso: operacional, analítico, eventos live, cola y blobs.</p>
+
+<div class="row3">
+  <div class="card">
+    <h3 style="margin-top:0">Langfuse</h3>
+    <p>Su self-host describe dos contenedores de app: web y worker. Usa Postgres para workloads transaccionales, ClickHouse para traces/observations/scores, Redis/Valkey para queue/cache y S3/blob store para eventos, multimodal y exports.</p>
+    <div class="bd"><span>Postgres</span><span>ClickHouse</span><span>Redis</span><span>S3</span><span>Worker</span></div>
+    <p class="footnote">Además documenta que Docker Compose es low-scale y que producción/alta disponibilidad debe ir por Kubernetes o infraestructura cloud.</p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">LangSmith</h3>
+    <p>Su self-host incluye frontend, backend API, platform backend, queue, playground y ACE backend. Para storage: ClickHouse en traces/feedback, PostgreSQL en operacional, Redis/Valkey para queue/cache y blob storage recomendado para producción.</p>
+    <div class="bd"><span>Backend API</span><span>Queue</span><span>ClickHouse</span><span>Postgres</span><span>Blob</span></div>
+    <p class="footnote">El componente queue procesa traces/feedback de forma asíncrona y maneja retries ante errores de base de datos o conectividad temporal.</p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Observabilidad general</h3>
+    <p>OpenTelemetry/observability stacks tratan spans como datos de ingest alto y consulta analítica. En producción se usan collectors, colas/buffers, sampling y datastores analíticos. ClickHouse es común porque comprime y filtra columnas de forma eficiente.</p>
+    <div class="bd"><span>OTel</span><span>Collectors</span><span>Sampling</span><span>OLAP</span><span>Retention</span></div>
+    <p class="footnote">La idea clave: traces son evento/serie temporal, no solo entidad CRUD.</p>
+  </div>
+</div>
+
+<h3>Comparación directa</h3>
+<table>
+<thead><tr><th>Aspecto</th><th>selfevals hoy</th><th>Servicios similares</th><th>Implicación</th></tr></thead>
+<tbody>
+<tr><td>Storage operacional</td><td>SQLite local.</td><td>Postgres gestionado o externo.</td><td>Postgres habilita multi-writer, HA y scale-out de API.</td></tr>
+<tr><td>Traces/spans</td><td>Trace como JSON en <code>entities.payload</code>.</td><td>ClickHouse/OLAP para traces, observations, scores, feedback.</td><td>Consultas analíticas dejan de escanear JSON completo.</td></tr>
+<tr><td>Runs/evaluaciones</td><td>Thread daemon en proceso.</td><td>Queue + workers separados.</td><td>Trabajo durable, retry y backpressure.</td></tr>
+<tr><td>Eventos live</td><td>Broker in-memory por proceso.</td><td>Redis/pubsub/streams, NATS, Kafka o cola/event bus.</td><td>SSE/WebSockets pueden sobrevivir a múltiples replicas.</td></tr>
+<tr><td>Payloads grandes</td><td>Filesystem object store abstracto.</td><td>S3/GCS/Azure Blob/MinIO.</td><td>Aquí selfevals está bien encaminado.</td></tr>
+<tr><td>Escala horizontal</td><td>Documentada como no soportada.</td><td>Diseñada alrededor de K8s/cloud infra.</td><td>selfevals necesita separar estado del proceso.</td></tr>
+</tbody>
+</table>
+</section>
+
+<section id="objetivo">
+<h2>05 · Arquitectura objetivo para millones</h2>
+
+<div class="diagram">┌──────────────────────┐       ┌──────────────────────┐
+│ API / Web Backend    │       │ Worker Pool          │
+│ FastAPI replicas     │       │ RQ/Celery/Dramatiq   │
+│ stateless-ish        │       │ Temporal si workflows│
+└──────────┬───────────┘       └──────────┬───────────┘
+           │                              │
+           │ CRUD / control plane          │ jobs / retries / leases
+           ▼                              ▼
+┌──────────────────────┐       ┌──────────────────────┐
+│ Postgres             │       │ Redis / NATS / Kafka │
+│ workspaces           │       │ queue + live events  │
+│ experiments          │       │ replay/backpressure  │
+│ iterations/decisions │       └──────────┬───────────┘
+│ eval_cases           │                  │
+└──────────┬───────────┘                  │ ingest
+           │                              ▼
+           │ refs                         ┌──────────────────────┐
+           ▼                              │ ClickHouse / OLAP    │
+┌──────────────────────┐                  │ traces/spans/scores  │
+│ S3 / Blob Store      │                  │ metrics/funnels      │
+│ prompts/responses    │                  └──────────────────────┘
+│ media/export bundles │
+└──────────────────────┘</div>
+
+<h3>Tablas calientes mínimas</h3>
+<table>
+<thead><tr><th>Tabla</th><th>Columnas clave</th><th>Índices mínimos</th><th>Por qué</th></tr></thead>
+<tbody>
+<tr><td><code>experiments</code></td><td><code>id</code>, <code>workspace_id</code>, <code>name</code>, <code>state</code>, <code>created_at</code>, <code>updated_at</code>, <code>payload</code></td><td><code>(workspace_id, updated_at desc)</code>, <code>(workspace_id, state)</code></td><td>Listado y filtros de dashboard.</td></tr>
+<tr><td><code>iterations</code></td><td><code>id</code>, <code>workspace_id</code>, <code>experiment_id</code>, <code>iteration</code>, <code>primary_metric</code>, <code>state</code></td><td><code>(workspace_id, experiment_id, iteration)</code></td><td>Detalle, comparación, best iteration.</td></tr>
+<tr><td><code>eval_cases</code></td><td><code>id</code>, <code>workspace_id</code>, <code>experiment_id</code>, <code>name</code>, <code>holdout</code>, <code>feature</code></td><td><code>(workspace_id, experiment_id)</code></td><td>Cases por experimento sin JSON scan.</td></tr>
+<tr><td><code>traces</code></td><td><code>id</code>, <code>workspace_id</code>, <code>experiment_id</code>, <code>run_id</code>, <code>thread_id</code>, <code>eval_case_id</code>, <code>iteration</code>, <code>started_at</code></td><td><code>(workspace_id, run_id)</code>, <code>(workspace_id, thread_id)</code>, <code>(workspace_id, experiment_id, iteration)</code></td><td>Navegación, live snapshots, result grids.</td></tr>
+<tr><td><code>spans</code></td><td><code>trace_id</code>, <code>span_id</code>, <code>parent_id</code>, <code>kind</code>, <code>started_at</code>, <code>duration_ms</code>, <code>payload_ref</code></td><td><code>(workspace_id, trace_id)</code>, <code>(workspace_id, kind, started_at)</code></td><td>Trace viewer, funnels, latencia, errores.</td></tr>
+<tr><td><code>run_jobs</code></td><td><code>id</code>, <code>workspace_id</code>, <code>experiment_id</code>, <code>state</code>, <code>attempt</code>, <code>lease_until</code>, <code>last_error</code></td><td><code>(state, lease_until)</code>, <code>(workspace_id, experiment_id)</code></td><td>Durabilidad y recuperación.</td></tr>
+</tbody>
+</table>
+
+<div class="card accent">
+  <h3 style="margin-top:0">Regla de oro</h3>
+  <p>Mantener JSON para flexibilidad está bien si los campos críticos también están promovidos a columnas. El patrón sano es <b>columnas para acceso frecuente + payload JSON para detalle largo o compatibilidad</b>. No hace falta matar la agilidad; hace falta indexar lo que el producto consulta todos los días.</p>
+</div>
+</section>
+
+<section id="plan">
+<h2>06 · Plan de migración pragmático</h2>
+
+<div class="flow">
+  <div class="step"><div class="n">1</div><div><b>Medir primero</b><small>Crear dataset sintético de 1M traces/iterations y benchmarks de endpoints actuales. Objetivo: latencia p50/p95, memoria y queries por request.</small></div></div>
+  <div class="step"><div class="n">2</div><div><b>Promover campos calientes en SQLite</b><small>Antes de saltar a Postgres, se puede hacer una migración intermedia: columnas generadas o columnas normales para <code>experiment_id</code>, <code>run_id</code>, <code>thread_id</code>, <code>iteration</code>. Esto prueba el modelo de índices con menor blast radius.</small></div></div>
+  <div class="step"><div class="n">3</div><div><b>Reescribir queries calientes</b><small>Hacer que <code>list_experiments</code>, <code>experiment_cases</code>, <code>experiment_results</code>, <code>load_trace</code> y <code>load_thread</code> usen SQL paginado/indexado.</small></div></div>
+  <div class="step"><div class="n">4</div><div><b>Introducir <code>PostgresStorage</code></b><small>Implementar el contrato actual, pero con tablas explícitas para entidades calientes. Mantener <code>payload</code> para compatibilidad.</small></div></div>
+  <div class="step"><div class="n">5</div><div><b>Separar workers</b><small>Mover runs de threads daemon a cola persistente. Empezar con RQ/Dramatiq/Celery si basta; Temporal si los workflows necesitan reanudación, señales y pasos largos.</small></div></div>
+  <div class="step"><div class="n">6</div><div><b>Externalizar broker live</b><small>Redis streams/pubsub, NATS o Kafka según necesidad de replay. SSE debe poder recibir snapshot desde DB y live del bus.</small></div></div>
+  <div class="step"><div class="n">7</div><div><b>OLAP para traces si el volumen manda</b><small>Si traces/spans son la mayoría de datos, usar ClickHouse para analítica y mantener Postgres como control plane.</small></div></div>
+</div>
+
+<h3>Qué no haría todavía</h3>
+<ul>
+  <li>No partiría todo en microservicios antes de tener benchmarks.</li>
+  <li>No eliminaría el JSON payload; lo mantendría como compatibilidad y fuente de detalle.</li>
+  <li>No metería Kafka si Redis Streams o NATS resuelven el volumen real.</li>
+  <li>No migraría traces a ClickHouse antes de saber si Postgres con índices cubre el primer orden de magnitud.</li>
+</ul>
+</section>
+
+<section id="decision">
+<h2>07 · Decisión recomendada</h2>
+
+<div class="row">
+  <div class="card good">
+    <h3 style="margin-top:0">Mantener arquitectura actual si...</h3>
+    <ul>
+      <li>El producto sigue en fase local/MVP.</li>
+      <li>Hay pocos workspaces y decenas o cientos de experimentos.</li>
+      <li>Los runs son recuperables manualmente.</li>
+      <li>Una sola máquina con volumen persistente es suficiente.</li>
+      <li>El costo de infraestructura debe ser casi cero.</li>
+    </ul>
+  </div>
+  <div class="card bad">
+    <h3 style="margin-top:0">Migrar antes de millones si...</h3>
+    <ul>
+      <li>La UI debe abrir traces y threads en tiempo constante.</li>
+      <li>Hay ingest concurrente de muchos runs.</li>
+      <li>El servicio debe escalar horizontalmente.</li>
+      <li>Perder un run por restart es inaceptable.</li>
+      <li>Se necesitan dashboards analíticos sobre spans/scores.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="card accent" style="margin-top:18px">
+  <h3 style="margin-top:0">Frase corta para roadmap</h3>
+  <p><b>selfevals puede seguir con SQLite + JSON para producto inicial, pero la versión "millones" debe promover entidades calientes a tablas/indexes reales, mover runs a workers durables y sacar live events del proceso.</b></p>
+  <p>Esto no contradice la arquitectura actual; es su siguiente fase natural. El diseño actual ya insinúa esa ruta: <code>StorageInterface</code>, object store, comentarios de "cuando crezca", y deploy docs que dicen explícitamente dónde está la frontera.</p>
+</div>
+</section>
+
+<section id="fuentes">
+<h2>08 · Fuentes</h2>
+<h3>selfevals</h3>
+<ul>
+  <li><code>src/selfevals/storage/migrations/m0001_initial.py:28</code> — tabla genérica <code>entities</code> con <code>payload TEXT</code>.</li>
+  <li><code>src/selfevals/storage/sqlite.py:175</code> — <code>list_entities()</code> y filtros con <code>json_extract</code>.</li>
+  <li><code>src/selfevals/api/queries.py:146</code> — <code>list_experiments()</code> carga colecciones completas y pagina después.</li>
+  <li><code>src/selfevals/api/queries.py:245</code> — <code>experiment_cases()</code> y último trace por case.</li>
+  <li><code>src/selfevals/api/queries.py:331</code> — <code>experiment_results()</code> reconstruye resultados desde entidades.</li>
+  <li><code>src/selfevals/api/queries.py:588</code> y <code>639</code> — lookup por <code>run_id</code> y <code>thread_id</code> vía JSON.</li>
+  <li><code>src/selfevals/api/run_launcher.py:83</code> — runs en <code>threading.Thread(..., daemon=True)</code>.</li>
+  <li><code>src/selfevals/api/broker.py:13</code> — broker en memoria single-process.</li>
+  <li><code>docs/deploy.md:96</code> — advertencia explícita contra múltiples máquinas.</li>
+</ul>
+
+<h3>Servicios y arquitectura externa</h3>
+<ul>
+  <li><a href="https://langfuse.com/self-hosting">Langfuse Self Hosting</a> — Postgres, ClickHouse, Redis/Valkey, S3/blob store, worker y optimizaciones de ingest.</li>
+  <li><a href="https://langfuse.com/self-hosting/deployment/docker-compose">Langfuse Docker Compose</a> — Docker Compose como low-scale; producción/HA recomendada en Kubernetes o infra cloud.</li>
+  <li><a href="https://docs.langchain.com/langsmith/self-hosted">LangSmith Self-hosted</a> — frontend, backend, queue, ClickHouse para traces/feedback, Postgres operacional, Redis/cache/queue y blob storage.</li>
+  <li><a href="https://clickhouse.com/docs">ClickHouse Docs</a> — OLAP columnar para analítica de alto volumen.</li>
+  <li><a href="https://opentelemetry.io/docs/collector/">OpenTelemetry Collector Docs</a> — collectors, pipelines, receivers/processors/exporters para telemetría.</li>
+</ul>
+</section>
+
+</body>
+</html>
