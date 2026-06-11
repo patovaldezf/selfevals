@@ -41,8 +41,11 @@ this file records what _is_.
   judge, rubric template, optional `GraderCard`-driven calibration with
   auto-degrade to advisory when thresholds breach), `JudgePanelGrader`
   (N judges + consensus, declarable as `type: judge_panel`; default 3 /
-  majority). Calibration utilities compute precision/recall/F1/macro-F1
-  and high-risk false negatives.
+  majority), `FunnelGrader` (declarable as `type: funnel`: N sequential
+  levels, each extracting a `structured_output`/trace slice via a path
+  selector and scoring it with a builtin match or any nested grader, with
+  gate short-circuit and per-level failure modes). Calibration utilities
+  compute precision/recall/F1/macro-F1 and high-risk false negatives.
 - **OptimizationLoop**: `ManualProposer`, `GridProposer`,
   `RandomProposer`, `LLMProposer` (offline deterministic hypothesis mode
   by default; LLM mode via an injected `AgentAdapter`). Convergence
