@@ -516,6 +516,31 @@ def test_set_match_bad_threshold_rejected(tmp_path: Path) -> None:
         load_experiment_spec(_write_yaml(tmp_path, body))
 
 
+def test_confusion_grader_parsed_with_params(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [{"type": "confusion", "name": "category_class", "params": {"extract": "result.category"}}]
+    )
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    g = next(g for g in spec.graders if g.name == "category_class")
+    assert g.type == "confusion"
+    assert g.params == {"extract": "result.category"}
+
+
+def test_confusion_grader_defaults_empty_params(tmp_path: Path) -> None:
+    body = _body_with_graders([{"type": "confusion", "name": "cls"}])
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    g = next(g for g in spec.graders if g.name == "cls")
+    assert g.params == {}
+
+
+def test_confusion_bad_extract_path_rejected(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [{"type": "confusion", "name": "cls", "params": {"extract": "bad..path"}}]
+    )
+    with pytest.raises(LoaderError, match=r"params\.extract"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
 def test_judge_panel_grader_parsed(tmp_path: Path) -> None:
     body = _body_with_graders(
         [

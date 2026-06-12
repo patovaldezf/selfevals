@@ -275,6 +275,10 @@ def register_grader_specs(spec: ExperimentSpec) -> list[str]:
             register_grader(g_spec.name, _funnel_factory(g_spec.name, g_spec.params))
             registered.append(g_spec.name)
             continue
+        if g_spec.type == "confusion":
+            register_grader(g_spec.name, _confusion_factory(g_spec.name, g_spec.params))
+            registered.append(g_spec.name)
+            continue
         raise SelfEvalsUserError(f"unsupported grader type: {g_spec.type!r}")  # defensive
     return registered
 
@@ -337,6 +341,25 @@ def _set_match_factory(name: str, params: dict[str, object]) -> Callable[[], Gra
     def _build() -> Grader:
         return SetMatchGrader(
             name=name, gating=gating, threshold=threshold, case_sensitive=case_sensitive
+        )
+
+    return _build
+
+
+def _confusion_factory(name: str, params: dict[str, object]) -> Callable[[], Grader]:
+    from selfevals.graders.classification import ClassificationGrader
+
+    extract = str(params.get("extract", "label"))
+    expected_from_raw = params.get("expected_from")
+    expected_from = str(expected_from_raw) if expected_from_raw is not None else None
+    case_sensitive = bool(params.get("case_sensitive", False))
+
+    def _build() -> Grader:
+        return ClassificationGrader(
+            name=name,
+            extract=extract,
+            expected_from=expected_from,
+            case_sensitive=case_sensitive,
         )
 
     return _build
