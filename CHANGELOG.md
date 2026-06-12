@@ -7,6 +7,14 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-06-12
+
+Tanda de escala (SCALING_ROADMAP): la señal de grading deja de "puntuar" para
+volverse accionable y honesta a escala. Cuatro paquetes — honestidad de la
+métrica (SF-1), `ClassificationGrader` + matriz de confusión NxN (SF-2), worker
+concurrente con `run.parallelism` cableado (SF-3), y un gate de no-regresión en
+CI sobre un baseline auto-anclado al dataset (SF-4).
+
 ### Added
 
 - **Gate de no-regresión en CI + baseline anclado al dataset (SF-4 del
