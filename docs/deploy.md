@@ -107,13 +107,35 @@ curl -s localhost:8080/api/health
   enqueues a durable `RunJob` instead of starting a local daemon thread. Run
   `selfevals worker runs` in one or more long-lived worker processes to consume
   jobs with leases, retries, cancellation, and dead-lettering.
+  - **The worker and the API must point at the _same_ `SELFEVALS_REDIS_URL`,
+    DB number included** (`.../15` ≠ `.../0`). If they diverge — e.g. the API
+    enqueues on `/15` but the worker was started with `--redis-url
+redis://host:6380` (defaulting to `/0`) — the job sits in the stream, no one
+    consumes it, and the experiment stays in `draft` with no error. The fix is
+    to start both from the same env: `set -a && source .env && set +a`, then run
+    the worker **without** `--redis-url` so it inherits the same value. The
+    worker logs its bound `redis=…` target on startup, and the API logs a
+    `WARNING` when it enqueues a job with no worker consuming — check both lines
+    first if a run never leaves `draft`.
+  - The `202` response from `experiments/run` carries `dispatch`:
+    `"redis-worker"` (needs a live `selfevals worker runs`) or
+    `"in-process-thread"` (the API runs it itself, no worker required).
 - **Scaling.** With only SQLite and the in-memory broker, do **not** scale to
   multiple machines. With Postgres + Redis, read/API and SSE state can run across
   processes, and experiment execution can move to workers. Local/dev mode still
   falls back to in-process threads when Redis is absent.
 - **Local runtime profile.** During local scale testing, use runtime variables
-  (`SELFEVALS_STORAGE_URL`, `SELFEVALS_REDIS_URL`) rather than separate test-only
-  URLs. The checked-in `.env` carries the current local Postgres/Redis targets.
+  rather than separate test-only URLs. The checked-in `.env` carries the current
+  local Postgres/Redis targets:
+
+  | Variable                | `.env` value                                                | What it is                                                                                                                                                                                                         |
+  | ----------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+  | `SELFEVALS_STORAGE_URL` | `postgresql://selfevals:selfevals@localhost:5433/selfevals` | Durable storage. Postgres container on host port **5433** (remapped from 5432 to avoid colliding with other local stacks).                                                                                         |
+  | `SELFEVALS_REDIS_URL`   | `redis://localhost:6380/15`                                 | Live events **and** the durable run-job queue. Redis container on host port **6380**; DB **`/15`** is the run-queue namespace. The API and the worker must share this exact value (see "Redis run workers" above). |
+
+  The API serves on `:8010` in this profile. Bring up the containers with
+  `docker compose up -d postgres redis`, then `set -a && source .env && set +a`
+  before launching the API and worker so both inherit identical targets.
 
 ## NOT done here
 

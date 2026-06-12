@@ -225,6 +225,66 @@ def test_run_409_when_active(client: tuple[TestClient, str]) -> None:
     assert res.status_code == 409
 
 
+def test_run_dispatch_in_process_thread_without_redis(
+    client: tuple[TestClient, str],
+) -> None:
+    """With no Redis configured, the 202 advertises the in-process dispatch so
+    the caller knows it does not need a worker."""
+    c, _ = client
+    res = c.post(f"/api/workspaces/{WS}/experiments/run", json={"spec_inline": _inline_spec()})
+    assert res.status_code == 202
+    assert res.json()["dispatch"] == "in-process-thread"
+
+
+class _FakeRedisQueue:
+    """Queue double that records the enqueue without touching Redis.
+
+    `active_consumers` returns 0 to simulate the exact failure mode: a job
+    enqueued with no worker listening.
+    """
+
+    redis_label = "redis://localhost:6380/15"
+
+    def __init__(self) -> None:
+        self.enqueued: list[object] = []
+
+    def enqueue(self, job: object) -> None:
+        self.enqueued.append(job)
+
+    def active_consumers(self) -> int:
+        return 0
+
+
+def test_run_dispatch_redis_worker_and_orphan_warning(
+    client: tuple[TestClient, str],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """With a Redis queue but no worker consuming, the 202 reports the
+    redis-worker dispatch AND the launcher logs the orphan-job warning — the
+    signal that was missing when an experiment silently stuck in draft."""
+    import logging
+
+    from selfevals.api import run_launcher
+
+    fake = _FakeRedisQueue()
+    monkeypatch.setattr(run_launcher, "configured_run_queue", lambda: fake)
+
+    c, _ = client
+    with caplog.at_level(logging.WARNING, logger="selfevals.api.run_launcher"):
+        res = c.post(
+            f"/api/workspaces/{WS}/experiments/run", json={"spec_inline": _inline_spec()}
+        )
+    assert res.status_code == 202
+    assert res.json()["dispatch"] == "redis-worker"
+    assert fake.enqueued, "job should have been enqueued to the redis queue"
+
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("no worker is consuming" in m for m in warnings)
+    # The warning names the redis target (with DB) and never leaks credentials.
+    assert any("redis://localhost:6380/15" in m for m in warnings)
+
+
 def test_run_with_dataset_id_override(client: tuple[TestClient, str]) -> None:
     """A standalone dataset (uploaded via the datasets API) can be selected at
     launch via `dataset_id`, without editing the spec's `dataset:` block."""

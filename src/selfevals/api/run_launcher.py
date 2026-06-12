@@ -101,7 +101,25 @@ def launch_experiment_run(
     queue = configured_run_queue()
     if queue is not None:
         queue.enqueue(job)
+        dispatch = "redis-worker"
+        # A job enqueued with no worker consuming it sits in the stream
+        # silently and the experiment never leaves `draft`. Surface that the
+        # moment it happens instead of forcing an `XINFO GROUPS` autopsy.
+        # `active_consumers` counts only live consumers (by idle), so a crashed
+        # worker's ghost registration doesn't suppress the warning. It returns
+        # None on any Redis error and never fails the launch. False positive to
+        # accept: a lone worker busy in a >60s job looks idle, so a launch in
+        # that window may warn even though a worker exists — informational only.
+        if queue.active_consumers() == 0:
+            logger.warning(
+                "experiment %s queued to redis (%s) but no worker is consuming — "
+                "start one with 'selfevals worker runs' (and make sure it points at "
+                "the same SELFEVALS_REDIS_URL, including the DB number)",
+                spec.experiment.id,
+                queue.redis_label,
+            )
     else:
+        dispatch = "in-process-thread"
         thread = threading.Thread(
             target=_run_in_thread,
             kwargs={"storage_url": storage_url, "workspace_id": spec.workspace_id, "job_id": job.id},
@@ -115,6 +133,7 @@ def launch_experiment_run(
         workspace_id=spec.workspace_id,
         state=str(spec.experiment.state),
         job_id=job.id,
+        dispatch=dispatch,
     )
 
 

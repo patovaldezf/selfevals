@@ -310,6 +310,11 @@ The top-level `graders:` list configures graders the loader instantiates
 directly. Each entry is a mapping. The loader supports these `type`s:
 `deterministic`, `set_match`, `llm_judge`, `judge_panel`, and `funnel`.
 
+> For a single runnable spec that wires up one grader of **every** type and a
+> funnel exercising **every** match kind — all offline — copy the kitchen-sink
+> example: `selfevals examples copy showcase`. It's the reference for how each
+> grader below is configured in YAML.
+
 ```yaml
 graders:
   - type: deterministic

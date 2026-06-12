@@ -574,6 +574,11 @@ class RunExperimentResponse(BaseModel):
     queued → running → completed/aborted) to follow progress. `run_id` is
     null here — trace run ids are minted per repetition inside the loop and
     surface on the iterations once they exist.
+
+    `dispatch` tells the caller how the run executes: `redis-worker` means it
+    was enqueued and needs a live `selfevals worker runs` to make progress;
+    `in-process-thread` means the API is running it on a local daemon thread
+    (no worker required).
     """
 
     experiment_id: str
@@ -581,6 +586,7 @@ class RunExperimentResponse(BaseModel):
     state: str
     run_id: str | None = None
     job_id: str | None = None
+    dispatch: str = "in-process-thread"
 
 
 class SplitAllocationView(BaseModel):

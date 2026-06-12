@@ -1,0 +1,146 @@
+# Kitchen-sink example experiment — the catalog of every grading surface.
+#
+# Where `example_pingpong.yaml` is the minimal "hello world", this spec wires up
+# one grader of *every* type and a funnel with *every* match kind, all driven by
+# a deterministic offline agent (`selfevals.examples.showcase:run`). Nothing here
+# hits the network or needs an API key — `sandbox: mock` + the grid proposer make
+# it fully reproducible in CI.
+#
+# Run it with:
+#   selfevals run evals/experiments/example_showcase.yaml --no-persist
+#
+# Copy a standalone, runnable tree (yaml + jsonl) with:
+#   selfevals examples copy showcase --to ./my-evals
+
+workspace: ws_01HZZZZZZZZZZZZZZZZZZZZZZZ
+
+experiment:
+  name: showcase baseline
+  goal: exercise every grader and funnel match kind with a deterministic agent
+  mode: handoff
+  taxonomy:
+    target_features:
+      - commerce.product_resolution
+    dataset_types:
+      - capability
+  # Placeholder refs: with the inline/path `dataset:` block below, launch
+  # materializes a real Dataset and rewrites these. Swap for `dataset: { ref: ds_xxx }`
+  # to reuse a persisted one (see `selfevals dataset create`).
+  datasets:
+    optimization: { id: ds_showcase, version: 1 }
+  target:
+    primary: { name: pass@1, operator: ">=", value: 0.5 }
+  editable:
+    prompt: true
+    model_params: true
+  frozen:
+    fleet: { id: flt_demo }
+    agents:
+      - { id: ag_demo }
+    datasets:
+      - { id: ds_showcase }
+  # Grid proposer sweeps the search space exhaustively; here it walks `level`
+  # from 0.0 (incomplete resolution → funnel gate fails) to 1.0 (all levels pass),
+  # so you can watch the score improve across iterations.
+  proposer:
+    strategy: grid
+  search_space:
+    model_params:
+      level: [0.0, 1.0]
+  run:
+    sandbox: mock
+    max_iterations: 4
+    # persist_traces: all → keep every trace so you can inspect the agent's
+    # structured_output and the tool-call spans the funnel reads.
+    persist_traces: all
+    convergence:
+      min_delta: 1.0e-6
+      patience: 10
+  reliability:
+    metrics:
+      - pass@1
+  # Continuous error-analysis loop: when an iteration's fail rate clears the
+  # threshold, selfevals stages a bundle the `error-analysis` skill can act on.
+  error_analysis:
+    enabled: true
+    taxonomy: workspace
+    trigger:
+      when: fail_rate_above
+      threshold: 0.10
+    scope: failed_only
+
+# Cases live in a JSONL alongside this spec. Each case pins which graders run on
+# it (`graders: [...]`) and carries a rich `expected` (must_include /
+# must_not_include / aliases) the deterministic + set_match graders read.
+dataset:
+  cases_path: ../datasets/showcase.jsonl
+
+# The agent under test. A real project points this at its own callable; the
+# example agent fabricates a structured_output + tool calls deterministically.
+agent:
+  entrypoint: selfevals.examples.showcase:run
+
+# One grader of every type. The funnel references `quality_panel` by name
+# (`match: { grader: ... }`); declaration order doesn't matter — funnel grader
+# resolution is lazy.
+graders:
+  # 1. deterministic — rule-based pass/fail over `expected`
+  #    (must_include / must_not_include, etc.).
+  - type: deterministic
+    name: rules
+
+  # 2. set_match — set-vs-set scoring: structured_output["detected"] against
+  #    expected.must_include, normalized through the case's `aliases`.
+  #    gating=completeness + threshold=1.0 → "must detect everything required".
+  - type: set_match
+    name: detected_set
+    params: { gating: completeness, threshold: 1.0 }
+
+  # 3. judge_panel — N independent judges with a consensus rule. Runs offline
+  #    against the deterministic `judge` callable so the verdict is stable.
+  #    Drop `judge_entrypoint` to let the agent itself judge (needs a real LLM).
+  - type: judge_panel
+    name: quality_panel
+    rubric: "Did the agent resolve every requested product?"
+    n_judges: 3
+    consensus: majority
+    judge_entrypoint: selfevals.examples.showcase:judge
+
+  # 4. funnel — N sequential levels composed into one breakdown tree. The first
+  #    level (`found`) is a GATE: if no candidates were produced (level < 0.5),
+  #    its children are skipped (SKIPPED, weight 0) — the short-circuit. Each
+  #    child demonstrates a different builtin match kind, plus one `{grader: ...}`
+  #    reference and one `feeds_extract` (inject the extracted slice as a
+  #    synthetic "detected" so a nested set_match can read it).
+  - type: funnel
+    name: resolution_funnel
+    params:
+      levels:
+        - key: found                # gate: must have produced candidates
+          extract: candidates       # path selector over structured_output
+          gate: true
+          failure_mode: no_candidates
+          match: { kind: exists }
+          children:
+            - key: top_is_sku42     # by_index: candidates[].id resolves a list, index 0
+              extract: candidates[].id
+              match: { kind: by_index, index: 0, value: "sku-42" }
+            - key: resolved_ok      # by_key: resolved is a dict, resolved["status"] == "ok"
+              extract: resolved
+              match: { kind: by_key, key: status, value: ok }
+            - key: right_category   # equals: scalar comparison
+              extract: category
+              match: { kind: equals, value: electronics }
+            - key: used_search      # tool_called: reads the trace, not structured_output
+              extract: ""
+              match: { kind: tool_called, tool: search }
+            - key: has_tool_span    # span_exists: any span of this kind in the trace
+              extract: ""
+              match: { kind: span_exists, span_kind: tool_call }
+            - key: set_inside       # set_match nested inside the funnel...
+              extract: detected
+              feeds_extract: true   # ...fed via a synthetic "detected" slot
+              match: { kind: set_match, gating: completeness }
+            - key: panel_ref        # reference another declared grader by name
+              extract: ""
+              match: { grader: quality_panel }

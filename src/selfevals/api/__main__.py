@@ -38,12 +38,22 @@ def main(argv: list[str] | None = None) -> int:
         )
         raise SystemExit(2) from exc
 
+    # uvicorn's default log config sets `disable_existing_loggers`, which
+    # silences `selfevals.*` loggers — including the run-launcher's orphan-job
+    # WARNING. Configure the root logger ourselves and tell uvicorn to leave
+    # logging alone (`log_config=None`) so app and server logs share one stream.
+    import logging
+
+    level = os.environ.get("SELFEVALS_LOG_LEVEL", "INFO").upper()
+    logging.basicConfig(level=level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+
     uvicorn.run(
         "selfevals.api.app:build_app",
         host=args.host,
         port=args.port,
         reload=args.reload,
         factory=True,
+        log_config=None,
     )
     return 0
 

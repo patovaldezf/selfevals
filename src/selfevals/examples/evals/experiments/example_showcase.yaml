@@ -1,0 +1,113 @@
+# Kitchen-sink example: every grader type + every funnel match kind, offline.
+#
+# Copy it with:
+#   selfevals examples copy showcase
+# Then run:
+#   selfevals run evals/experiments/example_showcase.yaml --no-persist
+
+workspace: ws_01HZZZZZZZZZZZZZZZZZZZZZZZ
+
+experiment:
+  name: showcase baseline
+  goal: exercise every grader and funnel match kind with a deterministic agent
+  mode: handoff
+  taxonomy:
+    target_features:
+      - commerce.product_resolution
+    dataset_types:
+      - capability
+  datasets:
+    optimization: { id: ds_showcase, version: 1 }
+  target:
+    primary: { name: pass@1, operator: ">=", value: 0.5 }
+  editable:
+    prompt: true
+    model_params: true
+  frozen:
+    fleet: { id: flt_demo }
+    agents:
+      - { id: ag_demo }
+    datasets:
+      - { id: ds_showcase }
+  proposer:
+    strategy: grid
+  search_space:
+    model_params:
+      level: [0.0, 1.0]
+  run:
+    sandbox: mock
+    max_iterations: 4
+    persist_traces: all
+    convergence:
+      min_delta: 1.0e-6
+      patience: 10
+  reliability:
+    metrics:
+      - pass@1
+  error_analysis:
+    enabled: true
+    taxonomy: workspace
+    trigger:
+      when: fail_rate_above
+      threshold: 0.10
+    scope: failed_only
+
+dataset:
+  cases_path: ../datasets/showcase.jsonl
+
+agent:
+  entrypoint: selfevals.examples.showcase:run
+
+graders:
+  # 1. deterministic — rules over `expected` (must_include / must_not_include).
+  - type: deterministic
+    name: rules
+
+  # 2. set_match — structured_output["detected"] vs expected.must_include (+aliases).
+  - type: set_match
+    name: detected_set
+    params: { gating: completeness, threshold: 1.0 }
+
+  # 3. judge_panel — 3 deterministic judges, majority. Runs offline via the
+  #    `judge` callable shipped alongside the agent.
+  - type: judge_panel
+    name: quality_panel
+    rubric: "Did the agent resolve every requested product?"
+    n_judges: 3
+    consensus: majority
+    judge_entrypoint: selfevals.examples.showcase:judge
+
+  # 4. funnel — N sequential levels, one per match kind, with a gate that
+  #    short-circuits its children when no candidates are found (level < 0.5).
+  - type: funnel
+    name: resolution_funnel
+    params:
+      levels:
+        - key: found
+          extract: candidates
+          gate: true
+          failure_mode: no_candidates
+          match: { kind: exists }
+          children:
+            - key: top_is_sku42
+              extract: candidates[].id
+              match: { kind: by_index, index: 0, value: "sku-42" }
+            - key: resolved_ok
+              extract: resolved
+              match: { kind: by_key, key: status, value: ok }
+            - key: right_category
+              extract: category
+              match: { kind: equals, value: electronics }
+            - key: used_search
+              extract: ""
+              match: { kind: tool_called, tool: search }
+            - key: has_tool_span
+              extract: ""
+              match: { kind: span_exists, span_kind: tool_call }
+            - key: set_inside
+              extract: detected
+              feeds_extract: true
+              match: { kind: set_match, gating: completeness }
+            - key: panel_ref
+              extract: ""
+              match: { grader: quality_panel }

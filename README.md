@@ -80,7 +80,7 @@ SQLite remains the default. For the local Postgres + Redis runtime profile,
 use the repository `.env` values:
 
 ```bash
-docker compose up -d postgres
+docker compose up -d postgres redis
 set -a && source .env && set +a
 selfevals serve --no-web
 selfevals worker runs
@@ -88,6 +88,13 @@ selfevals worker runs
 
 `SELFEVALS_STORAGE_URL` points at the local Postgres container. `SELFEVALS_REDIS_URL`
 points at the local Redis container on `localhost:6380`.
+
+> **Worker and API must share the same `SELFEVALS_REDIS_URL`, DB number
+> included.** Sourcing `.env` for both (as above) guarantees it — don't pass a
+> partial `--redis-url` to the worker. If they land on different Redis DBs the
+> job enqueues but nothing consumes it and the experiment stays stuck in
+> `draft`. See [docs/deploy.md](docs/deploy.md#redis-run-workers) for the
+> troubleshooting line.
 
 ## Quickstart
 
@@ -111,6 +118,14 @@ Expected shape:
 
 Top failure modes:
 - missing_required_substring
+```
+
+Want to see every grader and funnel match kind in one place? Copy the
+kitchen-sink example — also offline, no key:
+
+```bash
+selfevals examples copy showcase
+selfevals run evals/experiments/example_showcase.yaml --no-persist
 ```
 
 To persist runs and inspect them later:

@@ -31,6 +31,9 @@ class _FakeQueue:
     def requeue(self, job: RunJob) -> None:
         self.requeued.append(job)
 
+    def active_consumers(self) -> int:
+        return 1
+
 
 def _inline_spec(*, max_iterations: int = 1) -> dict[str, Any]:
     raw = yaml.safe_load(REPO_EXAMPLE.read_text())

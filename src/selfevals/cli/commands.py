@@ -43,7 +43,6 @@ from selfevals.storage.factory import (
 )
 from selfevals.storage.interface import ListFilter, StorageInterface
 from selfevals.storage.seed import seed_failure_taxonomy, seed_workspace
-from selfevals.worker.runs import RunWorkerConfig, run_worker
 
 if TYPE_CHECKING:
     from selfevals.schemas._base import BaseEntity
@@ -247,7 +246,7 @@ def cmd_skills_path(args: argparse.Namespace) -> int:
     return 0
 
 
-_EXAMPLE_NAMES = {"pingpong"}
+_EXAMPLE_NAMES = {"pingpong", "showcase"}
 
 
 def cmd_examples_copy(args: argparse.Namespace) -> int:
@@ -268,7 +267,7 @@ def cmd_examples_copy(args: argparse.Namespace) -> int:
     print("")
     print("Run:")
     print(
-        f"  selfevals run {target_root / 'evals' / 'experiments' / 'example_pingpong.yaml'} --no-persist"
+        f"  selfevals run {target_root / 'evals' / 'experiments' / f'example_{name}.yaml'} --no-persist"
     )
     return 0
 
@@ -628,11 +627,25 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 
 def cmd_worker_runs(args: argparse.Namespace) -> int:
+    import logging
+    import os
+
+    # Imported lazily: worker.runs → api.run_launcher → cli → commands forms an
+    # import cycle at module load. Deferring it to call time breaks the cycle.
+    from selfevals.worker.runs import RunWorkerConfig, run_worker
+
     redis_url = args.redis_url
     if not redis_url:
         raise SelfEvalsUserError(
             "run worker requires Redis: pass --redis-url or set SELFEVALS_REDIS_URL"
         )
+    # The worker is a long-lived process whose boot line is the only signal of
+    # which Redis DB it bound to. The CLI configures no logging by default, so
+    # without this those INFO lines are dropped on the floor. Only install a
+    # handler if the root logger has none, to avoid clobbering external config.
+    if not logging.getLogger().handlers:
+        level = os.environ.get("SELFEVALS_LOG_LEVEL", "INFO").upper()
+        logging.basicConfig(level=level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     storage_url = resolve_storage_url(args.db)
     processed = run_worker(
         RunWorkerConfig(
