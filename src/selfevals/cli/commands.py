@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from selfevals._errors import SelfEvalsUserError
 from selfevals.cli import _friendly
+from selfevals.graders._confusion import ConfusionReport
 from selfevals.optimization.aggregator import FunnelNode, IterationAggregate
 from selfevals.optimization.loop import (
     IterationOutcome,
@@ -397,6 +398,13 @@ def _reconstruct_result(
                 key: FunnelNode.from_dict(node)
                 for key, node in record.metrics.funnel.items()
             },
+            # Rehydrate the persisted confusion matrix so a reconstructed result
+            # carries the same NxN matrix a live run does (reporter renders it).
+            confusion=(
+                ConfusionReport.from_dict(record.metrics.confusion)
+                if record.metrics.confusion is not None
+                else None
+            ),
         )
         decision = decisions.get(record.iteration)
         if decision is None:

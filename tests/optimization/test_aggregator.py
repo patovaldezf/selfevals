@@ -559,3 +559,95 @@ def test_repetition_error_marks_outcome_errored_even_without_grade(tmp_path: Pat
     # Errored case excluded → 1 pass / 1 scored = 1.0; error_rate = 1/2.
     assert agg.primary_value == 1.0
     assert agg.error_rate == 0.5
+
+
+def _classification_breakdown(expected: str, predicted: str) -> BreakdownNode:
+    """Mirror `ClassificationGrader._build_breakdown`: a `classification` root
+    over a single `cell:<expected>-><predicted>` child."""
+    matched = expected == predicted
+    cell = BreakdownNode(
+        key=f"cell:{expected}->{predicted}",
+        label=GradeLabel.PASS if matched else GradeLabel.FAIL,
+        score=1.0 if matched else 0.0,
+        weight=1.0,
+    )
+    return BreakdownNode(
+        key="classification",
+        label=cell.label,
+        score=cell.score,
+        weight=1.0,
+        children=[cell],
+    )
+
+
+def test_confusion_none_when_no_classification_cells() -> None:
+    agg = aggregate_iteration(case_outcomes=[_outcome([GradeLabel.PASS])])
+    assert agg.confusion is None
+
+
+def test_confusion_rollup_builds_matrix() -> None:
+    outcomes = [
+        _outcome(
+            [GradeLabel.PASS],
+            breakdowns=[_classification_breakdown("a", "a")],
+        ),
+        _outcome(
+            [GradeLabel.FAIL],
+            breakdowns=[_classification_breakdown("a", "b")],
+        ),
+        _outcome(
+            [GradeLabel.PASS],
+            breakdowns=[_classification_breakdown("b", "b")],
+        ),
+    ]
+    agg = aggregate_iteration(case_outcomes=outcomes)
+    assert agg.confusion is not None
+    matrix = agg.confusion.to_nested()
+    assert matrix == {"a": {"a": 1, "b": 1}, "b": {"b": 1}}
+    assert agg.confusion.n_pairs == 3
+    # class 'b': predicted 2 (a->b, b->b), actual 1 → precision 1/2, recall 1.
+    assert agg.confusion.per_label_recall["b"] == 1.0
+
+
+def test_confusion_rollup_finds_cells_grafted_under_turns() -> None:
+    # Conversation cases graft the `cell:` node under a `turn_N` node (the
+    # `classification` root is dropped by the multi-turn collapse). The rollup
+    # must recurse to find it.
+    grafted = BreakdownNode(
+        key="conversation",
+        label=GradeLabel.FAIL,
+        score=0.0,
+        children=[
+            BreakdownNode(
+                key="turn_0",
+                weight=0.0,
+                children=[
+                    BreakdownNode(
+                        key="cell:full_order->refund",
+                        label=GradeLabel.FAIL,
+                        score=0.0,
+                    )
+                ],
+            )
+        ],
+    )
+    agg = aggregate_iteration(
+        case_outcomes=[_outcome([GradeLabel.FAIL], breakdowns=[grafted])]
+    )
+    assert agg.confusion is not None
+    assert agg.confusion.to_nested() == {"full_order": {"refund": 1}}
+
+
+def test_confusion_report_serialization_round_trip() -> None:
+    from selfevals.graders._confusion import ConfusionReport
+
+    outcomes = [
+        _outcome([GradeLabel.PASS], breakdowns=[_classification_breakdown("a", "a")]),
+        _outcome([GradeLabel.FAIL], breakdowns=[_classification_breakdown("b", "a")]),
+    ]
+    agg = aggregate_iteration(case_outcomes=outcomes)
+    assert agg.confusion is not None
+    rebuilt = ConfusionReport.from_dict(agg.confusion.to_dict())
+    assert rebuilt.confusion == agg.confusion.confusion
+    assert rebuilt.per_label_f1 == agg.confusion.per_label_f1
+    assert rebuilt.macro_f1 == agg.confusion.macro_f1

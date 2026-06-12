@@ -489,6 +489,7 @@ class OptimizationLoop:
             ),
             failure_mode_counts=dict(aggregate.failure_mode_counts),
             funnel={key: node.to_dict() for key, node in aggregate.funnel.items()},
+            confusion=(aggregate.confusion.to_dict() if aggregate.confusion is not None else None),
         )
         variant_id = new_prefixed_id("var")
         # Only the traces actually written to storage (see `_maybe_persist_trace`).

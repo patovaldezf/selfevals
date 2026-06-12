@@ -19,7 +19,9 @@ from dataclasses import dataclass, field
 from statistics import mean
 from typing import TYPE_CHECKING, Any
 
+from selfevals.graders._confusion import ConfusionReport, confusion_from_pairs
 from selfevals.graders.base import BreakdownNode, GradeLabel, GradeResult
+from selfevals.graders.classification import parse_cell_key
 from selfevals.schemas.trace import LLMCallSpan
 
 if TYPE_CHECKING:
@@ -188,6 +190,12 @@ class IterationAggregate:
     pass@1 denominator, so error_rate is the separate honest signal that says
     "X% of cases never produced a verdict" rather than silently dragging pass@1
     toward 0. 0.0 when nothing errored or there are no cases."""
+    confusion: ConfusionReport | None = None
+    """Aggregated NxN confusion matrix + per-class P/R/F1 + macro-F1, built from
+    every `ClassificationGrader` cell (`cell:<expected>-><predicted>` breakdown
+    keys) across all cases and repetitions this iteration. `None` when no
+    `confusion` grader ran — additive and informational, never affects the
+    primary/guardrail/reliability metrics or the decision. See `_rollup_confusion`."""
 
     @property
     def fail_rate(self) -> float:
@@ -383,6 +391,41 @@ def _rollup_funnel(case_outcomes: list[CaseOutcome]) -> dict[str, FunnelNode]:
     return {key: acc.freeze() for key, acc in roots.items()}
 
 
+def _collect_cell_pairs(node: BreakdownNode, pairs: list[tuple[str, str]]) -> None:
+    """Recursively gather `(expected, predicted)` pairs from `cell:` nodes.
+
+    The cell node can sit directly under the `classification` root (single-turn)
+    or be grafted under a `turn_N` node by the multi-turn collapse, so the walk
+    must recurse rather than only inspect top-level keys.
+    """
+    pair = parse_cell_key(node.key)
+    if pair is not None:
+        pairs.append(pair)
+    for child in node.children:
+        _collect_cell_pairs(child, pairs)
+
+
+def _rollup_confusion(case_outcomes: list[CaseOutcome]) -> ConfusionReport | None:
+    """Build the iteration's NxN confusion matrix from classification cells.
+
+    Each `ClassificationGrader` grade carries a breakdown with a
+    `cell:<expected>-><predicted>` node (one per repetition), nested under a
+    `classification` root or — for conversation cases — grafted under a `turn_N`
+    node. This walks every case's breakdown tree, parses those keys back into
+    `(expected, predicted)` pairs, and feeds them to the shared
+    `confusion_from_pairs` — the same pure helper the calibration report uses, so
+    the F1 formula is defined once. Returns `None` when no cell was emitted (no
+    `confusion` grader ran), so the reporter omits the section.
+    """
+    pairs: list[tuple[str, str]] = []
+    for outcome in case_outcomes:
+        for node in outcome.breakdowns:
+            _collect_cell_pairs(node, pairs)
+    if not pairs:
+        return None
+    return confusion_from_pairs(pairs)
+
+
 def aggregate_iteration(
     *,
     case_outcomes: list[CaseOutcome],
@@ -445,6 +488,7 @@ def aggregate_iteration(
         per_grader_pass_rate=per_grader_pass_rate,
         primary_grader=primary_grader,
         error_rate=error_rate,
+        confusion=_rollup_confusion(case_outcomes),
     )
 
 
