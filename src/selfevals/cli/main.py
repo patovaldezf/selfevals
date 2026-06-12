@@ -12,7 +12,7 @@ import sys
 from collections.abc import Sequence
 
 from selfevals._errors import SelfEvalsUserError
-from selfevals.cli import analyze_commands, commands, dataset_commands
+from selfevals.cli import analyze_commands, baseline_commands, commands, dataset_commands
 from selfevals.cli._help import make_subparser
 from selfevals.version import __version__
 
@@ -121,6 +121,104 @@ def _build_parser() -> argparse.ArgumentParser:
     p_iter_list.add_argument("workspace_id")
     p_iter_list.add_argument("experiment_id")
     p_iter_list.set_defaults(func=commands.cmd_iteration_list)
+
+    # --- baseline: dataset-anchored regression baseline -----------------------
+    p_baseline = make_subparser(
+        sub,
+        "baseline",
+        help_text="Inspect or set a dataset's regression baseline.",
+        examples=[
+            "selfevals baseline show ws_01HZZZ... --dataset ds_01HXXX...",
+            "selfevals baseline set ws_01HZZZ... --dataset ds_01HXXX... --iteration itr_01H...",
+        ],
+    )
+    baseline_sub = p_baseline.add_subparsers(dest="baseline_command", required=True)
+    p_bl_show = baseline_sub.add_parser(
+        "show",
+        help="Show a dataset's current regression baseline.",
+        description=(
+            "Print the fixed baseline a dataset is graded against. The first run "
+            "over a dataset sets this automatically; this only inspects it."
+        ),
+        epilog="Example:\n  selfevals baseline show ws_01HZZZ... --dataset ds_01HXXX...",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_bl_show.add_argument("workspace_id")
+    p_bl_show.add_argument("--dataset", required=True, help="Dataset id (ds_...).")
+    p_bl_show.set_defaults(func=baseline_commands.cmd_baseline_show)
+    p_bl_set = baseline_sub.add_parser(
+        "set",
+        help="Explicitly (re-)baseline a dataset from an iteration.",
+        description=(
+            "Pin an iteration as the dataset's regression baseline, OVERWRITING "
+            "any existing one. Use this to raise the bar on purpose — the "
+            "automatic baseline on first run never overwrites."
+        ),
+        epilog=(
+            "Example:\n  selfevals baseline set ws_01HZZZ... "
+            "--dataset ds_01HXXX... --iteration itr_01H..."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_bl_set.add_argument("workspace_id")
+    p_bl_set.add_argument("--dataset", required=True, help="Dataset id (ds_...).")
+    p_bl_set.add_argument(
+        "--iteration", required=True, help="Iteration id (itr_...) to pin as the baseline."
+    )
+    p_bl_set.set_defaults(func=baseline_commands.cmd_baseline_set)
+
+    # --- regression: gate an iteration against the dataset baseline -----------
+    p_regression = make_subparser(
+        sub,
+        "regression",
+        help_text="Gate a run against its dataset's baseline (CI exit codes).",
+        examples=[
+            "selfevals regression check ws_01HZZZ... --dataset ds_01H... --iteration itr_01H...",
+        ],
+    )
+    regression_sub = p_regression.add_subparsers(dest="regression_command", required=True)
+    p_rg_check = regression_sub.add_parser(
+        "check",
+        help="Compare an iteration against the dataset baseline; exit 1 on regression.",
+        description=(
+            "Load the dataset's baseline, compare the given iteration against it "
+            "(primary metric, per-class F1, error_rate), and exit 0 if ok, 1 if "
+            "the agent regressed, 2 on a usage error. The CI gate."
+        ),
+        epilog=(
+            "Example:\n  selfevals regression check ws_01HZZZ... "
+            "--dataset ds_01H... --iteration itr_01H..."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_rg_check.add_argument("workspace_id")
+    p_rg_check.add_argument("--dataset", required=True, help="Dataset id (ds_...).")
+    p_rg_check.add_argument(
+        "--iteration", required=True, help="Iteration id (itr_...) to gate."
+    )
+    p_rg_check.add_argument(
+        "--primary-drop",
+        dest="primary_drop",
+        type=float,
+        default=0.0,
+        help="Max allowed drop in the primary metric before failing (default 0.0).",
+    )
+    p_rg_check.add_argument(
+        "--f1-drop",
+        dest="f1_drop",
+        type=float,
+        default=0.05,
+        help="Max allowed drop in any per-class F1 before failing (default 0.05).",
+    )
+    p_rg_check.add_argument(
+        "--error-rate-rise",
+        dest="error_rate_rise",
+        type=float,
+        default=0.0,
+        help="Max allowed rise in error_rate before failing (default 0.0).",
+    )
+    p_rg_check.set_defaults(func=baseline_commands.cmd_regression_check)
+
     p_dataset = make_subparser(
         sub,
         "dataset",
