@@ -194,6 +194,59 @@ async def test_structured_output_equality() -> None:
 
 
 @pytest.mark.asyncio
+async def test_misclassified_single_field_label_dict() -> None:
+    # The canonical exact-match classification shape: a single-field {label: x}
+    # dict on both sides. Both normalize to their class label, so the grader
+    # emits misclassified:<predicted>-><expected> instead of the generic tag.
+    case = _case(Expected(structured_output={"label": "special_order"}))
+    response = AdapterResponse(content=None, structured_output={"label": "full_order"})
+    ctx = GraderContext(case=case, trace=_trace(), response=response)
+    res = await DeterministicGrader().grade(ctx)
+    assert res.label == GradeLabel.FAIL
+    assert "misclassified:full_order->special_order" in res.failure_modes
+    assert "structured_output_mismatch" not in res.failure_modes
+
+
+@pytest.mark.asyncio
+async def test_misclassified_arbitrary_single_key_dict() -> None:
+    # Any one-key dict whose value is a scalar counts as a class label, not just
+    # the literal key "label".
+    case = _case(Expected(structured_output={"intent": "refund"}))
+    response = AdapterResponse(content=None, structured_output={"intent": "cancel"})
+    ctx = GraderContext(case=case, trace=_trace(), response=response)
+    res = await DeterministicGrader().grade(ctx)
+    assert res.label == GradeLabel.FAIL
+    assert "misclassified:cancel->refund" in res.failure_modes
+    assert "structured_output_mismatch" not in res.failure_modes
+
+
+@pytest.mark.asyncio
+async def test_complex_dict_keeps_generic_mismatch() -> None:
+    # Multi-key dicts are not class labels → keep the generic failure mode and
+    # do not fabricate a misclassified pair.
+    case = _case(Expected(structured_output={"sku": "ABC-1", "qty": 2}))
+    response = AdapterResponse(content=None, structured_output={"sku": "ABC-1", "qty": 1})
+    ctx = GraderContext(case=case, trace=_trace(), response=response)
+    res = await DeterministicGrader().grade(ctx)
+    assert res.label == GradeLabel.FAIL
+    assert "structured_output_mismatch" in res.failure_modes
+    assert not any(m.startswith("misclassified:") for m in res.failure_modes)
+
+
+@pytest.mark.asyncio
+async def test_misclassified_only_one_side_label_keeps_generic() -> None:
+    # Expected is a single-field class label but predicted is a multi-key dict →
+    # not both labels, so the generic mismatch survives.
+    case = _case(Expected(structured_output={"label": "special_order"}))
+    response = AdapterResponse(content=None, structured_output={"a": 1, "b": 2})
+    ctx = GraderContext(case=case, trace=_trace(), response=response)
+    res = await DeterministicGrader().grade(ctx)
+    assert res.label == GradeLabel.FAIL
+    assert "structured_output_mismatch" in res.failure_modes
+    assert not any(m.startswith("misclassified:") for m in res.failure_modes)
+
+
+@pytest.mark.asyncio
 async def test_multiple_violations_reported() -> None:
     case = _case(
         Expected(must_include=["xenon"], must_not_include=["bug"], required_tools=["search"])
