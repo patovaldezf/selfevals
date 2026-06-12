@@ -388,6 +388,7 @@ def _reconstruct_result(
             failure_mode_counts=dict(record.metrics.failure_mode_counts),
             total_cost_usd=record.metrics.cost_usd or 0.0,
             total_duration_ms=int((record.metrics.duration_seconds or 0.0) * 1000),
+            error_rate=record.metrics.error_rate,
             case_count=int(record.execution.ran_against.get("case_count", 0)),
             # Rehydrate the persisted funnel so a result reconstructed from
             # storage carries the same grader breakdown a live run does — the

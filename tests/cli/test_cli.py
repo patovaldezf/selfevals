@@ -150,7 +150,7 @@ def test_report_renders_markdown_after_real_run(
     )
     assert rc == 0
     assert "# Experiment:" in stdout
-    assert "| # | primary | Δ | outcome | rationale |" in stdout
+    assert "| # | primary | Δ | consistency | outcome | rationale |" in stdout
     # Two grid iterations.
     assert "\n| 0 |" in stdout
     assert "\n| 1 |" in stdout

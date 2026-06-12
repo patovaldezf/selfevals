@@ -44,6 +44,28 @@ class _Violation:
     detail: str
 
 
+def _class_label(value: object) -> str | None:
+    """Return the normalized class label of `value`, or None if it isn't one.
+
+    A "class label" is the shape exact-match classification produces: either a
+    bare scalar (``str``/``int``/``bool``) or a single-field dict that wraps one
+    (``{"label": "full_order"}`` or any one-key dict whose sole value is a
+    scalar). Anything richer — multi-key dicts, nested dicts, lists — is not a
+    class label, so the grader keeps the generic ``structured_output_mismatch``
+    instead of inventing a misleading ``misclassified:...`` tag.
+
+    Note: ``bool`` is a subclass of ``int`` in Python, which is fine here — both
+    are scalar labels and stringify cleanly.
+    """
+    if isinstance(value, str | int):  # bool is a subclass of int — intentional
+        return str(value)
+    if isinstance(value, dict) and len(value) == 1:
+        sole = next(iter(value.values()))
+        if isinstance(sole, str | int):
+            return str(sole)
+    return None
+
+
 def _final_response_text(ctx: GraderContext) -> str:
     if ctx.response is not None and ctx.response.content:
         return ctx.response.content
@@ -213,12 +235,28 @@ class DeterministicGrader(Grader):
         if expected.structured_output is not None:
             response_struct = context.response.structured_output if context.response else None
             if response_struct != expected.structured_output:
-                violations.append(
-                    _Violation(
-                        failure_mode="structured_output_mismatch",
-                        detail="expected != actual",
+                # When both sides are class labels (a scalar or a single-field
+                # {label: x} wrapper), emit a confusion-pair failure mode
+                # (`misclassified:<predicted>-><expected>`) so the aggregator can
+                # tally which class got mistaken for which. Anything richer keeps
+                # the generic mismatch tag. failure_mode_counts is free-form
+                # dict[str,int], so no migration is needed.
+                predicted_label = _class_label(response_struct)
+                expected_label = _class_label(expected.structured_output)
+                if predicted_label is not None and expected_label is not None:
+                    violations.append(
+                        _Violation(
+                            failure_mode=f"misclassified:{predicted_label}->{expected_label}",
+                            detail=f"predicted={predicted_label} expected={expected_label}",
+                        )
                     )
-                )
+                else:
+                    violations.append(
+                        _Violation(
+                            failure_mode="structured_output_mismatch",
+                            detail="expected != actual",
+                        )
+                    )
 
         # Loose hint metrics that don't fail but are useful for debug.
         details: dict[str, Any] = {

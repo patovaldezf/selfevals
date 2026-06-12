@@ -125,24 +125,38 @@ def render_markdown(
 
 
 def _iteration_table(iterations: list[IterationOutcome]) -> list[str]:
-    header = "| # | primary | Δ | outcome | rationale |"
-    sep = "|---|---------|---|---------|-----------|"
+    header = "| # | primary | Δ | consistency | outcome | rationale |"
+    sep = "|---|---------|---|-------------|---------|-----------|"
     rows: list[str] = [header, sep]
     baseline: float | None = None
     for it in iterations:
         primary = it.aggregate.primary_value
         delta = "—" if baseline is None else f"{primary - baseline:+.4g}"
+        consistency = _fmt_consistency(it.aggregate.reliability.get("consistency_rate"))
         outcome = _OUTCOME_GLYPH[it.decision_record.outcome]
         decision = it.iteration_record.decision
         rationale = decision.rationale if decision is not None else ""
         rationale_short = rationale if len(rationale) <= 80 else rationale[:77] + "…"
         rationale_escaped = rationale_short.replace("|", "\\|")
         rows.append(
-            f"| {it.iteration} | {primary:.4g} | {delta} | {outcome} | {rationale_escaped} |"
+            f"| {it.iteration} | {primary:.4g} | {delta} | {consistency} | "
+            f"{outcome} | {rationale_escaped} |"
         )
         if baseline is None or primary > baseline:
             baseline = primary
     return rows
+
+
+def _fmt_consistency(rate: float | None) -> str:
+    """Render reliability's consistency_rate as a percentage, or em dash.
+
+    `consistency_rate` is only present when the experiment listed it among its
+    reliability metrics (and survives rehydration from storage). When absent —
+    e.g. an iteration that never measured it — we show "—" rather than a
+    fabricated 0%."""
+    if rate is None:
+        return "—"
+    return f"{rate * 100:.0f}%"
 
 
 def _funnel_lines(aggregate: IterationAggregate) -> list[str]:

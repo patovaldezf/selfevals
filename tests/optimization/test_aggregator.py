@@ -486,3 +486,76 @@ def test_funnel_node_from_dict_tolerates_missing_optionals() -> None:
     # defaults rather than raising.
     restored = FunnelNode.from_dict({"key": "k"})
     assert restored == FunnelNode(key="k")
+
+
+def test_pass_at_1_excludes_errored_cases_from_denominator() -> None:
+    # 3 cases: 1 PASS, 1 FAIL, 1 ERROR. The errored case is excluded from the
+    # denominator, so pass@1 = 1 pass / 2 scored = 0.5 (not 1/3).
+    outcomes = [
+        _outcome([GradeLabel.PASS]),
+        _outcome([GradeLabel.FAIL]),
+        _outcome([GradeLabel.ERROR]),
+    ]
+    agg = aggregate_iteration(case_outcomes=outcomes)
+    assert agg.primary_value == 0.5
+    assert pytest.approx(agg.error_rate, abs=1e-9) == 1 / 3
+
+
+def test_error_rate_zero_when_nothing_errored() -> None:
+    outcomes = [_outcome([GradeLabel.PASS]), _outcome([GradeLabel.FAIL])]
+    agg = aggregate_iteration(case_outcomes=outcomes)
+    assert agg.error_rate == 0.0
+    # pass@1 unchanged: no exclusions, 1/2 = 0.5.
+    assert agg.primary_value == 0.5
+
+
+def test_pass_at_1_all_errored_does_not_divide_by_zero() -> None:
+    outcomes = [_outcome([GradeLabel.ERROR]), _outcome([GradeLabel.ERROR])]
+    agg = aggregate_iteration(case_outcomes=outcomes)
+    assert agg.primary_value == 0.0
+    assert agg.error_rate == 1.0
+
+
+def test_error_rate_propagated_and_pass_at_k_intact() -> None:
+    # pass@k / pass^k still count errored cases in their denominator (they read
+    # the whole window), so only worst-of pass@1 changed. Here the errored case
+    # never passes, so pass@2 = 1/3, pass^2 = 1/3, but pass@1 excludes it → 1/2.
+    outcomes = [
+        _outcome([GradeLabel.PASS, GradeLabel.PASS]),
+        _outcome([GradeLabel.FAIL, GradeLabel.FAIL]),
+        _outcome([GradeLabel.ERROR, GradeLabel.ERROR]),
+    ]
+    agg = aggregate_iteration(
+        case_outcomes=outcomes,
+        primary_metric="pass@1",
+        reliability_metrics=["pass@2", "pass^2"],
+    )
+    assert agg.primary_value == 0.5
+    assert pytest.approx(agg.reliability["pass@2"], abs=1e-9) == 1 / 3
+    assert pytest.approx(agg.reliability["pass^2"], abs=1e-9) == 1 / 3
+    assert pytest.approx(agg.error_rate, abs=1e-9) == 1 / 3
+
+
+def test_repetition_error_marks_outcome_errored_even_without_grade(tmp_path: Path) -> None:
+    # A RepetitionResult.error makes rep 0's effective label ERROR even when the
+    # grader produced no results, so the case is excluded from pass@1.
+    case_run = CaseRun(
+        case_id="ec_x",
+        repetitions=[
+            RepetitionResult(
+                repetition=0,
+                trace=_trace_with_llm_calls(tmp_path / "r0", cache_hits=[False]),
+                response=None,
+                error="adapter blew up",
+            ),
+        ],
+    )
+    outcome = Aggregator.case_outcome(_eval_case(), case_run, [[]])
+    assert outcome.errored is True
+    assert outcome.per_repetition_label[0] == GradeLabel.ERROR
+    agg = aggregate_iteration(
+        case_outcomes=[outcome, _outcome([GradeLabel.PASS])],
+    )
+    # Errored case excluded → 1 pass / 1 scored = 1.0; error_rate = 1/2.
+    assert agg.primary_value == 1.0
+    assert agg.error_rate == 0.5

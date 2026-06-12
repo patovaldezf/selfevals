@@ -19,6 +19,27 @@ Versions follow [SemVer](https://semver.org/).
   para preservar la concurrencia legacy de los runs que no lo declaran (ver
   Changed). Parte de SF-3 del SCALING_ROADMAP.
 
+- **Honestidad de la métrica (SF-1).** Tres cambios chicos para que las cifras
+  no mientan:
+  - **`misclassified:X->Y` en exact-match.** Cuando `structured_output`
+    esperado y predicho son ambos una _etiqueta de clase_ (un dict de un solo
+    par, p.ej. `{label: full_order}`, o un escalar por el lado predicho), el
+    `DeterministicGrader` emite el failure-mode `misclassified:<predicho>-><esperado>`
+    en vez del genérico `structured_output_mismatch`. Así el aggregator tabula
+    qué clase se confundió con cuál (matriz de confusión gratis). Dicts complejos
+    / listas conservan el tag genérico. Sin migración: `failure_mode_counts` es
+    `dict[str,int]` free-form.
+  - **`error_rate` separado y pass@1 sin contaminar.** Los cases cuyo label
+    efectivo de la primera repetición es `ERROR` (el run reventó, no que el
+    agente respondió mal) se **excluyen del denominador de pass@1** en vez de
+    contar como 0.0 de calidad. Un `RepetitionResult.error` no-nulo marca el case
+    como errored aunque ningún grader lo etiquete. Se expone un campo nuevo
+    `error_rate` en `IterationAggregate` / `IterationMetrics` (fracción de cases
+    errored sobre el total), persistido y rehidratado. `pass@k`/`pass^k` y el
+    path `primary_grader` quedan intactos.
+  - **Columna `consistency` en el reporte markdown.** La tabla de iteraciones
+    renderiza `reliability["consistency_rate"]` como porcentaje; muestra `—` si
+    la iteración no midió esa métrica (sin romper).
 - **Ejemplo `showcase`** — segundo ejemplo copiable (`selfevals examples copy
 showcase`) que ejercita todo el surface de grading en un solo spec: un grader
   de cada tipo (`deterministic`, `set_match`, `judge_panel`, `funnel`) y un
