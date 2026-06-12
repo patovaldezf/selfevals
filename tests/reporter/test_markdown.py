@@ -430,3 +430,83 @@ def test_markdown_consistency_column_shows_dash_when_absent() -> None:
     assert "| consistency |" in md
     # The row renders an em dash for the missing value without raising.
     assert "—" in md
+
+
+# --- confusion matrix --------------------------------------------------------
+
+
+def _confusion_aggregate() -> IterationAggregate:
+    from selfevals.graders.base import BreakdownNode, GradeLabel
+
+    def _cls(expected: str, predicted: str) -> BreakdownNode:
+        matched = expected == predicted
+        return BreakdownNode(
+            key="classification",
+            label=GradeLabel.PASS if matched else GradeLabel.FAIL,
+            score=1.0 if matched else 0.0,
+            weight=1.0,
+            children=[
+                BreakdownNode(
+                    key=f"cell:{expected}->{predicted}",
+                    label=GradeLabel.PASS if matched else GradeLabel.FAIL,
+                    score=1.0 if matched else 0.0,
+                    weight=1.0,
+                )
+            ],
+        )
+
+    outcomes = [
+        CaseOutcome(
+            case_id="ec_1",
+            per_repetition_label=[GradeLabel.PASS],
+            per_repetition_score=[1.0],
+            breakdowns=[_cls("full_order", "full_order")],
+        ),
+        CaseOutcome(
+            case_id="ec_2",
+            per_repetition_label=[GradeLabel.FAIL],
+            per_repetition_score=[0.0],
+            breakdowns=[_cls("full_order", "refund")],
+        ),
+        CaseOutcome(
+            case_id="ec_3",
+            per_repetition_label=[GradeLabel.PASS],
+            per_repetition_score=[1.0],
+            breakdowns=[_cls("refund", "refund")],
+        ),
+    ]
+    from selfevals.optimization.aggregator import aggregate_iteration
+
+    return aggregate_iteration(case_outcomes=outcomes)
+
+
+def test_confusion_lines_render_matrix_and_f1() -> None:
+    from selfevals.reporter.markdown import _confusion_lines
+
+    lines = _confusion_lines(_confusion_aggregate())
+    text = "\n".join(lines)
+    # header lists both classes as columns.
+    assert "`full_order`" in text
+    assert "`refund`" in text
+    # the full_order row has a diagonal 1 (full_order->full_order) and an
+    # off-diagonal 1 (full_order->refund).
+    full_order_row = next(
+        line for line in lines if line.startswith("| `full_order` |")
+    )
+    assert full_order_row.count("1") == 2
+    assert "Per-class F1" in text
+    assert "accuracy=" in text
+
+
+def test_confusion_lines_empty_when_no_data() -> None:
+    from selfevals.reporter.markdown import _confusion_lines
+
+    agg = IterationAggregate(primary_metric="pass@1", primary_value=1.0, case_count=1)
+    assert _confusion_lines(agg) == []
+
+
+def test_render_markdown_omits_confusion_section_when_absent() -> None:
+    result = _run_real()
+    md = render_markdown(result)
+    # The pingpong-style real run has no confusion grader → no section.
+    assert "## Confusion matrix" not in md
