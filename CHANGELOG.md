@@ -9,6 +9,15 @@ Versions follow [SemVer](https://semver.org/).
 
 ### Added
 
+- **`run.parallelism` ahora se consume (antes dead code)** — el campo
+  `run.parallelism` del YAML (`schemas/experiment.py:163`, default 1, `ge=1
+  le=64`) estaba definido pero nunca leído: el `Executor` y el
+  `OptimizationLoop` usaban su semáforo hardcoded a 8. `runner/launch.py`
+  ahora cablea `parallelism` a `Executor(concurrency=...)` y
+  `OptimizationLoop(grade_concurrency=...)`, de modo que el campo controla de
+  verdad cuántos cases corre el executor en paralelo y cuántos graders puntúa
+  el loop a la vez. Parte de SF-3 del SCALING_ROADMAP.
+
 - **Ejemplo `showcase`** — segundo ejemplo copiable (`selfevals examples copy
 showcase`) que ejercita todo el surface de grading en un solo spec: un grader
   de cada tipo (`deterministic`, `set_match`, `judge_panel`, `funnel`) y un
@@ -20,6 +29,16 @@ showcase`) que ejercita todo el surface de grading en un solo spec: un grader
   El grid proposer demuestra la mejora `level=0.0` (gate falla → hijos SKIPPED)
   → `level=1.0` (todo pasa). Pensado como referencia ejecutable de cómo se
   configura cada grader en YAML, complementando al minimalista `pingpong`.
+
+### Changed
+
+- **Default-behavior: la concurrencia por-run pasa de 8 fijo a
+  `run.parallelism` (default 1).** Como el schema de `parallelism` trae default
+  1, un run que no lo declare ahora corre **serial** en vez de con la
+  concurrencia 8 implícita de antes. Es el costo de hacer el campo load-bearing
+  sin rediseñar el schema; subir la concurrencia es ahora explícito
+  (`run: {parallelism: N}`). Si se decide que el default debería ser mayor, se
+  cambia en el schema en un PR aparte.
 
 ### Fixed
 

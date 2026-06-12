@@ -24,8 +24,10 @@ this file records what _is_.
   `Grader.grade` are async. The executor runs repetitions
   concurrently and the optimization loop grades concurrently, both
   bounded by configurable semaphores (`concurrency` /
-  `grade_concurrency`, default 8). `asyncio.run` lives only at the
-  CLI edge.
+  `grade_concurrency`). As of SF-3 these are wired from
+  `run.parallelism` (YAML, default 1, `ge=1 le=64`) — previously dead
+  code, with the semaphores hardcoded to 8. `asyncio.run` lives only
+  at the CLI edge.
 - **Adapters**: `EmbeddedAdapter` (sync or async Python callable),
   `CliCommandAdapter` (async subprocess JSON), `HttpEndpointAdapter`
   (native async on httpx). All three are auto-wired from YAML via the
