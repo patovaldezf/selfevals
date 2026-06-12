@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import socket
 import time
 from dataclasses import dataclass
 
 from selfevals.api.run_launcher import execute_run_job
 from selfevals.api.run_queue import RedisRunJobQueue
+from selfevals.storage.factory import storage_url_label
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -22,6 +26,17 @@ class RunWorkerConfig:
 def run_worker(config: RunWorkerConfig) -> int:
     queue = RedisRunJobQueue(config.redis_url)
     consumer = config.consumer or f"{socket.gethostname()}:{id(config)}"
+    # One boot line so a worker/API Redis-DB mismatch (e.g. API on /15, worker
+    # on /0) is visible immediately instead of presenting as a silently stuck
+    # run. Credentials are stripped from both URLs.
+    logger.info(
+        "run worker online → redis=%s stream=%s group=%s consumer=%s storage=%s",
+        queue.redis_label,
+        queue.stream,
+        queue.group,
+        consumer,
+        storage_url_label(config.storage_url),
+    )
     processed = 0
     while True:
         handled = False

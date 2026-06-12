@@ -6,12 +6,31 @@ import os
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 from selfevals.schemas.job import RunJob
 
 REDIS_URL_ENV = "SELFEVALS_REDIS_URL"
 RUN_JOBS_STREAM = "selfevals:jobs:runs"
 RUN_JOBS_GROUP = "selfevals-workers"
+
+
+def redact_url(url: str) -> str:
+    """Strip credentials from a Redis URL while keeping host, port, and DB.
+
+    The DB number is the part that matters most for debugging worker/API
+    mismatches (``/15`` vs ``/0``), so it is preserved verbatim. On any parse
+    failure we fall back to a coarse label rather than risk leaking a password
+    into logs.
+    """
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return "redis://<unparseable>"
+    scheme = parsed.scheme or "redis"
+    host = parsed.hostname or "localhost"
+    netloc = f"{host}:{parsed.port}" if parsed.port else host
+    return f"{scheme}://{netloc}{parsed.path}"
 
 
 @dataclass(frozen=True)
@@ -39,6 +58,7 @@ class RedisRunJobQueue:
                 "Redis run queue requires the redis extra: pip install 'selfevals[redis]'"
             ) from exc
         self._client: Any = redis.Redis.from_url(redis_url, decode_responses=True)
+        self.redis_label = redact_url(redis_url)
         self.stream = stream
         self.group = group
         self._ensure_group()
@@ -87,6 +107,23 @@ class RedisRunJobQueue:
         )
         for message_id, fields in rows[1]:
             yield _message_from_fields(str(message_id), fields)
+
+    def active_consumers(self) -> int | None:
+        """Number of consumers registered in the run-jobs group.
+
+        Used by the launcher to warn when a job is enqueued but no worker is
+        listening. Returns ``None`` (not zero) if Redis can't be queried, so the
+        caller can tell "no consumers" apart from "couldn't check" and never
+        fails the launch over an observability probe.
+        """
+        try:
+            groups = self._client.xinfo_groups(self.stream)
+        except Exception:
+            return None
+        for group in groups:
+            if group.get("name") == self.group:
+                return int(group.get("consumers", 0))
+        return 0
 
     def _ensure_group(self) -> None:
         try:
