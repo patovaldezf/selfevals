@@ -182,3 +182,13 @@ Suite base 559 / full 597 (`uv run pytest`). Gate por PR: suite verde + los 3 ex
 corren en fake mode (sin API key — CI no tiene keys). Tests nuevos por capacidad documentados
 en cada PR (ver dirs `tests/runner/`, `tests/graders/`, `tests/optimization/`,
 `tests/schemas/`).
+
+---
+
+## Después del core: escala y honestidad de la señal
+
+Este roadmap cierra la brecha spec↔código del **grading**. La siguiente capa —
+hacer la señal **accionable y honesta a escala** (confusion matrix para clasificación,
+errored fuera de pass@1, `consistency_rate` al reporte, worker concurrente, gate de
+regresión) — vive en [`SCALING_ROADMAP.md`](SCALING_ROADMAP.md). No reabre lo de aquí;
+lo referencia.

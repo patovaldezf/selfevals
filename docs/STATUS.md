@@ -1,4 +1,4 @@
-# Status — v0.9.0
+# Status — v0.10.0
 
 This file is the honest snapshot of what selfevals can and cannot do
 today. Updated on every release; the CHANGELOG records what _changed_,
@@ -35,9 +35,11 @@ this file records what _is_.
   `must_not_include`, `required_tools`, `forbidden_tools`,
   `regex_match`, `structured_output` equality, `output_schema` JSON
   Schema), `SetMatchGrader` (many-to-many set scoring —
-  completeness/precision/recall/F1 over `structured_output["detected"]`
-  vs `Expected.must_include`, with per-element funnel and case-level
-  `aliases`; declarable as `type: set_match`), `LLMJudgeGrader` (single
+  completeness/precision/recall/F1 of the detected set vs
+  `Expected.must_include`, with per-element funnel and case-level
+  `aliases`; declarable as `type: set_match`. The detected set is read
+  via the path selector through `extract` — default `"detected"`, but
+  any slice works, e.g. `"candidates[].id"`), `LLMJudgeGrader` (single
   judge, rubric template, optional `GraderCard`-driven calibration with
   auto-degrade to advisory when thresholds breach), `JudgePanelGrader`
   (N judges + consensus, declarable as `type: judge_panel`; default 3 /
@@ -80,9 +82,12 @@ this file records what _is_.
 
 ### Schema and runtime
 
-- `GradeResult` is flat: `label + score + reason + failure_modes`.
-  No `breakdown` for funnel-style multi-level scoring yet (see the
-  roadmap section below).
+- `GradeResult` carries an optional `breakdown: BreakdownNode | None`
+  (a weighted recursive tree) on top of the flat
+  `label + score + reason + failure_modes`. `FunnelGrader` populates
+  it today; the top-level `label`/`score` stay authoritative. Most
+  other graders still return a flat result (no breakdown), so the
+  drill-down is only as deep as the graders that opt in.
 - Failure-mode counts now persist on
   `IterationMetrics.failure_mode_counts` (keyed by stable mode
   identity), so the compare/report tooling shows real data and
@@ -119,8 +124,8 @@ this file records what _is_.
   (create/upload/freeze). Experiment authoring/editing beyond launch
   still goes through the CLI.
 - `web/` (SvelteKit) is scaffolded but not feature-complete.
-  `selfevals serve` is referenced in some prompts but no
-  `cmd_serve` exists in `commands.py` today.
+  `selfevals serve` exists (`cmd_serve` mounts the FastAPI app) but the
+  web UI it serves is still partial.
 
 ### Telemetry and OTel
 
@@ -149,6 +154,29 @@ The roadmap is driven by evaluating real conversational agents. Each
 release closes the gaps that block the next scenario; the rest stays
 on the backlog until it earns its place.
 
+### Shipped in 0.10.0
+
+- **`funnel` grader** — declarative N-level scoring (`type: funnel`):
+  each level extracts a `structured_output`/trace slice via the path
+  selector and scores it with a builtin match or any nested grader,
+  with `gate` short-circuit and a recursive `breakdown` tree that the
+  aggregator and reporter drill into.
+- **`SetMatchGrader.extract`** — the detected set is read through the
+  path selector (default `"detected"`), so a `set_match` can target any
+  slice of the contract without knowing its shape. Backwards-compatible.
+- **`showcase` example** — a second copyable example
+  (`selfevals examples copy showcase`) that exercises every grader type
+  and funnel match kind, fully offline and deterministic.
+
+### Shipped in 0.9.0
+
+- **Datasets as a first-class entity** — `Dataset` is persisted and
+  reused across experiments; one canonical `persist_dataset` path shared
+  by CLI, API, and inline materialization at launch. The dataset's
+  `split_allocation` now reaches the loop.
+- **`set_match` and `judge_panel` graders** — many-to-many set scoring
+  and an N-judge consensus panel, both declarable in YAML.
+
 ### Shipped in 0.3.0
 
 - **Validated multi-turn conversation input** — `EvalCase.input` now
@@ -172,10 +200,9 @@ on the backlog until it earns its place.
 
 ### Still on the backlog
 
-- `breakdown: dict[str, Any]` on `GradeResult` for funnel-style scores.
 - Importing a dataset from a SQL/production source. `selfevals dataset
 import` exists for JSONL files (v0.9.0); pulling EvalCases straight
   from a SQL query is still backlog.
 - Retries and timeout configuration on `HttpEndpointAdapter`.
-- A `serve` CLI that mounts the FastAPI app and the optimization
-  loop concurrently.
+- A feature-complete web UI behind `selfevals serve` (the CLI and the
+  FastAPI mount exist; the SvelteKit app is still partial).
