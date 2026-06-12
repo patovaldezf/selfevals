@@ -54,6 +54,16 @@ class CaseOutcome:
     (e.g. rehydrated from persisted metrics)."""
 
     @property
+    def errored(self) -> bool:
+        """True when the first repetition's effective label is ERROR.
+
+        pass@1 reads the first repetition, so an errored rep-0 means this case
+        has no quality verdict to contribute — it is excluded from the pass@1
+        denominator rather than counted as a 0.0 failure (see `_compute_metric`).
+        """
+        return bool(self.per_repetition_label) and self.per_repetition_label[0] == GradeLabel.ERROR
+
+    @property
     def pass_at_1(self) -> float:
         if not self.per_repetition_label:
             return 0.0
@@ -172,6 +182,12 @@ class IterationAggregate:
     label instead of the conjunctive worst-of. Echoed here so the report and
     decision trail can say which grader drove the number. `None` = worst-of
     (the default, conjunctive pass@1)."""
+    error_rate: float = 0.0
+    """Fraction of cases whose first repetition errored (effective rep-0 label
+    is ERROR), over the total case count. These cases are excluded from the
+    pass@1 denominator, so error_rate is the separate honest signal that says
+    "X% of cases never produced a verdict" rather than silently dragging pass@1
+    toward 0. 0.0 when nothing errored or there are no cases."""
 
     @property
     def fail_rate(self) -> float:
@@ -271,8 +287,13 @@ def _outcome_for(
     failure_modes: list[str] = []
     breakdowns: list[BreakdownNode] = []
     per_grader: dict[str, list[GradeLabel]] = {}
-    for results in grade_results_per_rep:
-        labels.append(_pick_label(results))
+    reps = case_run.repetitions
+    for idx, results in enumerate(grade_results_per_rep):
+        # A non-null RepetitionResult.error means the adapter/executor failed for
+        # this repetition; treat it as ERROR even when no grader tagged it so the
+        # case is excluded from the pass@1 denominator rather than scored 0.0.
+        rep_errored = idx < len(reps) and reps[idx].error is not None
+        labels.append(GradeLabel.ERROR if rep_errored else _pick_label(results))
         scores.append(_pick_score(results))
         for r in results:
             failure_modes.extend(r.failure_modes)
@@ -395,6 +416,7 @@ def aggregate_iteration(
     total_duration = sum(o.duration_ms for o in case_outcomes)
     total_cache_hits = sum(o.cache_hit_count for o in case_outcomes)
     total_llm_calls = sum(o.llm_call_count for o in case_outcomes)
+    error_rate = sum(1 for o in case_outcomes if o.errored) / n
     guardrails: dict[str, float] = {}
     if total_cost > 0:
         guardrails["cost_usd_per_case"] = total_cost / n
@@ -422,6 +444,7 @@ def aggregate_iteration(
         funnel=_rollup_funnel(case_outcomes),
         per_grader_pass_rate=per_grader_pass_rate,
         primary_grader=primary_grader,
+        error_rate=error_rate,
     )
 
 
@@ -461,7 +484,14 @@ def _compute_metric(
         return _compute_pass_metric_for_grader(metric, outcomes, primary_grader)
     n = len(outcomes)
     if metric == "pass@1":
-        return sum(o.pass_at_1 for o in outcomes) / n
+        # Exclude errored cases from the denominator: an errored case has no
+        # quality verdict, so counting it as 0.0 would conflate "the agent
+        # answered wrong" with "the run blew up". error_rate carries that signal
+        # separately. If every case errored, there's nothing to score → 0.0.
+        scored = [o for o in outcomes if not o.errored]
+        if not scored:
+            return 0.0
+        return sum(o.pass_at_1 for o in scored) / len(scored)
     if metric.startswith("pass@"):
         k = int(metric.split("@", 1)[1])
         # pass@k: probability at least one of k passes (>= 1 success in first k reps).

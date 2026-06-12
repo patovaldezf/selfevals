@@ -482,6 +482,7 @@ class OptimizationLoop:
                 MetricObservation(name=k, value=v) for k, v in aggregate.guardrails.items()
             ],
             reliability=dict(aggregate.reliability),
+            error_rate=aggregate.error_rate,
             cost_usd=aggregate.total_cost_usd or None,
             duration_seconds=(
                 aggregate.total_duration_ms / 1000 if aggregate.total_duration_ms else None
