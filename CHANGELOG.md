@@ -9,6 +9,28 @@ Versions follow [SemVer](https://semver.org/).
 
 ### Added
 
+- **Gate de no-regresión en CI + baseline anclado al dataset (SF-4 del
+  SCALING_ROADMAP).** Cierra el loop "¿el agente empeoró sobre estos casos?":
+  - **Baseline automático en la primera ejecución.** El primer run que se
+    completa sobre un dataset (`ds_xxx`) registra su `best_iteration` como el
+    baseline de ESE dataset, sin comando manual. Se persiste un
+    `DatasetBaseline` (BaseEntity, `_id_prefix="dbl"`, id derivado
+    deterministicamente del `dataset_id` → un baseline por dataset, lookup
+    directo sin scan); sin migración (la tabla `entities` es genérica). El
+    auto-set vive en `cmd_run` tras persistir las iteraciones y es **defensivo**
+    (un fallo de storage nunca tumba un run) e **idempotente** (un run posterior
+    mejor NO mueve el baseline). El baseline se ancla al dataset, no al
+    experimento, para medir regresión contra un set de casos fijo cross-experimento.
+  - **Gate `selfevals regression check <ws> --dataset <ds> --iteration <itr>`.**
+    Compara la iteración actual contra el baseline del dataset y devuelve exit
+    `0` (ok) / `1` (regresión) / `2` (error de uso) — consumible por CI
+    (`selfevals regression check ... || exit 1`). Gatea: primary/pass@1 (drop),
+    per-class F1 de la confusion matrix (drop por clase aunque el macro aguante)
+    y error_rate (rise, opcional). La matemática vive en
+    `ci/regression.py::evaluate_regression`, función pura sin I/O.
+  - **`selfevals baseline show|set <ws> --dataset <ds>`** para inspeccionar o
+    re-baselinar explícitamente (subir el listón a propósito).
+
 - **`run.parallelism` ahora se consume (antes dead code)** — el campo
   `run.parallelism` del YAML (`schemas/experiment.py:163`, `ge=1 le=64`) estaba
   definido pero nunca leído: el `Executor` y el `OptimizationLoop` usaban su
