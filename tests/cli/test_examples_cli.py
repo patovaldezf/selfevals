@@ -23,6 +23,18 @@ def test_examples_copy_pingpong_writes_runnable_files(
     assert (tmp_path / "evals" / "datasets" / "pingpong.jsonl").is_file()
 
 
+def test_examples_copy_showcase_writes_runnable_files(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rc, stdout, _ = _capture(capsys, ["examples", "copy", "showcase", "--to", str(tmp_path)])
+    assert rc == 0
+    assert "copied example 'showcase'" in stdout
+    assert (tmp_path / "evals" / "experiments" / "example_showcase.yaml").is_file()
+    assert (tmp_path / "evals" / "datasets" / "showcase.jsonl").is_file()
+    # The "Run:" hint names the copied spec, not a hard-coded one.
+    assert "example_showcase.yaml --no-persist" in stdout
+
+
 def test_examples_copy_refuses_to_overwrite(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

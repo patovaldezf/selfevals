@@ -1,14 +1,15 @@
 # Examples
 
-Three runnable examples, in increasing realism. Run them from a **source
+Four runnable examples, in increasing realism. Run them from a **source
 checkout** (the `hello_*` examples import `examples.hello_*.agent`, which
 needs the repo on `sys.path`).
 
-| Example | Provider | Needs a key? | What it shows |
-|---------|----------|--------------|---------------|
-| `pingpong` | none | no | The smallest possible loop — an in-process echo agent. Start here. |
-| `hello_llm/` | Anthropic | optional | A real agent + LLM judge over three task types, with a deterministic fake fallback. |
-| `hello_openai/` | OpenAI | optional | The exact same experiment as `hello_llm`, swapped to OpenAI — a side-by-side provider comparison. |
+| Example         | Provider  | Needs a key? | What it shows                                                                                     |
+| --------------- | --------- | ------------ | ------------------------------------------------------------------------------------------------- |
+| `pingpong`      | none      | no           | The smallest possible loop — an in-process echo agent. Start here.                                |
+| `showcase`      | none      | no           | The kitchen sink — one grader of every type and a funnel with every match kind, all offline.      |
+| `hello_llm/`    | Anthropic | optional     | A real agent + LLM judge over three task types, with a deterministic fake fallback.               |
+| `hello_openai/` | OpenAI    | optional     | The exact same experiment as `hello_llm`, swapped to OpenAI — a side-by-side provider comparison. |
 
 ## pingpong — the smallest loop
 
@@ -23,16 +24,37 @@ It uses the `EmbeddedAdapter` against a trivial echo agent. No network, no
 key, sub-second. Good for confirming the install works and for reading a
 minimal `experiment.yaml`.
 
+## showcase — every grader, every match kind
+
+Also ships inside the package, copy-and-run like pingpong:
+
+```bash
+selfevals examples copy showcase
+selfevals run evals/experiments/example_showcase.yaml --no-persist
+```
+
+Where pingpong is the minimal loop, `showcase` is the **catalog**: a single
+spec that wires up one grader of every type (`deterministic`, `set_match`,
+`judge_panel`, `funnel`) and a funnel whose levels demonstrate every builtin
+match kind (`exists`, `equals`, `by_index`, `by_key`, `tool_called`,
+`span_exists`, a nested `set_match` via `feeds_extract`, and a
+`{grader: ...}` reference). The deterministic agent
+(`selfevals.examples.showcase:run`) emits a rich `structured_output` plus tool
+calls, and a deterministic `judge` lets `judge_panel` run fully offline. Driven
+by `model_params.level`, the grid proposer improves from `level=0.0` (the funnel
+gate fails, its children are SKIPPED — the short-circuit) to `level=1.0` (every
+level passes). It's the reference for _how each grader is configured in YAML_.
+
 ## hello_llm / hello_openai — a realistic eval
 
 Both directories contain the same three files:
 
 - **`cases.jsonl`** — three `EvalCase`s:
-  1. *sentiment* — classify a review as positive/negative/neutral
+  1. _sentiment_ — classify a review as positive/negative/neutral
      (graded by `DeterministicGrader`: `must_include` / `must_not_include`).
-  2. *extraction* — pull `{city, date, attendees}` as JSON
+  2. _extraction_ — pull `{city, date, attendees}` as JSON
      (graded by `DeterministicGrader`: `structured_output` equality).
-  3. *support reply* — an open-ended customer-support answer
+  3. _support reply_ — an open-ended customer-support answer
      (graded by `LLMJudgeGrader` against a rubric).
 - **`agent.py`** — exposes `run(req) -> AdapterResponse` (the agent) and
   `judge(req) -> AdapterResponse` (the rubric judge). Both call the provider
@@ -58,7 +80,7 @@ uv run selfevals run examples/hello_openai/experiment.yaml --no-persist
 
 If the key is unset (or the SDK isn't installed), the agent prints a hint
 and uses the fake. The fakes are designed so the temperature sweep produces
-*different* grader outcomes — cooler temperatures clear the structured
+_different_ grader outcomes — cooler temperatures clear the structured
 cases, warmer ones hedge — so the example optimizes over a meaningful
 search space even offline.
 
@@ -72,7 +94,7 @@ Copy a `hello_*` directory and change three things:
 
 1. **`cases.jsonl`** — your real inputs and expected outcomes.
 2. **`agent.py`** — replace the provider call in `_call_<provider>` with a
-   call to *your* agent. Keep the `(AdapterRequest) -> AdapterResponse`
+   call to _your_ agent. Keep the `(AdapterRequest) -> AdapterResponse`
    signature; `req.parameters["model_params"]` is what the proposer sweeps.
 3. **`experiment.yaml`** — point `agent.entrypoint` at your module, set your
    `target` metric and `search_space`, and pick a proposer.

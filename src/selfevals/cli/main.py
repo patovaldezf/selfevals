@@ -480,7 +480,7 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog="Example:\n  selfevals examples copy pingpong",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p_examples_copy.add_argument("name", choices=["pingpong"])
+    p_examples_copy.add_argument("name", choices=sorted(commands._EXAMPLE_NAMES))
     p_examples_copy.add_argument("--to", default=".", help="Destination directory (default: cwd).")
     p_examples_copy.set_defaults(func=commands.cmd_examples_copy)
 

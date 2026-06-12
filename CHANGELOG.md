@@ -7,6 +7,25 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Ejemplo `showcase`** — segundo ejemplo copiable (`selfevals examples copy
+showcase`) que ejercita todo el surface de grading en un solo spec: un grader
+  de cada tipo (`deterministic`, `set_match`, `judge_panel`, `funnel`) y un
+  funnel con cada match kind builtin (`exists`/`equals`/`by_index`/`by_key`/
+  `tool_called`/`span_exists`, un `set_match` anidado vía `feeds_extract` y una
+  referencia `{grader: ...}`). El agente determinista
+  (`selfevals.examples.showcase:run`) emite un `structured_output` rico +
+  `tool_uses`, y un `judge` determinista deja correr `judge_panel` 100% offline.
+  El grid proposer demuestra la mejora `level=0.0` (gate falla → hijos SKIPPED)
+  → `level=1.0` (todo pasa). Pensado como referencia ejecutable de cómo se
+  configura cada grader en YAML, complementando al minimalista `pingpong`.
+
+### Fixed
+
+- `selfevals examples copy <name>` imprimía siempre el hint "Run:" apuntando a
+  `example_pingpong.yaml`; ahora nombra el spec copiado (`example_<name>.yaml`).
+
 ## [0.10.0] - 2026-06-12
 
 Grader `funnel`: scoring declarativo de N niveles para evaluar agentes por
