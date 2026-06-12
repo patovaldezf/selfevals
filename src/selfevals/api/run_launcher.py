@@ -104,8 +104,12 @@ def launch_experiment_run(
         dispatch = "redis-worker"
         # A job enqueued with no worker consuming it sits in the stream
         # silently and the experiment never leaves `draft`. Surface that the
-        # moment it happens instead of forcing an `XINFO GROUPS` autopsy. The
-        # probe never fails the launch (active_consumers is defensive).
+        # moment it happens instead of forcing an `XINFO GROUPS` autopsy.
+        # `active_consumers` counts only live consumers (by idle), so a crashed
+        # worker's ghost registration doesn't suppress the warning. It returns
+        # None on any Redis error and never fails the launch. False positive to
+        # accept: a lone worker busy in a >60s job looks idle, so a launch in
+        # that window may warn even though a worker exists — informational only.
         if queue.active_consumers() == 0:
             logger.warning(
                 "experiment %s queued to redis (%s) but no worker is consuming — "

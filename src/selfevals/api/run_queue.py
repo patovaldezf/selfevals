@@ -14,6 +14,12 @@ REDIS_URL_ENV = "SELFEVALS_REDIS_URL"
 RUN_JOBS_STREAM = "selfevals:jobs:runs"
 RUN_JOBS_GROUP = "selfevals-workers"
 
+# How long a registered consumer can be idle before we treat it as dead for the
+# orphan-job check. A live worker blocks on xreadgroup with a ~5s timeout, so it
+# refreshes its idle every few seconds; 60s gives generous margin against GC
+# pauses or slow jobs while still aging out a crashed worker quickly.
+LIVE_CONSUMER_MAX_IDLE_MS = 60_000
+
 
 def redact_url(url: str) -> str:
     """Strip credentials from a Redis URL while keeping host, port, and DB.
@@ -108,22 +114,35 @@ class RedisRunJobQueue:
         for message_id, fields in rows[1]:
             yield _message_from_fields(str(message_id), fields)
 
-    def active_consumers(self) -> int | None:
-        """Number of consumers registered in the run-jobs group.
+    def active_consumers(self, *, max_idle_ms: int = LIVE_CONSUMER_MAX_IDLE_MS) -> int | None:
+        """Number of *live* consumers in the run-jobs group.
 
         Used by the launcher to warn when a job is enqueued but no worker is
-        listening. Returns ``None`` (not zero) if Redis can't be queried, so the
-        caller can tell "no consumers" apart from "couldn't check" and never
-        fails the launch over an observability probe.
+        listening. A dead worker leaves its consumer registered in the group
+        indefinitely, so a raw `XINFO GROUPS` count reports ghosts as if they
+        were workers — exactly the false-negative that lets the orphan warning
+        stay silent. Instead we read per-consumer `idle` (ms since that consumer
+        last interacted with the group) via `XINFO CONSUMERS` and count only
+        those seen within `max_idle_ms`. A live worker blocks on `xreadgroup`
+        with a ~5s timeout, so it refreshes its idle well inside the default
+        window; a crashed one ages out.
+
+        Returns ``None`` (not zero) if Redis can't be queried, so the caller can
+        tell "no live consumers" apart from "couldn't check" and never fails the
+        launch over an observability probe.
         """
         try:
-            groups = self._client.xinfo_groups(self.stream)
+            consumers = self._client.xinfo_consumers(self.stream, self.group)
         except Exception:
+            # Group may not exist yet, or Redis is unreachable — either way the
+            # probe is best-effort and must not break the launch.
             return None
-        for group in groups:
-            if group.get("name") == self.group:
-                return int(group.get("consumers", 0))
-        return 0
+        live = 0
+        for consumer in consumers:
+            idle = consumer.get("idle")
+            if idle is None or int(idle) <= max_idle_ms:
+                live += 1
+        return live
 
     def _ensure_group(self) -> None:
         try:
