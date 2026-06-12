@@ -26,6 +26,37 @@ showcase`) que ejercita todo el surface de grading en un solo spec: un grader
 - `selfevals examples copy <name>` imprimía siempre el hint "Run:" apuntando a
   `example_pingpong.yaml`; ahora nombra el spec copiado (`example_<name>.yaml`).
 
+## [0.11.0] - 2026-06-12
+
+OTLP end-to-end: los agentes out-of-process (cli/http) ahora pueden exportar
+sus propios spans (LLM calls, chains) y quedan anidados bajo el trace del case,
+en vez de aparecer solo como el span sintético `adapter_response`.
+
+### Added
+
+- **Receiver OTLP cableado al runner.** `build_loop` arranca un
+  `start_receiver()` embebido cuando el adapter es `HttpEndpointAdapter` o
+  `CliCommandAdapter` (agentes en otro proceso). El `Executor` recibe el
+  `ReceiverHandle` y, por cada repetición, hace `bind_recorder(recorder)`
+  alrededor del `adapter.invoke()` para que los spans recibidos durante la
+  invocación se dren­en en el `TraceRecorder` de ese case. Los agentes
+  `embedded` (mismo proceso) no arrancan receiver. El receiver se cierra en el
+  `finally` de `OptimizationLoop.run()` vía `Executor.close()` — sin fugas de
+  threads/puertos entre runs bajo `selfevals serve`.
+- **`AdapterRequest.otlp_endpoint`.** Nuevo campo opcional que transporta la URL
+  base del receiver (`http://127.0.0.1:<port>`) al agente. `HttpEndpointAdapter`
+  y `CliCommandAdapter` lo serializan en el POST/stdio (`_request_to_json`), de
+  modo que el agente sabe a dónde apuntar su `OTLPSpanExporter`
+  (`{otlp_endpoint}/v1/traces`) — normalmente vía `selfevals.init(endpoint=...)`.
+  El receiver, el decoder (`otlp_to_recorder`), el `bind_recorder` y el SDK
+  (`sdk.init` + `auto_instrument`) ya existían; esta release los conecta.
+- **`SELFEVALS_OTLP_PORT`.** Fija el puerto del receiver embebido (default 0 =
+  dinámico, uno por run — correcto para runs concurrentes). Píncha­lo cuando un
+  agente de larga vida (p.ej. un servidor HTTP) deba apuntar un único exporter
+  OTLP a un endpoint estable que configura una sola vez (`selfevals.init`). Un
+  puerto fijo asume runs no solapados (el bind chocaría y el receiver tiene un
+  solo slot de recorder); usa el dinámico si corres experimentos en paralelo.
+
 ## [0.10.0] - 2026-06-12
 
 Grader `funnel`: scoring declarativo de N niveles para evaluar agentes por

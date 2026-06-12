@@ -71,6 +71,13 @@ class AdapterRequest:
 
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    otlp_endpoint: str | None = None
+    """Base URL of selfevals' embedded OTLP/HTTP receiver for this run, e.g.
+    `http://127.0.0.1:54321`. When set, an out-of-process agent (cli/http) can
+    point its OpenTelemetry exporter at `{otlp_endpoint}/v1/traces` so its own
+    spans (LLM calls, chains) get nested under this case's trace. None when the
+    receiver isn't running (e.g. embedded runs that don't need it)."""
+
     def get_model_param(self, key: str, default: Any = None) -> Any:
         """Read a model param from the proposer envelope `parameters["model_params"]`.
 
@@ -283,6 +290,7 @@ def _request_to_json(req: AdapterRequest) -> dict[str, Any]:
         "tools_allowed": list(req.tools_allowed),
         "parameters": dict(req.parameters),
         "metadata": dict(req.metadata),
+        "otlp_endpoint": req.otlp_endpoint,
     }
 
 
