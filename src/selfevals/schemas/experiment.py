@@ -160,7 +160,7 @@ class RunSpec(SelfEvalsModel):
     sample_strategy: Literal["full", "stratified", "random_subset"] = "full"
     max_iterations: int = Field(default=20, ge=1, le=10000)
     repetitions_per_case: int = Field(default=1, ge=1, le=100)
-    parallelism: int = Field(default=1, ge=1, le=64)
+    parallelism: int = Field(default=8, ge=1, le=64)
     convergence: ConvergenceSpec = Field(default_factory=ConvergenceSpec)
     seed: int | None = None
     persist_traces: Literal["none", "all", "failed"] = "failed"

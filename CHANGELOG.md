@@ -9,10 +9,20 @@ Versions follow [SemVer](https://semver.org/).
 
 ### Added
 
+- **`run.parallelism` ahora se consume (antes dead code)** — el campo
+  `run.parallelism` del YAML (`schemas/experiment.py:163`, `ge=1 le=64`) estaba
+  definido pero nunca leído: el `Executor` y el `OptimizationLoop` usaban su
+  semáforo hardcoded a 8. `runner/launch.py` ahora cablea `parallelism` a
+  `Executor(concurrency=...)` y `OptimizationLoop(grade_concurrency=...)`, de
+  modo que el campo controla de verdad cuántos cases corre el executor en
+  paralelo y cuántos graders puntúa el loop a la vez. Su default subió de 1 a 8
+  para preservar la concurrencia legacy de los runs que no lo declaran (ver
+  Changed). Parte de SF-3 del SCALING_ROADMAP.
+
 - **Honestidad de la métrica (SF-1).** Tres cambios chicos para que las cifras
   no mientan:
   - **`misclassified:X->Y` en exact-match.** Cuando `structured_output`
-    esperado y predicho son ambos una *etiqueta de clase* (un dict de un solo
+    esperado y predicho son ambos una _etiqueta de clase_ (un dict de un solo
     par, p.ej. `{label: full_order}`, o un escalar por el lado predicho), el
     `DeterministicGrader` emite el failure-mode `misclassified:<predicho>-><esperado>`
     en vez del genérico `structured_output_mismatch`. Así el aggregator tabula
@@ -41,6 +51,15 @@ showcase`) que ejercita todo el surface de grading en un solo spec: un grader
   El grid proposer demuestra la mejora `level=0.0` (gate falla → hijos SKIPPED)
   → `level=1.0` (todo pasa). Pensado como referencia ejecutable de cómo se
   configura cada grader en YAML, complementando al minimalista `pingpong`.
+
+### Changed
+
+- **Default-behavior: la concurrencia por-run pasa de 8 fijo a
+  `run.parallelism` (default 8).** El semáforo del executor/loop ya no está
+  hardcoded a 8: lo dicta `run.parallelism`. Para no regresar la performance de
+  los runs que nunca declaran el campo, su default en el schema subió de 1 a 8,
+  de modo que el comportamiento por defecto es idéntico al legacy (concurrencia 8) y ahora un run puede ajustarlo explícitamente (`run: {parallelism: N}`,
+  `ge=1 le=64`).
 
 ### Fixed
 

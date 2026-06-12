@@ -784,6 +784,13 @@ def build_loop(
         else None
     )
 
+    # run.parallelism (schema default 1, ge=1 le=64) is the per-run concurrency
+    # knob. Until now it was dead code: the executor and loop used their own
+    # hardcoded default of 8. Wiring it here makes the YAML field load-bearing —
+    # `parallelism` caps both how many cases the executor runs at once and how
+    # many graders the loop scores in parallel. NOTE: this changes the default
+    # behavior from a fixed 8 to `run.parallelism` (default 1). See the SF-3 PR.
+    parallelism = spec.experiment.run.parallelism
     executor = Executor(
         adapter=adapter,
         sandbox=SandboxPolicy(spec.experiment.run.sandbox),
@@ -791,6 +798,7 @@ def build_loop(
         span_sink=span_sink,
         payload_router=payload_router,
         otlp_handle=otlp_handle,
+        concurrency=parallelism,
     )
     return OptimizationLoop(
         experiment=spec.experiment,
@@ -802,4 +810,5 @@ def build_loop(
         decision_evaluator=DecisionMatrixEvaluator(),
         repetitions_per_case=repetitions_per_case,
         split_allocation=split_allocation,
+        grade_concurrency=parallelism,
     )
