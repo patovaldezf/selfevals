@@ -12,7 +12,7 @@ import sys
 from collections.abc import Sequence
 
 from selfevals._errors import SelfEvalsUserError
-from selfevals.cli import analyze_commands, commands, dataset_commands
+from selfevals.cli import analyze_commands, ci_commands, commands, dataset_commands
 from selfevals.cli._help import make_subparser
 from selfevals.version import __version__
 
@@ -552,6 +552,106 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Process at most one available job and exit.",
     )
     p_worker_runs.set_defaults(func=commands.cmd_worker_runs)
+
+    p_baseline = make_subparser(
+        sub,
+        "baseline",
+        help_text="Version the baseline iteration an experiment is gated against.",
+        examples=[
+            "selfevals baseline set ws_01HZZZ... exp_01HXXX...",
+            "selfevals baseline set ws_01HZZZ... exp_01HXXX... --iteration itr_01HAAA...",
+            "selfevals baseline show ws_01HZZZ... exp_01HXXX...",
+        ],
+    )
+    baseline_sub = p_baseline.add_subparsers(dest="baseline_command", required=True)
+    p_bl_set = baseline_sub.add_parser(
+        "set",
+        help="Mark an iteration (or the best completed one) as the baseline.",
+        description=(
+            "Persist a baseline pointer for an experiment. Without --iteration, "
+            "picks the best completed iteration (highest primary metric), the "
+            "same rule the optimizer uses for `best_iteration`."
+        ),
+        epilog="Example:\n  selfevals baseline set ws_01HZZZ... exp_01HXXX...",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_bl_set.add_argument("workspace_id")
+    p_bl_set.add_argument("experiment_id")
+    p_bl_set.add_argument(
+        "--iteration",
+        default=None,
+        help="Iteration id to pin as baseline (default: best completed iteration).",
+    )
+    p_bl_set.add_argument("--note", default=None, help="Optional note stored on the baseline.")
+    p_bl_set.set_defaults(func=ci_commands.cmd_baseline_set)
+    p_bl_show = baseline_sub.add_parser(
+        "show",
+        help="Show the current baseline of an experiment.",
+        description="Print the experiment's current baseline iteration and its metrics.",
+        epilog="Example:\n  selfevals baseline show ws_01HZZZ... exp_01HXXX...",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_bl_show.add_argument("workspace_id")
+    p_bl_show.add_argument("experiment_id")
+    p_bl_show.set_defaults(func=ci_commands.cmd_baseline_show)
+
+    p_regression = make_subparser(
+        sub,
+        "regression",
+        help_text="CI gate: fail (exit 1) when a run regresses past the baseline.",
+        examples=[
+            "selfevals regression check ws_01HZZZ... exp_01HXXX...",
+            "selfevals regression check ws_01HZZZ... exp_01HXXX... --iteration itr_01HAAA...",
+            "selfevals regression check ws_01HZZZ... exp_01HXXX... --max-primary-drop 0.02 || exit 1",
+        ],
+    )
+    regression_sub = p_regression.add_subparsers(dest="regression_command", required=True)
+    p_reg_check = regression_sub.add_parser(
+        "check",
+        help="Compare a run against the baseline; exit 1 if it regressed.",
+        description=(
+            "Load the experiment's baseline and a current iteration (default: the "
+            "best completed one) and compare primary metric, per-class + macro F1, "
+            "and error_rate. Exit 0 if within thresholds, 1 if a metric dropped "
+            "past one — the signal a CI step gates on."
+        ),
+        epilog=(
+            "Example:\n"
+            "  selfevals regression check ws_01HZZZ... exp_01HXXX... || exit 1"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_reg_check.add_argument("workspace_id")
+    p_reg_check.add_argument("experiment_id")
+    p_reg_check.add_argument(
+        "--iteration",
+        default=None,
+        help="Iteration id to check (default: best completed iteration of the experiment).",
+    )
+    p_reg_check.add_argument(
+        "--max-primary-drop",
+        type=float,
+        default=0.05,
+        help="Max tolerated drop in the primary metric before failing (default 0.05).",
+    )
+    p_reg_check.add_argument(
+        "--max-f1-drop",
+        type=float,
+        default=0.05,
+        help="Max tolerated drop in any per-class or macro F1 before failing (default 0.05).",
+    )
+    p_reg_check.add_argument(
+        "--max-error-rate-rise",
+        type=float,
+        default=0.05,
+        help="Max tolerated rise in error_rate before warning/failing (default 0.05).",
+    )
+    p_reg_check.add_argument(
+        "--fail-on-error-rate",
+        action="store_true",
+        help="Treat an error_rate rise past its threshold as a failure, not a warning.",
+    )
+    p_reg_check.set_defaults(func=ci_commands.cmd_regression_check)
 
     return parser
 
