@@ -360,6 +360,9 @@ selfevals workspace show <workspace_id>
 selfevals experiment list|show <workspace_id> [experiment_id]
 selfevals iteration list <workspace_id> <experiment_id>
 selfevals dataset create|import|list|show|freeze ...
+selfevals baseline set|show <workspace_id> <experiment_id> [--iteration itr_…]
+selfevals regression check <workspace_id> <experiment_id> [--iteration itr_…] \
+    [--max-primary-drop 0.05] [--max-f1-drop 0.05] [--fail-on-error-rate]   # exit 1 if regressed
 selfevals analyze pull|push <workspace_id> <experiment_id>
 selfevals failuremode list|promote|retire|merge|edit ...
 selfevals skills list|path <name>

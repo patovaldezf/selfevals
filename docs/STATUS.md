@@ -7,8 +7,18 @@ this file records what _is_.
 ## What works end-to-end
 
 - **CLI**: `init`, `workspace`, `experiment`, `iteration`, `report`,
-  `run`, `compare`, `estimate`. Every subcommand has a one-line
-  description and a copy-paste `Example:` epilog.
+  `run`, `compare`, `estimate`, `dataset`, `baseline`, `regression`,
+  `analyze`, `failuremode`, `skills`, `examples`, `serve`, `worker`.
+  Every subcommand has a one-line description and a copy-paste
+  `Example:` epilog.
+- **CI regression gate (SF-4)**: `selfevals baseline set|show` versions
+  the iteration an experiment is gated against (a `BaselineRecord`
+  pointer, no migration), and `selfevals regression check` compares a
+  current iteration's primary metric, per-class + macro F1 (from the
+  persisted confusion matrix), and error*rate against that baseline,
+  exiting **0** (ok), **1** (regressed past threshold), or **2** (user
+  error). The math is the pure `ci/regression.py::evaluate_regression`.
+  In CI: `selfevals regression check ws*… exp\_… || exit 1`.
 - **`selfevals run <spec.yaml>`**: load an experiment spec, resolve
   the agent entrypoint, run cases through an adapter, grade each
   trace, persist iterations to SQLite, render a markdown or JSON

@@ -9,6 +9,39 @@ Versions follow [SemVer](https://semver.org/).
 
 ### Added
 
+- **Gate de no-regresión en CI + baseline versionado por experimento (SF-4 del
+  SCALING_ROADMAP).** Un experimento puede ahora versionar su baseline y un
+  comando de CI falla (exit 1) cuando un run cae más de un umbral configurable.
+  - **`BaselineRecord` (`schemas/baseline.py`, `_id_prefix="bl"`).** Como no hay
+    `ExperimentRecord` con campo baseline (los experimentos viven como
+    `IterationRecord`s ligados por `experiment_id`), el baseline es una
+    `BaseEntity` standalone que apunta a una iteración. Al heredar de
+    `BaseEntity` rueda en la tabla genérica `entities` de SQLite **sin
+    migración** (nuevo tag `entity_type`, payload JSON). Cada `baseline set`
+    escribe un registro fresco (id + `created_at` nuevos) y el último por
+    `created_at` gana, así el _historial_ del baseline queda consultable.
+  - **`evaluate_regression(baseline, current, thresholds) -> RegressionResult`
+    (`ci/regression.py`), pura.** Sin storage ni CLI: toma dos
+    `IterationMetrics` y compara (a) la métrica primary / pass@1; (b) el F1
+    per-class y el macro-F1 rehidratados de la matriz de confusión persistida
+    (`ConfusionReport.from_dict`); (c) `error_rate` (rise), que por default
+    _advierte_ y solo falla con `error_rate_is_failure=True`. Un _drop_ es
+    `baseline - current` (positivo = empeoró); la igualdad exacta con el umbral
+    pasa (slack `1e-9` para el ruido IEEE-754). Una clase presente en un solo
+    lado se reporta como informativa, nunca como fallo (un relabeling no se
+    disfraza de regresión). `RegressionResult.regressed` es el booleano único
+    que el gate exporta como exit code.
+  - **Subcomandos CLI (`cli/ci_commands.py`).** `selfevals baseline set
+<ws> <exp> [--iteration itr_…]` (sin `--iteration` toma la mejor iteración
+    COMPLETED, misma regla que `OptimizationLoop.best_iteration`); `selfevals
+baseline show <ws> <exp>`; y `selfevals regression check <ws> <exp>
+[--iteration itr_…] [--max-primary-drop 0.05] [--max-f1-drop 0.05]
+[--max-error-rate-rise 0.05] [--fail-on-error-rate]`. Exit codes: **0** sin
+    regresión, **1** regresión detectada, **2** error de uso (vía
+    `CommandError`, distinto del 1 para que un CI distinga "bajó la calidad" de
+    "comando mal usado"). Uso típico en CI:
+    `selfevals regression check ws_… exp_… || exit 1`.
+
 - **`run.parallelism` ahora se consume (antes dead code)** — el campo
   `run.parallelism` del YAML (`schemas/experiment.py:163`, `ge=1 le=64`) estaba
   definido pero nunca leído: el `Executor` y el `OptimizationLoop` usaban su

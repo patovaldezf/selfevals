@@ -53,7 +53,7 @@ LLM proposer PR-13) — lo referencia.
 | 5   | **Worker concurrente** (consumir `run.parallelism` + pool de N workers) | serial = no escala a N experimentos                            | ❌ `parallelism` definido (`experiment.py:163`), **dead code**                                                                                                                   | M        | SF-3      |
 | 6   | Observabilidad en la respuesta (nodos/tokens/latencia)                  | cuando un eval falla, el dev no ve por qué sin reproducir      | 🟡 = ROADMAP PR-2/#9                                                                                                                                                             | M        | (ROADMAP) |
 | 7   | Análisis de fallas auto (clustering de failure-modes)                   | clasificar fallos a mano no escala                             | 🟡 = ROADMAP PR-13/#6                                                                                                                                                            | S–M      | (ROADMAP) |
-| 8   | Regresión en CI + baselines versionados                                 | "intention bajó de 0.88 a 0.67, falla el build"                | ❌ nuevo (hoy diferido)                                                                                                                                                          | M        | SF-4      |
+| 8   | Regresión en CI + baselines versionados                                 | "intention bajó de 0.88 a 0.67, falla el build"                | ✅ SF-4 (`baseline set/show` + `regression check`, exit 1)                                                                                                                       | M        | SF-4      |
 
 Leyenda: ✅ done · 🟡 parcial · ❌ ausente. `★` = capacidad estrella (lo que más
 mueve la aguja para el diagnóstico real).
@@ -148,12 +148,25 @@ se documenta en su propio repo.
   worker y validar el reparto. El executor ya es async (`executor.py:142`), así que la
   concurrencia intra-run es ortogonal al pool inter-run.
 
-### SF-4 — Regresión en CI + baselines (M) · depende de ★Capa 2
+### SF-4 — Regresión en CI + baselines (M) · depende de ★Capa 2 — ✅ HECHO
 
 - Baseline versionado por experimento (el "best iteration" ya se selecciona) +
   un gate que compara el run actual contra el baseline y falla si pass@1 (o per-class
   F1 de la confusion matrix) cae más de un umbral. Hoy diferido explícitamente en
   `ROADMAP.md` ("Analítica en producción: CI regression gate").
+- **Entregado:**
+  - `schemas/baseline.py::BaselineRecord` — puntero `{experiment_id,
+iteration_id, primary_value, macro_f1, error_rate}` persistible. Es una
+    `BaseEntity`, así que rueda en la tabla genérica `entities` de SQLite **sin
+    migración**; el último por `created_at` es el baseline vigente.
+  - `ci/regression.py::evaluate_regression(baseline, current, thresholds) ->
+RegressionResult` — gate puro (sin storage/CLI) sobre dos `IterationMetrics`.
+    Compara primary/pass@1, F1 per-class + macro-F1 (de la matriz vía
+    `ConfusionReport.from_dict`) y `error_rate` (rise; warn por default).
+    Clases ausentes en un lado → informativo, no fallo.
+  - CLI `cli/ci_commands.py`: `selfevals baseline set|show` y `selfevals
+regression check`. Exit **0** ok / **1** regresión / **2** error de uso.
+    En CI: `selfevals regression check ws_… exp_… || exit 1`.
 
 ---
 
