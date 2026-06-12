@@ -70,6 +70,27 @@ async def test_showcase_proposer_improves_and_funnel_short_circuits() -> None:
 
 
 @pytest.mark.asyncio
+async def test_showcase_confusion_matrix_tracks_category_class() -> None:
+    loop = build_loop(_spec(), scope=None, repetitions_per_case=1)  # type: ignore[arg-type]
+    result = await loop.run()
+    by_level = {
+        it.proposal.parameters.get("model_params", {}).get("level"): it for it in result.iterations
+    }
+    low = by_level[0.0]
+    high = by_level[1.0]
+
+    # The `confusion` grader (`category_class`) scores structured_output["category"]
+    # against expected.outcome="electronics". At level<0.5 the agent emits
+    # "unknown" (off-diagonal); at level>=0.5 "electronics" (diagonal).
+    assert low.aggregate.confusion is not None
+    assert low.aggregate.confusion.to_nested() == {"electronics": {"unknown": 3}}
+    assert high.aggregate.confusion is not None
+    assert high.aggregate.confusion.to_nested() == {"electronics": {"electronics": 3}}
+    assert high.aggregate.confusion.accuracy == pytest.approx(1.0)
+    assert high.aggregate.confusion.macro_f1 == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
 async def test_showcase_gate_short_circuits_at_low_level() -> None:
     loop = build_loop(_spec(), scope=None, repetitions_per_case=1)  # type: ignore[arg-type]
     result = await loop.run()

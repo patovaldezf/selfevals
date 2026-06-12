@@ -111,3 +111,12 @@ graders:
             - key: panel_ref
               extract: ""
               match: { grader: quality_panel }
+
+  # 5. confusion — single-label NxN classification. Extracts the predicted class
+  #    from structured_output["category"] and compares it to expected.outcome,
+  #    emitting a `cell:<expected>-><predicted>` breakdown the aggregator rolls
+  #    into a confusion matrix + per-class F1. At level<0.5 the agent emits
+  #    "unknown" (off-diagonal); at level>=0.5 "electronics" (diagonal).
+  - type: confusion
+    name: category_class
+    params: { extract: category }
