@@ -44,16 +44,16 @@ LLM proposer PR-13) — lo referencia.
 
 ## Tabla de capacidades
 
-| #   | Capacidad                                                               | Por qué                                                        | Status hoy                                                                                                  | Esfuerzo | Fase      |
-| --- | ----------------------------------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | -------- | --------- |
-| ★1  | **Confusion failure-mode** (exact-match → `misclassified:X->Y`)         | exact-match es callejón sin salida diagnóstico                 | ✅ `misclassified:<pred>-><exp>` cuando ambos son etiqueta de clase (`deterministic.py`)                    | S        | SF-1      |
-| 2   | **Errored/timeout fuera de pass@1**                                     | hoy un agente colgado cuenta como 0.0 de calidad               | ✅ cases errored excluidos del denominador de pass@1 + `error_rate` separado (`aggregator.py`)              | S        | SF-1      |
-| 3   | **`consistency_rate` al reporte**                                       | el no-determinismo se computa pero no se ve                    | ✅ columna `consistency` en la tabla de iteraciones (`markdown.py`)                                         | S        | SF-1      |
-| ★4  | **`ClassificationGrader` (`type: confusion`) + matriz NxN agregada**    | "special orders se confunden con full orders" es la señal real | 🟡 `confusion` NxN ya existe en `calibration.py::compute_classification_metrics`, sin grader que la exponga | M        | SF-2      |
-| 5   | **Worker concurrente** (consumir `run.parallelism` + pool de N workers) | serial = no escala a N experimentos                            | ❌ `parallelism` definido (`experiment.py:163`), **dead code**                                              | M        | SF-3      |
-| 6   | Observabilidad en la respuesta (nodos/tokens/latencia)                  | cuando un eval falla, el dev no ve por qué sin reproducir      | 🟡 = ROADMAP PR-2/#9                                                                                        | M        | (ROADMAP) |
-| 7   | Análisis de fallas auto (clustering de failure-modes)                   | clasificar fallos a mano no escala                             | 🟡 = ROADMAP PR-13/#6                                                                                       | S–M      | (ROADMAP) |
-| 8   | Regresión en CI + baselines versionados                                 | "intention bajó de 0.88 a 0.67, falla el build"                | ❌ nuevo (hoy diferido)                                                                                     | M        | SF-4      |
+| #   | Capacidad                                                               | Por qué                                                        | Status hoy                                                                                                                                                                       | Esfuerzo | Fase      |
+| --- | ----------------------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------- |
+| ★1  | **Confusion failure-mode** (exact-match → `misclassified:X->Y`)         | exact-match es callejón sin salida diagnóstico                 | ✅ `misclassified:<pred>-><exp>` cuando ambos son etiqueta de clase (`deterministic.py`)                                                                                         | S        | SF-1      |
+| 2   | **Errored/timeout fuera de pass@1**                                     | hoy un agente colgado cuenta como 0.0 de calidad               | ✅ cases errored excluidos del denominador de pass@1 + `error_rate` separado (`aggregator.py`)                                                                                   | S        | SF-1      |
+| 3   | **`consistency_rate` al reporte**                                       | el no-determinismo se computa pero no se ve                    | ✅ columna `consistency` en la tabla de iteraciones (`markdown.py`)                                                                                                              | S        | SF-1      |
+| ★4  | **`ClassificationGrader` (`type: confusion`) + matriz NxN agregada**    | "special orders se confunden con full orders" es la señal real | ✅ grader `confusion` + rollup NxN + per-class F1 + render markdown; matemática extraída a `graders/_confusion.py` reusada por calibración (`classification.py`/`aggregator.py`) | M        | SF-2      |
+| 5   | **Worker concurrente** (consumir `run.parallelism` + pool de N workers) | serial = no escala a N experimentos                            | ❌ `parallelism` definido (`experiment.py:163`), **dead code**                                                                                                                   | M        | SF-3      |
+| 6   | Observabilidad en la respuesta (nodos/tokens/latencia)                  | cuando un eval falla, el dev no ve por qué sin reproducir      | 🟡 = ROADMAP PR-2/#9                                                                                                                                                             | M        | (ROADMAP) |
+| 7   | Análisis de fallas auto (clustering de failure-modes)                   | clasificar fallos a mano no escala                             | 🟡 = ROADMAP PR-13/#6                                                                                                                                                            | S–M      | (ROADMAP) |
+| 8   | Regresión en CI + baselines versionados                                 | "intention bajó de 0.88 a 0.67, falla el build"                | ❌ nuevo (hoy diferido)                                                                                                                                                          | M        | SF-4      |
 
 Leyenda: ✅ done · 🟡 parcial · ❌ ausente. `★` = capacidad estrella (lo que más
 mueve la aguja para el diagnóstico real).
@@ -88,12 +88,22 @@ con predicted/expected en el `detail`.
 string tal cual (`aggregator.py:390`) y el reporter ya rankea el top-N
 (`markdown.py:177`). El mode enriquecido aparece solo en los reportes.
 
-### Capa 2 (M) — `ClassificationGrader` (`type: confusion`) + rollup · SF-2
+### Capa 2 (M) — `ClassificationGrader` (`type: confusion`) + rollup · SF-2 ✅
 
-La primitiva **ya existe**: `compute_classification_metrics` en
-`graders/calibration.py` devuelve un `CalibrationReport` con
-`confusion: dict[(expected, predicted), int]` + `per_label_precision/recall` +
-`macro_f1`. Falta:
+**Hecho (SF-2).** La matemática de confusión (matriz NxN + per-class P/R/F1 +
+macro-F1, con guard de class-imbalance) se **extrajo** de
+`compute_classification_metrics` a un helper puro sobre strings
+`graders/_confusion.py::confusion_from_pairs(pairs) -> ConfusionReport`; tanto la
+calibración (pred-vs-humano sobre el enum `GradeLabel`) como el nuevo rollup lo
+reusan, así la fórmula de F1 no se duplica (ruta B: la primitiva original usaba el
+enum `GradeLabel`, no strings arbitrarios, así que reusarla tal cual habría sido
+forzado). El par `(esperado, predicho)` viaja del grader al aggregator codificado
+en la key de un nodo hijo del breakdown (`cell:<esperado>-><predicho>`), que
+sobrevive el collapse multi-turn; el rollup recorre el árbol y reconstruye la
+matriz. Persistido en `IterationMetrics.confusion` como dict-of-dicts (sin
+migración) y renderizado en markdown.
+
+Diseño original (la primitiva existía en `calibration.py`):
 
 1. **Grader nuevo** `graders/classification.py` (`type: confusion`): por-case extrae
    la clase predicha (vía el path selector de `_select.py`, como `set_match`) y la

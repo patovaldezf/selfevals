@@ -46,8 +46,14 @@ this file records what _is_.
   majority), `FunnelGrader` (declarable as `type: funnel`: N sequential
   levels, each extracting a `structured_output`/trace slice via a path
   selector and scoring it with a builtin match or any nested grader, with
-  gate short-circuit and per-level failure modes). Calibration utilities
-  compute precision/recall/F1/macro-F1 and high-risk false negatives.
+  gate short-circuit and per-level failure modes), `ClassificationGrader`
+  (single-label N-class scoring, declarable as `type: confusion`: extracts
+  the predicted class via the path selector and compares it to the case's
+  expected class, emitting the `(expected, predicted)` pair so the
+  aggregator rolls up an NxN confusion matrix + per-class P/R/F1 + macro-F1,
+  rendered in the markdown report). Calibration utilities compute
+  precision/recall/F1/macro-F1 and high-risk false negatives — the confusion
+  math is shared via `graders/_confusion.py` so F1 is defined once.
 - **OptimizationLoop**: `ManualProposer`, `GridProposer`,
   `RandomProposer`, `LLMProposer` (offline deterministic hypothesis mode
   by default; LLM mode via an injected `AgentAdapter`). Convergence
