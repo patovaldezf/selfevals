@@ -187,6 +187,18 @@ class OptimizationLoop:
         return list(self._holdout_cases)
 
     async def run(self) -> OptimizationResult:
+        """Run the optimization loop, always closing the executor afterward.
+
+        The `finally` stops the embedded OTLP receiver (if the executor started
+        one) on every exit path — success, early-stop, or exception — so a
+        long-lived `selfevals serve` doesn't leak receiver threads/ports across
+        runs."""
+        try:
+            return await self._run_iterations()
+        finally:
+            self._executor.close()
+
+    async def _run_iterations(self) -> OptimizationResult:
         if self._experiment.state == ExperimentState.DRAFT:
             self._experiment.transition_to(ExperimentState.QUEUED)
         if self._experiment.state == ExperimentState.QUEUED:

@@ -469,3 +469,105 @@ def test_span_view_exposes_provider_metadata_and_accounting() -> None:
     assert detail["tokens"]["input"] == 10
     assert detail["tokens"]["reasoning"] == 3
     assert detail["provider_metadata"]["system_fingerprint"] == "fp_abc"
+
+
+# --- OTLP wiring: out-of-process agents export their own spans into the case
+# trace via the receiver bound around adapter.invoke() (the seals use case).
+
+
+def _otlp_payload_with_llm_span() -> bytes:
+    """A minimal OTLP/protobuf body carrying one OpenInference LLM span —
+    what an instrumented agent's exporter would POST during invoke()."""
+    from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
+        ExportTraceServiceRequest,
+    )
+    from opentelemetry.proto.common.v1.common_pb2 import AnyValue, KeyValue
+    from opentelemetry.proto.resource.v1.resource_pb2 import Resource
+    from opentelemetry.proto.trace.v1.trace_pb2 import ResourceSpans, ScopeSpans, Span
+
+    req = ExportTraceServiceRequest()
+    rs = ResourceSpans()
+    rs.resource.CopyFrom(Resource())
+    ss = ScopeSpans()
+    proto = Span()
+    proto.name = "ChatOpenAI"
+    proto.span_id = b"\x01" * 8
+    proto.trace_id = b"\x02" * 16
+    proto.start_time_unix_nano = 1_000_000_000
+    proto.end_time_unix_nano = 3_400_000_000
+    for k, v in {"openinference.span.kind": "LLM", "llm.model_name": "gpt-5.4-mini"}.items():
+        kv = KeyValue()
+        kv.key = k
+        kv.value.CopyFrom(AnyValue(string_value=v))
+        proto.attributes.append(kv)
+    ss.spans.append(proto)
+    rs.scope_spans.append(ss)
+    req.resource_spans.append(rs)
+    return req.SerializeToString()
+
+
+@pytest.mark.asyncio
+async def test_executor_nests_agent_otlp_spans_under_case() -> None:
+    """When an OTLP receiver is bound, spans an out-of-process agent exports to
+    `request.otlp_endpoint` during invoke() land in this case's trace — not just
+    the synthetic `adapter_response`. This is the seals path: the agent runs the
+    real graph (ChatOpenAI) and ships its spans to selfevals instead of (only)
+    LangSmith."""
+    import urllib.request
+
+    from selfevals.runner.otlp_receiver import start_receiver
+
+    posted_endpoint: dict[str, str | None] = {}
+
+    def _agent_that_exports(req: AdapterRequest) -> AdapterResponse:
+        # Mirror what seals' /invoke does: read the endpoint we were handed and
+        # POST our own spans there before returning.
+        posted_endpoint["url"] = req.otlp_endpoint
+        if req.otlp_endpoint:
+            http_req = urllib.request.Request(
+                req.otlp_endpoint + "/v1/traces",
+                data=_otlp_payload_with_llm_span(),
+                headers={"Content-Type": "application/x-protobuf"},
+                method="POST",
+            )
+            with urllib.request.urlopen(http_req) as resp:
+                assert resp.status == 200
+        return AdapterResponse(content="Business - Sales", stop_reason="end_turn")
+
+    with start_receiver() as handle:
+        executor = Executor(
+            adapter=EmbeddedAdapter(_agent_that_exports, agent=_agent()),
+            sandbox=SandboxPolicy(SandboxMode.MOCK),
+            workspace_id=WS,
+            otlp_handle=handle,
+        )
+        rep = (await executor.run_case(_case())).repetitions[0]
+
+    # The agent received the receiver's endpoint via the request.
+    assert posted_endpoint["url"] == handle.endpoint
+    # Its exported LLM span got drained into this case's trace (on top of the
+    # synthetic adapter_response span the executor always records).
+    llm_spans = [s for s in rep.trace.spans if isinstance(s, LLMCallSpan)]
+    names = {s.name for s in llm_spans}
+    assert "ChatOpenAI" in names
+    assert "adapter_response" in names
+
+
+@pytest.mark.asyncio
+async def test_executor_without_receiver_omits_otlp_endpoint() -> None:
+    """No receiver (embedded path / legacy) → request.otlp_endpoint is None and
+    the trace has only the synthetic span. Nothing regresses."""
+    seen: dict[str, str | None] = {}
+
+    def _peek(req: AdapterRequest) -> AdapterResponse:
+        seen["url"] = req.otlp_endpoint
+        return AdapterResponse(content="pong", stop_reason="end_turn")
+
+    executor = Executor(
+        adapter=EmbeddedAdapter(_peek, agent=_agent()),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    rep = (await executor.run_case(_case())).repetitions[0]
+    assert seen["url"] is None
+    assert {s.name for s in rep.trace.spans if isinstance(s, LLMCallSpan)} == {"adapter_response"}

@@ -25,6 +25,7 @@ mutation. This is what makes background runs safe to overlap.
 from __future__ import annotations
 
 import inspect
+import logging
 import os
 import threading
 from collections.abc import Callable, Sequence
@@ -71,6 +72,7 @@ from selfevals.runner.adapters import (
     HttpEndpointAdapter,
 )
 from selfevals.runner.executor import Executor
+from selfevals.runner.otlp_receiver import start_receiver
 from selfevals.runner.sandbox import SandboxPolicy
 from selfevals.schemas._base import EntityRef
 from selfevals.schemas.dataset import Dataset, SplitAllocation
@@ -85,6 +87,8 @@ from selfevals.storage.interface import ListFilter, StorageInterface, WorkspaceS
 if TYPE_CHECKING:
     from selfevals.trace.payload_router import PayloadRouter
     from selfevals.trace.span_sink import SpanSink
+
+logger = logging.getLogger(__name__)
 
 # Serializes the register → resolve → unregister window so concurrent
 # `build_loop` calls cannot trample one another's grader registrations.
@@ -115,6 +119,26 @@ def trace_sampling_override() -> Literal["none", "all", "failed"] | None:
     if raw is None:
         return None
     return _TRACE_SAMPLING_ALIASES.get(raw.strip().lower())
+
+
+_OTLP_PORT_ENV = "SELFEVALS_OTLP_PORT"
+
+
+def _otlp_receiver_port() -> int:
+    """Port for the embedded OTLP receiver. 0 (default) = OS-assigned dynamic
+    port, one per run — the right choice for concurrent runs. Set
+    `SELFEVALS_OTLP_PORT` to pin a stable port so a long-lived out-of-process
+    agent can configure its OTLP exporter once. An invalid value falls back to 0
+    rather than crashing the run."""
+    raw = os.environ.get(_OTLP_PORT_ENV)
+    if not raw:
+        return 0
+    try:
+        port = int(raw.strip())
+    except ValueError:
+        logger.warning("ignoring invalid %s=%r (want an int port)", _OTLP_PORT_ENV, raw)
+        return 0
+    return port if 0 <= port <= 65535 else 0
 
 
 def payload_router_for_db(db_path: str, workspace_id: str) -> PayloadRouter:
@@ -742,12 +766,31 @@ def build_loop(
         _materialize_inline_dataset(scope, spec)
         scope.put_entity(spec.experiment)
 
+    # Start an embedded OTLP receiver only for out-of-process agents (cli/http):
+    # those run in a separate process and can export their own spans (LLM calls,
+    # chains) to us so they nest under each case's trace. Embedded agents share
+    # this process, so they need no receiver. The executor closes it (loop's
+    # finally → executor.close()).
+    #
+    # Port: dynamic (OS-assigned) by default — correct for concurrent runs, each
+    # gets its own receiver/port. Set SELFEVALS_OTLP_PORT to pin it when a
+    # long-lived agent server (e.g. an HTTP adapter) must point a single OTLP
+    # exporter at a STABLE endpoint it configures once. A fixed port assumes runs
+    # don't overlap (the bind would clash, and a shared receiver has one recorder
+    # slot); use the default dynamic port if you run experiments concurrently.
+    otlp_handle = (
+        start_receiver(port=_otlp_receiver_port())
+        if isinstance(adapter, (HttpEndpointAdapter, CliCommandAdapter))
+        else None
+    )
+
     executor = Executor(
         adapter=adapter,
         sandbox=SandboxPolicy(spec.experiment.run.sandbox),
         workspace_id=spec.workspace_id,
         span_sink=span_sink,
         payload_router=payload_router,
+        otlp_handle=otlp_handle,
     )
     return OptimizationLoop(
         experiment=spec.experiment,

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -38,6 +39,7 @@ from selfevals.trace.span_sink import NO_OP_SINK
 
 if TYPE_CHECKING:
     from selfevals.runner.adapters import AdapterResponse, AgentAdapter
+    from selfevals.runner.otlp_receiver import ReceiverHandle
     from selfevals.schemas.eval_case import EvalCase
     from selfevals.trace.payload_router import PayloadRouter
     from selfevals.trace.span_sink import SpanSink
@@ -141,6 +143,7 @@ class Executor:
         payload_router: PayloadRouter | None = None,
         concurrency: int = 8,
         span_sink: SpanSink | None = None,
+        otlp_handle: ReceiverHandle | None = None,
     ) -> None:
         if not workspace_id:
             raise ValueError("workspace_id must be non-empty")
@@ -156,11 +159,23 @@ class Executor:
         # Live span fan-out, threaded through to every per-rep TraceRecorder.
         # NO_OP by default (CLI runs); `selfevals serve` injects a broker sink.
         self._span_sink = span_sink or NO_OP_SINK
+        # Embedded OTLP receiver (optional). When present, out-of-process agents
+        # export their own spans here and we bind it to each rep's recorder so
+        # they nest under the case trace. None → only the synthetic
+        # `adapter_response` span is recorded (legacy behaviour).
+        self._otlp_handle = otlp_handle
         sandbox.ensure_runnable()
 
     @property
     def sandbox(self) -> SandboxPolicy:
         return self._sandbox
+
+    def close(self) -> None:
+        """Stop the embedded OTLP receiver, if one was started. Idempotent —
+        safe to call from the loop's `finally` even when no receiver exists."""
+        if self._otlp_handle is not None:
+            self._otlp_handle.stop()
+            self._otlp_handle = None
 
     async def run_case(
         self,
@@ -237,11 +252,23 @@ class Executor:
             tools_allowed=self._tools_allowed(case),
             parameters=parameter_overrides,
             metadata={"taxonomy": case.taxonomy.model_dump(mode="json")},
+            otlp_endpoint=(
+                self._otlp_handle.endpoint if self._otlp_handle is not None else None
+            ),
+        )
+
+        # Bind the OTLP receiver to this rep's recorder so spans the agent
+        # exports during invoke() (its LLM calls, chains) drain into this
+        # case's trace. nullcontext when no receiver is running.
+        otlp_ctx = (
+            self._otlp_handle.bind_recorder(recorder)
+            if self._otlp_handle is not None
+            else nullcontext()
         )
 
         error: str | None = None
         response: AdapterResponse | None = None
-        with recorder, recorder.agent_turn(f"case:{case.name}"):
+        with otlp_ctx, recorder, recorder.agent_turn(f"case:{case.name}"):
             try:
                 response = await self._adapter.invoke(adapter_request)
             except AdapterError as exc:
