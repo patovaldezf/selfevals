@@ -81,3 +81,28 @@ def test_redact_url_keeps_db_number() -> None:
     assert redact_url("redis://localhost:6380/15") == "redis://localhost:6380/15"
     assert redact_url("redis://u:p@host:6380/0") == "redis://host:6380/0"
     assert redact_url("redis://host/3") == "redis://host/3"
+
+
+def test_n_workers_get_distinct_consumer_names(
+    fake_queue: None, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The inter-run pool is a Redis consumer group: launch N `selfevals worker
+    runs` processes against the same stream/group and Redis distributes jobs
+    across them. The one invariant that makes the distribution work is that each
+    worker registers under a *distinct* consumer name (an auto-derived default
+    when --consumer is omitted), so two workers never share an xreadgroup slot.
+    Pin that two configs without an explicit consumer log two different names."""
+    names: list[str] = []
+    with caplog.at_level(logging.INFO, logger="selfevals.worker.runs"):
+        for _ in range(2):
+            caplog.clear()
+            run_worker(
+                RunWorkerConfig(
+                    storage_url="sqlite:///tmp/x.sqlite",
+                    redis_url="redis://localhost:6380/0",
+                    once=True,
+                )
+            )
+            boot = next(r for r in caplog.records if "run worker online" in r.getMessage())
+            names.append(boot.getMessage().split("consumer=")[1].split(" ")[0])
+    assert names[0] != names[1]

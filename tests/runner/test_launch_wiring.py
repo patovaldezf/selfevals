@@ -133,6 +133,72 @@ def test_build_loop_without_scope_does_not_persist_cases(tmp_path: object) -> No
     assert all(c.experiment_id is None for c in spec.cases)
 
 
+def _inline_spec_with_parallelism(ws: str, parallelism: int) -> object:
+    """An inline pingpong spec with `experiment.run.parallelism` overridden."""
+    import json as _json
+    from pathlib import Path
+
+    import yaml
+
+    from selfevals.repo.loader import build_spec_from_mapping
+
+    repo_root = Path(__file__).resolve().parents[2]
+    raw = yaml.safe_load((repo_root / "evals/experiments/example_pingpong.yaml").read_text())
+    rows = [
+        _json.loads(line)
+        for line in (repo_root / "evals/datasets/pingpong.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    raw["dataset"] = {"cases_inline": rows, "name": "pingpong inline", "dataset_type": "capability"}
+    raw["experiment"]["run"]["parallelism"] = parallelism
+    return build_spec_from_mapping(raw, workspace_id=ws)
+
+
+def test_build_loop_wires_run_parallelism_into_semaphores() -> None:
+    """`run.parallelism` (dead code until SF-3) now caps both the executor's
+    per-case concurrency and the loop's grader concurrency. Build a spec with
+    parallelism=4 and assert both semaphores are sized to 4 — not the legacy
+    hardcoded 8."""
+    from selfevals.runner.launch import build_loop
+
+    spec = _inline_spec_with_parallelism("ws_01HZZZZZZZZZZZZZZZZZZZZZZZ", 4)
+    assert spec.experiment.run.parallelism == 4  # type: ignore[attr-defined]
+
+    loop = build_loop(spec, scope=None, repetitions_per_case=1)  # type: ignore[arg-type]
+
+    assert loop._grade_concurrency == 4
+    assert loop._executor._concurrency == 4
+
+
+def test_build_loop_default_parallelism_preserves_legacy_concurrency() -> None:
+    """The schema default for `run.parallelism` is 8, so a spec that does NOT
+    set it keeps the legacy concurrency of 8 — wiring `parallelism` does not
+    regress the performance of specs that never declare it."""
+    import json as _json
+    from pathlib import Path
+
+    import yaml
+
+    from selfevals.repo.loader import build_spec_from_mapping
+    from selfevals.runner.launch import build_loop
+
+    repo_root = Path(__file__).resolve().parents[2]
+    raw = yaml.safe_load((repo_root / "evals/experiments/example_pingpong.yaml").read_text())
+    rows = [
+        _json.loads(line)
+        for line in (repo_root / "evals/datasets/pingpong.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    raw["dataset"] = {"cases_inline": rows, "name": "pingpong inline", "dataset_type": "capability"}
+    # Deliberately do NOT set run.parallelism — exercise the schema default.
+    raw["experiment"]["run"].pop("parallelism", None)
+    spec = build_spec_from_mapping(raw, workspace_id="ws_01HZZZZZZZZZZZZZZZZZZZZZZZ")
+    loop = build_loop(spec, scope=None, repetitions_per_case=1)  # type: ignore[arg-type]
+
+    assert loop._grade_concurrency == 8
+    assert loop._executor._concurrency == 8
+
+
 def _inline_spec(ws: str) -> object:
     """A pingpong spec with cases inlined, ready for build_loop."""
     import json as _json
