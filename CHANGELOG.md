@@ -19,6 +19,43 @@ Versions follow [SemVer](https://semver.org/).
   para preservar la concurrencia legacy de los runs que no lo declaran (ver
   Changed). Parte de SF-3 del SCALING_ROADMAP.
 
+- **`ClassificationGrader` (`type: confusion`) + matriz NxN agregada (SF-2,
+  ★Capa 2 del SCALING_ROADMAP).** Capacidad estrella: scoring de clasificación
+  single-label de N clases con matriz de confusión NxN, per-class P/R/F1 y
+  macro-F1 a nivel de iteración.
+  - **Grader nuevo `graders/classification.py`.** Por-case extrae la clase
+    _predicha_ de `structured_output` vía el path selector (`extract`, default
+    `"label"`) y la clase _esperada_ del case (`Expected.outcome`, o un path en
+    `Expected.structured_output` con `expected_from`); PASS si coinciden, FAIL si
+    no. En miss emite el failure-mode `misclassified:<predicho>-><esperado>` (el
+    mismo tag que SF-1) para el análisis de fallos. Registrado como `confusion`
+    en `graders/registry.py` y declarable en YAML (`type: confusion`,
+    `params: {extract, expected_from, case_sensitive}`).
+  - **El par `(esperado, predicho)` viaja por el breakdown.** Como el aggregator
+    descarta los `details` de cada grade, el par se codifica en la _key_ de un
+    nodo hijo del breakdown: `cell:<esperado>-><predicho>`. Va en un hijo (no en
+    la raíz) a propósito: el collapse multi-turn descarta la raíz del breakdown e
+    injerta solo los hijos bajo `turn_N`, así la celda sobrevive tanto en cases
+    single-turn como conversación. El diagonal (correcto) sobrevive porque el
+    breakdown se emite también en PASS.
+  - **Refactor: `graders/_confusion.py` reutilizable.** Se extrajo la matemática
+    de confusión (matriz NxN + P/R/F1 + macro-F1, con guard de class-imbalance) a
+    `confusion_from_pairs(pairs) -> ConfusionReport`, helper puro sobre strings.
+    `compute_classification_metrics` (calibración) ahora lo llama, así la fórmula
+    de F1 vive en **un solo sitio**. Sus tests siguen verdes.
+  - **Rollup en `aggregator.py`.** `_rollup_confusion` recorre el árbol de
+    breakdowns recursivamente, parsea las keys `cell:` de vuelta a pares y los
+    pasa a `confusion_from_pairs`. Resultado en `IterationAggregate.confusion`
+    (`None` si no corrió grader confusion). Persistido en `IterationMetrics.confusion`
+    como dict-of-dicts `{esperado: {predicho: count}}` (JSON-serializable, sin
+    migración) y rehidratado en el path de reporte.
+  - **Render markdown.** Sección "Confusion matrix" con la tabla NxN
+    (filas=esperado, columnas=predicho) + accuracy/macro-F1 + per-class F1. Se
+    omite limpio cuando no hay grader confusion (igual que Funnel / Cost & Time).
+  - **Showcase.** El ejemplo `showcase` ahora declara un grader `type: confusion`
+    (`category_class`) sobre `structured_output["category"]`; la matriz aparece
+    en el reporte y un test la asserta en ambos niveles del grid.
+
 - **Honestidad de la métrica (SF-1).** Tres cambios chicos para que las cifras
   no mientan:
   - **`misclassified:X->Y` en exact-match.** Cuando `structured_output`

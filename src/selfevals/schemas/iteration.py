@@ -156,6 +156,15 @@ class IterationMetrics(SelfEvalsModel):
     no grader emitted a breakdown. Additive and purely informational: it never
     changes the primary metric or the decision — it powers the funnel
     drill-down in the reporter, compare view, and frontend."""
+    confusion: dict[str, Any] | None = None
+    """Serialized NxN confusion matrix for this iteration (the `to_dict` form of
+    `aggregator.ConfusionReport`: n_pairs / accuracy / macro_f1 / labels / a
+    nested `{expected: {predicted: count}}` matrix / per-class P/R/F1). `None`
+    when no `confusion` grader ran. The `tuple[str,str]` cell keys are nested
+    into a dict-of-dicts so the matrix is JSON-serializable (same escape
+    `failure_mode_counts` uses). Additive and informational: it never changes the
+    primary metric or the decision — it powers the confusion section in the
+    reporter and the frontend. See `aggregator._rollup_confusion`."""
 
 
 class IterationDecision(SelfEvalsModel):

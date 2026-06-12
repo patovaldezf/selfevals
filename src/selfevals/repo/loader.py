@@ -536,7 +536,14 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-_SUPPORTED_GRADER_TYPES = {"deterministic", "llm_judge", "judge_panel", "set_match", "funnel"}
+_SUPPORTED_GRADER_TYPES = {
+    "deterministic",
+    "llm_judge",
+    "judge_panel",
+    "set_match",
+    "funnel",
+    "confusion",
+}
 _SET_MATCH_GATINGS = {"completeness", "precision", "recall", "f1"}
 _CONSENSUS_RULES = {"majority", "unanimous", "weighted"}
 _FUNNEL_MATCH_KINDS = {
@@ -601,6 +608,9 @@ def _build_grader_specs(spec_path: Path, raw: dict[str, Any]) -> list[GraderSpec
 
         if type_ == "funnel":
             params = _parse_funnel_params(spec_path, i, entry)
+
+        if type_ == "confusion":
+            params = _parse_confusion_params(spec_path, i, entry)
 
         specs.append(
             GraderSpec(
@@ -674,6 +684,54 @@ def _parse_set_match_params(spec_path: Path, i: int, entry: dict[str, Any]) -> d
                 f"{spec_path}: graders[{i}].params.threshold must be in [0, 1], got {threshold!r}"
             )
         params["threshold"] = float(threshold)
+    case_sensitive = raw.get("case_sensitive")
+    if case_sensitive is not None:
+        if not isinstance(case_sensitive, bool):
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].params.case_sensitive must be a boolean, "
+                f"got {case_sensitive!r}"
+            )
+        params["case_sensitive"] = case_sensitive
+    return params
+
+
+def _parse_confusion_params(spec_path: Path, i: int, entry: dict[str, Any]) -> dict[str, Any]:
+    """Validate a `confusion` grader's params (`extract`/`expected_from`/`case_sensitive`).
+
+    `extract` is the path selector into `structured_output` for the predicted
+    class (default `"label"`); `expected_from`, when set, is the path into
+    `Expected.structured_output` for the ground-truth class (default: read
+    `Expected.outcome`). Paths are validated here so a YAML typo fails at load.
+    """
+    from selfevals.graders._select import validate_path
+
+    raw = entry.get("params", {})
+    if not isinstance(raw, dict):
+        raise LoaderError(f"{spec_path}: graders[{i}].params must be a mapping, got {raw!r}")
+    params: dict[str, Any] = {}
+    extract = raw.get("extract")
+    if extract is not None:
+        if not isinstance(extract, str):
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].params.extract must be a string, got {extract!r}"
+            )
+        try:
+            validate_path(extract)
+        except ValueError as exc:
+            raise LoaderError(f"{spec_path}: graders[{i}].params.extract: {exc}") from exc
+        params["extract"] = extract
+    expected_from = raw.get("expected_from")
+    if expected_from is not None:
+        if not isinstance(expected_from, str):
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].params.expected_from must be a string, "
+                f"got {expected_from!r}"
+            )
+        try:
+            validate_path(expected_from)
+        except ValueError as exc:
+            raise LoaderError(f"{spec_path}: graders[{i}].params.expected_from: {exc}") from exc
+        params["expected_from"] = expected_from
     case_sensitive = raw.get("case_sensitive")
     if case_sensitive is not None:
         if not isinstance(case_sensitive, bool):

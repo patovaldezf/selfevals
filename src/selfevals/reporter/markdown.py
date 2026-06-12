@@ -104,6 +104,13 @@ def render_markdown(
         lines.extend(funnel_lines)
         lines.append("")
 
+    confusion_lines = _confusion_lines(funnel_source.aggregate)
+    if confusion_lines:
+        lines.append(f"## Confusion matrix (iteration #{funnel_source.iteration})")
+        lines.append("")
+        lines.extend(confusion_lines)
+        lines.append("")
+
     failure_lines = _failure_mode_lines(
         (it.aggregate for it in result.iterations),
         top_n=top_failure_modes,
@@ -186,6 +193,46 @@ def _funnel_node_lines(node: FunnelNode, *, depth: int, out: list[str]) -> None:
     out.append(f"{indent}- `{node.key}` — {' · '.join(parts)}")
     for child_key in sorted(node.children):
         _funnel_node_lines(node.children[child_key], depth=depth + 1, out=out)
+
+
+def _confusion_lines(aggregate: IterationAggregate) -> list[str]:
+    """Render the NxN confusion matrix + a per-class F1 line.
+
+    Returns `[]` when the iteration has no confusion data (no `confusion` grader
+    ran), so the caller omits the whole section — mirroring Cost & Time / Funnel.
+    The matrix is a markdown table: rows are the **expected** (actual) class,
+    columns the **predicted** class, cells the count (blank for 0). A header row
+    summarizes accuracy + macro-F1, and a trailing list gives per-class F1.
+    """
+    report = aggregate.confusion
+    if report is None or not report.labels:
+        return []
+    labels = report.labels
+    out: list[str] = []
+    macro = "—" if report.macro_f1 is None else f"{report.macro_f1:.4g}"
+    out.append(
+        f"_n={report.n_pairs} · accuracy={report.accuracy:.4g} · macro-F1={macro}_"
+    )
+    out.append("")
+    out.append("_rows = expected, columns = predicted_")
+    out.append("")
+    header = "| expected \\ predicted | " + " | ".join(f"`{label}`" for label in labels) + " |"
+    sep = "|" + "---|" * (len(labels) + 1)
+    out.append(header)
+    out.append(sep)
+    for expected in labels:
+        cells: list[str] = []
+        for predicted in labels:
+            count = report.confusion.get((expected, predicted), 0)
+            cells.append(str(count) if count else "")
+        out.append(f"| `{expected}` | " + " | ".join(cells) + " |")
+    out.append("")
+    out.append("**Per-class F1:**")
+    for label in labels:
+        f1 = report.per_label_f1.get(label)
+        f1_str = "—" if f1 is None else f"{f1:.4g}"
+        out.append(f"- `{label}` — {f1_str}")
+    return out
 
 
 def _failure_mode_lines(aggregates: Iterable[IterationAggregate], *, top_n: int) -> list[str]:

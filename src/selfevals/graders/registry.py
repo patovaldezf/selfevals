@@ -27,6 +27,7 @@ from collections.abc import Callable
 
 from selfevals.graders.artifact import ArtifactCompletenessGrader
 from selfevals.graders.base import Grader
+from selfevals.graders.classification import ClassificationGrader
 from selfevals.graders.deterministic import DeterministicGrader
 from selfevals.graders.guardrail import GuardrailGrader
 from selfevals.graders.set_match import SetMatchGrader
@@ -126,6 +127,7 @@ def resolve_graders(names: list[str]) -> list[Grader]:
 # imports `selfevals.graders` (or just this module) sees the defaults.
 
 register_grader("artifact_completeness", ArtifactCompletenessGrader)
+register_grader("confusion", ClassificationGrader)
 register_grader("deterministic", DeterministicGrader)
 register_grader("guardrail", GuardrailGrader)
 register_grader("set_match", SetMatchGrader)
