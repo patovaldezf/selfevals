@@ -28,6 +28,17 @@ Repo: github.com/patovaldezf/selfevals.
   comparten CLI (`selfevals dataset`), API (`/datasets`) y launch. El loader
   sigue puro (no toca storage); toda resolución/persistencia vive en
   `runner/launch.py`. El `split_allocation` del dataset llega de verdad al loop.
+- **graders many-to-many y panel** (v0.9.0): `set_match` puntúa conjuntos
+  (completeness/precision/recall/F1 de `structured_output["detected"]` vs
+  `Expected.must_include`, alias en el case via `Expected.aliases`); `judge_panel`
+  expone `JudgePanelGrader` en YAML (default 3 jueces/majority). El bloque
+  `graders:` del loader soporta `deterministic`/`set_match`/`llm_judge`/`judge_panel`;
+  el tuning por-tipo va en `GraderSpec.params`.
+- **funnel grader N niveles** (v0.10.0): `type: funnel` compone N niveles
+  secuenciales declarables en YAML; cada nivel extrae un slice del
+  `structured_output`/trace (path selector `graders/_select.py`) y lo puntúa con
+  un match builtin o cualquier grader anidado, con gate short-circuit y failure
+  modes por nivel.
 
 ## Convenciones
 

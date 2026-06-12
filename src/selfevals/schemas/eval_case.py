@@ -112,6 +112,12 @@ class Expected(SelfEvalsModel):
     required_sections: list[str] = Field(default_factory=list)
     """Top-level keys an artifact must carry, each mapping to a non-empty value.
     Consumed by the ArtifactCompletenessGrader for artifact-producing agents."""
+    aliases: dict[str, str] = Field(default_factory=dict)
+    """Optional canonical mapping for set-membership grading. Each detected and
+    expected label is normalized through this map before the set comparison
+    (consumed by the SetMatchGrader). Domain knowledge — e.g. `price_check` →
+    `"Price Check"` — lives in the case, never in the engine, so the grader
+    stays agnostic."""
 
 
 class Blocking(SelfEvalsModel):

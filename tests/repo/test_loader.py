@@ -474,3 +474,301 @@ def test_invalid_dataset_type_in_block_errors(tmp_path: Path) -> None:
     }
     with pytest.raises(LoaderError, match=r"invalid `dataset\.dataset_type:`"):
         load_experiment_spec(_write_yaml(tmp_path, body))
+# --- grader spec parsing (set_match, judge_panel) -------------------------
+
+
+def _body_with_graders(graders: list[dict]) -> dict:
+    return {
+        "workspace": WS,
+        "experiment": _experiment_block(),
+        "dataset": {"cases_inline": [_inline_case()]},
+        "agent": {"entrypoint": "tests.repo.fixtures.fake_agent:run"},
+        "graders": graders,
+    }
+
+
+def test_set_match_grader_parsed_with_params(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [{"type": "set_match", "name": "intention_f1", "params": {"gating": "f1", "threshold": 0.8}}]
+    )
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    g = next(g for g in spec.graders if g.name == "intention_f1")
+    assert g.type == "set_match"
+    assert g.params == {"gating": "f1", "threshold": 0.8}
+
+
+def test_set_match_grader_defaults_empty_params(tmp_path: Path) -> None:
+    body = _body_with_graders([{"type": "set_match", "name": "im"}])
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    g = next(g for g in spec.graders if g.name == "im")
+    assert g.params == {}
+
+
+def test_set_match_bad_gating_rejected(tmp_path: Path) -> None:
+    body = _body_with_graders([{"type": "set_match", "name": "im", "params": {"gating": "nope"}}])
+    with pytest.raises(LoaderError, match=r"params\.gating must be one of"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_set_match_bad_threshold_rejected(tmp_path: Path) -> None:
+    body = _body_with_graders([{"type": "set_match", "name": "im", "params": {"threshold": 2.0}}])
+    with pytest.raises(LoaderError, match=r"params.threshold must be in \[0, 1\]"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_judge_panel_grader_parsed(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [
+            {
+                "type": "judge_panel",
+                "name": "quality_panel",
+                "rubric": "Is the answer correct?",
+                "n_judges": 3,
+                "consensus": "majority",
+                "judge_entrypoint": "tests.repo.fixtures.fake_agent:run",
+            }
+        ]
+    )
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    g = next(g for g in spec.graders if g.name == "quality_panel")
+    assert g.type == "judge_panel"
+    assert g.n_judges == 3
+    assert g.consensus == "majority"
+    assert g.rubric == "Is the answer correct?"
+
+
+def test_judge_panel_defaults_n_judges_and_consensus(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [
+            {
+                "type": "judge_panel",
+                "name": "qp",
+                "rubric": "ok?",
+                "judge_entrypoint": "tests.repo.fixtures.fake_agent:run",
+            }
+        ]
+    )
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    g = next(g for g in spec.graders if g.name == "qp")
+    assert g.n_judges == 3
+    assert g.consensus == "majority"
+
+
+def test_judge_panel_requires_rubric(tmp_path: Path) -> None:
+    body = _body_with_graders([{"type": "judge_panel", "name": "qp"}])
+    with pytest.raises(LoaderError, match=r"\(judge_panel\) requires a non-empty `rubric`"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_judge_panel_bad_n_judges_rejected(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [{"type": "judge_panel", "name": "qp", "rubric": "ok?", "n_judges": 0}]
+    )
+    with pytest.raises(LoaderError, match="n_judges must be an integer >= 1"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_judge_panel_bad_consensus_rejected(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [{"type": "judge_panel", "name": "qp", "rubric": "ok?", "consensus": "plurality"}]
+    )
+    with pytest.raises(LoaderError, match="consensus must be one of"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_unknown_grader_type_lists_supported(tmp_path: Path) -> None:
+    body = _body_with_graders([{"type": "telepathy", "name": "x"}])
+    with pytest.raises(LoaderError, match=r"judge_panel.*set_match|set_match.*judge_panel"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+# --- funnel grader parsing -------------------------------------------------
+
+
+def _funnel_two_level() -> dict:
+    return {
+        "type": "funnel",
+        "name": "identify_funnel",
+        "params": {
+            "levels": [
+                {
+                    "key": "finder",
+                    "extract": "candidates[].id",
+                    "gate": True,
+                    "failure_mode": "finder_missed",
+                    "match": {"kind": "set_match", "gating": "completeness"},
+                    "children": [
+                        {
+                            "key": "resolver",
+                            "extract": "resolved.id",
+                            "match": {"kind": "equals", "value": "abc"},
+                        }
+                    ],
+                }
+            ]
+        },
+    }
+
+
+def test_funnel_grader_parsed(tmp_path: Path) -> None:
+    spec = load_experiment_spec(_write_yaml(tmp_path, _body_with_graders([_funnel_two_level()])))
+    g = next(g for g in spec.graders if g.name == "identify_funnel")
+    assert g.type == "funnel"
+    levels = g.params["levels"]
+    assert len(levels) == 1
+    finder = levels[0]
+    assert finder["key"] == "finder"
+    assert finder["gate"] is True
+    assert finder["failure_mode"] == "finder_missed"
+    assert finder["match"] == {"kind": "set_match", "gating": "completeness"}
+    assert finder["children"][0]["key"] == "resolver"
+    assert finder["children"][0]["match"] == {"kind": "equals", "value": "abc"}
+
+
+def test_funnel_requires_non_empty_levels(tmp_path: Path) -> None:
+    body = _body_with_graders([{"type": "funnel", "name": "f", "params": {"levels": []}}])
+    with pytest.raises(LoaderError, match=r"non-empty `params.levels`"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_funnel_duplicate_keys_rejected(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [
+            {
+                "type": "funnel",
+                "name": "f",
+                "params": {
+                    "levels": [
+                        {"key": "dup", "extract": "a", "match": {"kind": "exists"}},
+                        {"key": "dup", "extract": "b", "match": {"kind": "exists"}},
+                    ]
+                },
+            }
+        ]
+    )
+    with pytest.raises(LoaderError, match="is duplicated"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_funnel_bad_extract_path_rejected(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [
+            {
+                "type": "funnel",
+                "name": "f",
+                "params": {"levels": [{"key": "x", "extract": "a..b", "match": {"kind": "exists"}}]},
+            }
+        ]
+    )
+    with pytest.raises(LoaderError, match="extract"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_funnel_match_needs_exactly_one_of_kind_or_grader(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [
+            {
+                "type": "funnel",
+                "name": "f",
+                "params": {
+                    "levels": [
+                        {
+                            "key": "x",
+                            "extract": "a",
+                            "match": {"kind": "exists", "grader": "other"},
+                        }
+                    ]
+                },
+            }
+        ]
+    )
+    with pytest.raises(LoaderError, match="exactly one of"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_funnel_by_index_requires_int_index(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [
+            {
+                "type": "funnel",
+                "name": "f",
+                "params": {
+                    "levels": [
+                        {
+                            "key": "x",
+                            "extract": "products",
+                            "match": {"kind": "by_index", "index": "0", "value": "p1"},
+                        }
+                    ]
+                },
+            }
+        ]
+    )
+    with pytest.raises(LoaderError, match="requires an int `index`"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_funnel_set_match_bad_gating_rejected(tmp_path: Path) -> None:
+    # Parity with standalone set_match: a bad gating must fail at LOAD time, not
+    # crash uncaught when the grader is later instantiated.
+    body = _body_with_graders(
+        [
+            {
+                "type": "funnel",
+                "name": "f",
+                "params": {
+                    "levels": [
+                        {
+                            "key": "x",
+                            "extract": "candidates[].id",
+                            "match": {"kind": "set_match", "gating": "bogus"},
+                        }
+                    ]
+                },
+            }
+        ]
+    )
+    with pytest.raises(LoaderError, match=r"match.gating must be one of"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_funnel_set_match_bad_threshold_rejected(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [
+            {
+                "type": "funnel",
+                "name": "f",
+                "params": {
+                    "levels": [
+                        {
+                            "key": "x",
+                            "extract": "candidates[].id",
+                            "match": {"kind": "set_match", "threshold": 2.0},
+                        }
+                    ]
+                },
+            }
+        ]
+    )
+    with pytest.raises(LoaderError, match=r"match.threshold must be in \[0, 1\]"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_funnel_grader_ref_accepted(tmp_path: Path) -> None:
+    # A level referencing another declared grader by name — existence deferred.
+    body = _body_with_graders(
+        [
+            {
+                "type": "funnel",
+                "name": "f",
+                "params": {
+                    "levels": [
+                        {"key": "x", "extract": "a", "match": {"grader": "tone_judge"}}
+                    ]
+                },
+            }
+        ]
+    )
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    g = next(g for g in spec.graders if g.name == "f")
+    assert g.params["levels"][0]["match"] == {"grader": "tone_judge"}

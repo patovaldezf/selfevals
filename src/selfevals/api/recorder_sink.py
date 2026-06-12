@@ -23,13 +23,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from selfevals.api.broker import SpanBroker
+from selfevals.api.broker import SpanBrokerProtocol
 
 
 class BrokerSpanSink:
     """`SpanSink` implementation that forwards to a `SpanBroker`."""
 
-    def __init__(self, broker: SpanBroker) -> None:
+    def __init__(self, broker: SpanBrokerProtocol) -> None:
         self._broker = broker
 
     def on_trace_started(self, workspace_id: str, run_id: str) -> None:

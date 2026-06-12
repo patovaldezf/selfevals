@@ -1,8 +1,10 @@
 # Deploying the selfevals API
 
-The API is a stateful, long-running service: FastAPI over a local SQLite file,
-with experiment runs executing on **in-process background threads**. That shape
-decides the host.
+The default API is a stateful, long-running service: FastAPI over a local
+SQLite file, with experiment runs executing on **in-process background
+threads**. That shape decides the simplest host. For the first scale step,
+configure Postgres for storage and Redis for live events before introducing
+Kafka, NATS, ClickHouse, or external workflow engines.
 
 ## Why Fly.io (and why not Vercel)
 
@@ -30,10 +32,10 @@ volume:
 
 Railway or any VPS / container host with a persistent disk would work equally
 well — the requirement is "long-running process + persistent volume", which
-Fly provides with the least config. (If the service is ever rearchitected to be
-stateless — Postgres instead of SQLite, a job queue instead of in-process
-threads — serverless becomes viable. That is the `PostgresStorage` path noted in
-`INTEGRATION_SEALS.md`, deliberately out of scope for now.)
+Fly provides with the least config. With `SELFEVALS_STORAGE_URL=postgresql://...`
+and `SELFEVALS_REDIS_URL=redis://...`, API reads and SSE fan-out can move off
+single-process SQLite/in-memory state. Experiment execution still runs in
+process until a Redis-backed job queue is added.
 
 ## What ships
 
@@ -93,9 +95,25 @@ curl -s localhost:8080/api/health
 - **Backups.** The whole state is one SQLite file on the volume. Snapshot it with
   `fly ssh console -C "sqlite3 /data/selfevals.sqlite '.backup /data/backup.sqlite'"`
   or use Fly volume snapshots.
-- **Scaling.** Do **not** scale to multiple machines: SQLite is single-writer and
-  the broker's run state is per-process. Scale **up** (bigger `vm`) before scaling
-  out; scaling out needs the `PostgresStorage` path first.
+- **Postgres storage.** Install `selfevals[postgres]` and set
+  `SELFEVALS_STORAGE_URL=postgresql://user:pass@host:5432/dbname`. The API keeps
+  the generic entity contract but projects hot entities into relational tables
+  with indexes for experiments, iterations, cases, traces, run ids, and thread
+  ids.
+- **Redis live events.** Install `selfevals[redis]` and set
+  `SELFEVALS_REDIS_URL=redis://host:6379/0`. Live span events use Redis Streams;
+  Redis is coordination/live delivery, not durable historical storage.
+- **Redis run workers.** With `SELFEVALS_REDIS_URL` set, `POST .../experiments/run`
+  enqueues a durable `RunJob` instead of starting a local daemon thread. Run
+  `selfevals worker runs` in one or more long-lived worker processes to consume
+  jobs with leases, retries, cancellation, and dead-lettering.
+- **Scaling.** With only SQLite and the in-memory broker, do **not** scale to
+  multiple machines. With Postgres + Redis, read/API and SSE state can run across
+  processes, and experiment execution can move to workers. Local/dev mode still
+  falls back to in-process threads when Redis is absent.
+- **Local runtime profile.** During local scale testing, use runtime variables
+  (`SELFEVALS_STORAGE_URL`, `SELFEVALS_REDIS_URL`) rather than separate test-only
+  URLs. The checked-in `.env` carries the current local Postgres/Redis targets.
 
 ## NOT done here
 

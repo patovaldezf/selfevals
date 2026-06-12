@@ -28,9 +28,9 @@ from typing import Any
 
 from fastapi.responses import StreamingResponse
 
-from selfevals.api.broker import SpanBroker, _Closed
+from selfevals.api.broker import SpanBrokerProtocol, _Closed
 from selfevals.api.queries import load_trace
-from selfevals.storage.sqlite import SQLiteStorage
+from selfevals.storage.interface import StorageInterface
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +51,8 @@ async def stream_trace(
     *,
     workspace_id: str,
     run_id: str,
-    broker: SpanBroker,
-    storage_factory: Callable[[], SQLiteStorage],
+    broker: SpanBrokerProtocol,
+    storage_factory: Callable[[], StorageInterface],
 ) -> StreamingResponse:
     """Build a StreamingResponse that emits snapshot + live spans."""
 

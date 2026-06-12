@@ -13,6 +13,9 @@ A `Grader` reads a Trace + EvalCase and returns a `GradeResult` (label
 - `ArtifactCompletenessGrader` scores artifact-producing agents (structured
   documents/reports) on schema validity + required-section presence, with an
   optional advisory LLM-judge quality signal that never flips the verdict.
+- `SetMatchGrader` scores a detected set against an expected set
+  (completeness / precision / recall / F1) for many-to-many tasks like
+  intention-detection — where the ground truth is a set, not a single label.
 - `JudgePanelGrader` composes N judges (typically `LLMJudgeGrader`) into one
   authoritative verdict via a consensus rule and wires up the judge-defense
   levers (panel / counterfactual variance / human spot-check). It needs
@@ -52,6 +55,7 @@ from selfevals.graders.llm_judge import (
     LLMJudgeGrader,
     RubricTemplate,
 )
+from selfevals.graders.set_match import SetMatchGrader
 from selfevals.graders.trajectory import (
     HardInvariants,
     TrajectoryGrader,
@@ -77,6 +81,7 @@ __all__ = [
     "LLMJudgeGrader",
     "PredictedLabel",
     "RubricTemplate",
+    "SetMatchGrader",
     "TrajectoryGrader",
     "compute_classification_metrics",
 ]

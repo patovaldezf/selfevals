@@ -1,26 +1,39 @@
 # selfevals
 
-Self-improving evals framework for AI agents.
+Self-improving evals for AI agents.
 
-Point selfevals at your agent and it runs a structured experiment: it
-feeds eval cases through an adapter, grades each trace, sweeps the
-parameters you expose, and renders a report that tells you which
-configuration to keep. CLI-first, multi-tenant from day one, and agnostic
-to the agent framework underneath — selfevals never calls your provider;
-your agent does, and selfevals grades the result.
+Point `selfevals` at your agent. It runs the agent on a dataset, grades the
+traces, sweeps the parameters you allow, persists the result, and tells you
+which configuration to keep.
 
-> Status: **v0.5.0 — runtime functional.** The CLI works end-to-end:
-> load an experiment spec → run cases through an adapter → grade traces →
-> persist iterations → render a report. Adapters and graders are async,
-> with concurrent repetitions and grading. v0.5.0 adds **per-grader scoring**
-> (optimize against one named grader instead of a conjunctive worst-of, and
-> report each grader's own `pass@1`) and **proposer-aware convergence** (the
-> grid proposer now enumerates its full cartesian product instead of
-> early-stopping on a plateau). Both were surfaced by a real integration —
-> see [Case study](#case-study-brain_os-dogfooding-its-own-memory) below.
-> See [`docs/spec/`](docs/spec/) for the canonical and operational specs that
-> drive design, and [`docs/STATUS.md`](docs/STATUS.md) for an honest
-> what-works / what-doesn't snapshot.
+It does not call your model provider. Your agent does. `selfevals` is the
+measurement layer around it.
+
+## What It Does
+
+- Runs eval cases through an embedded Python function, CLI command, or HTTP endpoint.
+- Grades outputs with deterministic rules, set matching, trajectory checks, guardrails, or LLM judges.
+- Sweeps `manual`, `grid`, `random`, or offline hypothesis proposals.
+- Captures traces, tokens, cost, tool calls, structured output, and failure modes.
+- Persists experiments to SQLite and renders Markdown or JSON reports.
+- Serves a FastAPI bridge and optional Svelte dashboard for live runs, cases, traces, and results.
+- Exports failed traces for external error analysis, then ingests taxonomy updates back into the workspace.
+
+Current version: `0.9.0`.
+
+## Why This Exists
+
+Most agent evals stop at "did it pass?" That is not enough.
+
+For agents, the useful loop is:
+
+1. Run the agent against real cases.
+2. See exactly where it failed.
+3. Try a constrained change.
+4. Measure the new behavior.
+5. Keep, reject, investigate, or split the experiment.
+
+`selfevals` packages that loop into a CLI, SDK, API, storage layer, and report format.
 
 ## Install
 
@@ -28,278 +41,368 @@ your agent does, and selfevals grades the result.
 pip install selfevals
 ```
 
-The distribution is `selfevals`; the import name and the CLI command are
-both `selfevals` (`import selfevals`, `selfevals --help`).
-
-To run or trace an agent backed by a real provider, install the matching
-**extra** — each one bundles the provider's SDK _and_ the tracing
-integration, so a single install is enough:
+The package, import, and CLI are all named `selfevals`:
 
 ```bash
-pip install 'selfevals[openai]'      # or [anthropic], [bedrock], [vertex],
-                                      #    [langchain], [crewai]
-pip install 'selfevals[all]'         # every provider + the web API
+selfevals --version
+python -c "import selfevals; print(selfevals.__version__)"
 ```
 
-The core install depends only on `pydantic` and `pyyaml`; no provider SDK
-is pulled until you ask for an extra.
+Core install stays small: `pydantic`, `pyyaml`, and `httpx`.
 
-## 60-second quickstart
+Provider extras install both the provider SDK and the OpenInference tracing
+adapter:
+
+```bash
+pip install 'selfevals[openai]'
+pip install 'selfevals[anthropic]'
+pip install 'selfevals[bedrock]'
+pip install 'selfevals[vertex]'
+pip install 'selfevals[langchain]'
+pip install 'selfevals[crewai]'
+pip install 'selfevals[all]'
+```
+
+The web/API extra:
+
+```bash
+pip install 'selfevals[web]'
+```
+
+Scale/storage extras:
+
+```bash
+pip install 'selfevals[postgres]'
+pip install 'selfevals[redis]'
+```
+
+SQLite remains the default. For the local Postgres + Redis runtime profile,
+use the repository `.env` values:
+
+```bash
+docker compose up -d postgres
+set -a && source .env && set +a
+selfevals serve --no-web
+selfevals worker runs
+```
+
+`SELFEVALS_STORAGE_URL` points at the local Postgres container. `SELFEVALS_REDIS_URL`
+points at the local Redis container on `localhost:6380`.
+
+## Quickstart
+
+No API key. No model call. Runs the bundled pingpong eval.
 
 ```bash
 pip install selfevals
-selfevals examples copy pingpong     # writes evals/ into the current dir
-selfevals run evals/experiments/example_pingpong.yaml --no-persist
+selfevals examples copy pingpong
+selfevals run evals/experiments/example_pingpong.yaml --no-persist --max-iterations 2
 ```
 
-Expected output: a markdown report showing two iterations, the best one
-selected, and a top failure-modes table — end-to-end in under a second
-against the bundled `EmbeddedAdapter` echo agent. No API key needed.
+Expected shape:
 
-To persist results to SQLite and inspect them afterwards (note: `--db` is a
-**global** flag, so it goes _before_ the subcommand):
+```text
+# Experiment: pingpong baseline
+
+- State: completed
+- Proposer: grid
+- Iterations: 2/2
+- Best iteration: #1, pass@1 = 1
+
+Top failure modes:
+- missing_required_substring
+```
+
+To persist runs and inspect them later:
 
 ```bash
 selfevals --db ./selfevals.sqlite run evals/experiments/example_pingpong.yaml
 selfevals --db ./selfevals.sqlite experiment list <workspace_id>
 selfevals --db ./selfevals.sqlite report <workspace_id> <experiment_id>
+selfevals --db ./selfevals.sqlite report <workspace_id> <experiment_id> --format json
 ```
 
-The `run` command prints the workspace and experiment ids you need for the
-follow-up commands.
+`--db` is global. Put it before the subcommand.
 
-## Concepts
+## Copy/Paste For Your Agent
 
-The five nouns you'll meet everywhere:
+Paste this into Claude Code, Codex, Cursor, or any repo-aware agent. It makes
+the agent the eval lead and keeps the human as the product/error-analysis gate.
 
-| Term               | What it is                                                                                                                                 |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| **EvalCase**       | One test: an input (a validated multi-turn `messages` conversation, or any opaque payload), the expected outcome, and which graders apply. |
-| **Adapter**        | The bridge to your agent — embedded callable, CLI subprocess, or HTTP endpoint. selfevals calls _it_, never the provider directly.         |
-| **Grader**         | Scores a trace. `DeterministicGrader` (rules: substrings, tools, JSON schema) or `LLMJudgeGrader` (a rubric-driven judge).                 |
-| **Proposer**       | Picks the next parameter configuration to try — `manual`, `grid`, or `random`.                                                             |
-| **DecisionMatrix** | Turns each iteration's metrics into a verdict: keep, reject, investigate, spawn sub-experiment, or require a tradeoff review.              |
+```text
+You are the self-improving eval lead for this project.
 
-An **experiment** is a YAML spec wiring these together; a **run** executes
-it, producing **iterations** the reporter ranks.
+Goal:
+Set up selfevals so this repo can measure and improve its agent behavior with a
+real eval loop, not vibes. You own the setup, first dataset, first experiment,
+first report, and the next recommended iteration. The human is the final judge
+for product intent, failure taxonomy, and whether a proposed change should ship.
 
-## Try it with a real LLM agent
+Rules:
+- Do not call model providers from selfevals directly. Wire selfevals to the
+  project agent through an embedded, CLI, or HTTP adapter.
+- Start with 5-20 high-signal eval cases from real product behavior or the
+  closest available fixtures. Prefer golden/regression cases over toy cases.
+- Use deterministic graders wherever the expected behavior is objective.
+- Use set_match for extraction, classification, intent, entity, or multi-label work.
+- Use judge_panel only for genuinely open-ended quality calls.
+- Persist runs to ./selfevals.sqlite.
+- Keep the YAML, datasets, and adapter small enough that a human can review them.
+- After each run, explain what failed, what changed, and what you recommend next.
+- Never auto-ship product changes. Propose them, show evidence, and ask the human.
 
-Two parallel examples live in [`examples/`](examples/) — same three eval
-cases (sentiment classification, structured extraction, open-ended support
-reply), same graders, same temperature sweep, differing only in the
-provider call. Both fall back to deterministic fakes when the API key is
-unset, so they're runnable offline.
+Tasks:
+1. Install selfevals or add it to this repo's dev environment.
+2. Find the agent entrypoint. If there is no clean entrypoint, create the thinnest
+   adapter wrapper possible.
+3. Create evals/datasets/<first_eval>.jsonl with real cases.
+4. Create evals/experiments/<first_eval>.yaml.
+5. Run:
+   selfevals --db ./selfevals.sqlite run evals/experiments/<first_eval>.yaml
+6. Render:
+   selfevals --db ./selfevals.sqlite report <workspace_id> <experiment_id>
+   selfevals --db ./selfevals.sqlite report <workspace_id> <experiment_id> --format json
+7. If cases fail, run:
+   selfevals analyze pull <workspace_id> <experiment_id> > selfevals-analysis.json
+   Then classify failures, propose candidate failure modes, and show the human
+   what should be promoted.
+8. Propose the next iteration:
+   - prompt/model parameter change
+   - retrieval/tooling fix
+   - new grader
+   - new cases
+   - or "do not change code yet, dataset is too weak"
 
-**Anthropic** ([`examples/hello_llm/`](examples/hello_llm/)):
-
-```bash
-pip install 'selfevals[anthropic]'
-export ANTHROPIC_API_KEY=sk-ant-...        # optional; falls back to a fake
-uv run selfevals run examples/hello_llm/experiment.yaml --no-persist
+Definition of done:
+- A human can run one command and get a report.
+- The report names the best iteration and top failure modes.
+- The repo has a repeatable eval harness, not a one-off script.
+- The next improvement is backed by measured failures.
 ```
 
-**OpenAI** ([`examples/hello_openai/`](examples/hello_openai/)):
+The intended operating model is simple: agents run the loop, humans judge the
+meaning. Let the agent do the plumbing, run the sweeps, read the traces, and
+bring a recommendation. The human decides whether the eval cases are true, the
+failure taxonomy is fair, and the proposed change matches the product.
 
-```bash
-pip install 'selfevals[openai]'
-export OPENAI_API_KEY=sk-...               # optional; falls back to a fake
-uv run selfevals run examples/hello_openai/experiment.yaml --no-persist
+## The Contract
+
+An experiment is a YAML file with four things:
+
+- `experiment`: what you are optimizing and what counts as success.
+- `dataset`: eval cases, inline or JSONL.
+- `agent`: embedded, CLI, or HTTP adapter.
+- `graders`: optional explicit grader config.
+
+Small example:
+
+```yaml
+workspace: ws_01HZZZZZZZZZZZZZZZZZZZZZZZ
+
+experiment:
+  name: support reply temperature sweep
+  goal: choose the safest temperature for support answers
+  mode: handoff
+  taxonomy:
+    target_features: [support.reply_quality]
+  datasets:
+    optimization: { id: ds_support, version: 1 }
+  target:
+    primary: { name: pass@1, operator: ">=", value: 0.90 }
+  editable:
+    model_params: true
+  frozen:
+    fleet: { id: flt_prod }
+    agents: [{ id: ag_support }]
+    datasets: [{ id: ds_support }]
+  proposer:
+    strategy: grid
+  search_space:
+    model_params:
+      temperature: [0.0, 0.3, 0.7]
+  run:
+    sandbox: live_sandboxed
+    max_iterations: 3
+
+dataset:
+  cases_path: ../datasets/support.jsonl
+
+agent:
+  type: http
+  url: http://localhost:9000/run
+  timeout_seconds: 30
+
+graders:
+  - name: policy
+    type: deterministic
+  - name: quality
+    type: judge_panel
+    params:
+      rubric: "Answer the user, cite policy, do not invent facts."
+      n_judges: 3
+      consensus: majority
 ```
 
-Each combines a `DeterministicGrader` (sentiment + extraction) with an
-`LLMJudgeGrader` (the open-ended reply). The `GridProposer` sweeps
-`temperature ∈ {0.0, 0.5, 1.0}`; the report ranks them and the
-`DecisionMatrix` selects the winner. Against the real models the coolest
-temperature typically wins `pass@1` while warmer settings degrade on the
-structured-output case.
+The HTTP adapter receives a JSON `AdapterRequest` and must return an
+`AdapterResponse`: content, optional structured output, tool uses, tokens,
+cost, and provider metadata.
 
-See [`examples/README.md`](examples/README.md) for a walk-through of the
-file layout and how to adapt them to your own agent.
+See [docs/eval_config.md](docs/eval_config.md) and [docs/adapters.md](docs/adapters.md).
 
-> The example specs and datasets reference `examples.hello_*.agent`
-> import paths, so they run from a **source checkout** (clone the repo).
-> The pip-installable `selfevals examples copy pingpong` flow ships only
-> the dependency-free pingpong example today.
+## Built-In Graders
 
-## Adapters
+| Grader                  | Use it for                                                                                                                                         |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deterministic`         | Required substrings, forbidden substrings, tool checks, regex, exact structured output.                                                            |
+| `set_match`             | Multi-label detection and extraction. Scores completeness, precision, recall, and F1.                                                              |
+| `funnel`                | Declarative N-level scoring (finder→resolver→…). Per-level matches, gating short-circuit, and a drill-down breakdown with per-level failure modes. |
+| `judge_panel`           | Rubric grading with multiple judges and majority/unanimous/weighted consensus.                                                                     |
+| `llm_judge`             | Single rubric-driven judge.                                                                                                                        |
+| `trajectory`            | Tool-call and decision-sequence checks.                                                                                                            |
+| `artifact_completeness` | Required sections in generated artifacts.                                                                                                          |
+| `guardrail`             | Pass/fail guardrail checks.                                                                                                                        |
 
-selfevals ships three concrete `AgentAdapter` implementations so you can
-point the loop at any agent:
+Custom graders can be registered in code or referenced by dotted path:
 
-- `EmbeddedAdapter` — a Python callable in-process. Best for quick tests.
-- `CliCommandAdapter` — invokes a subprocess and reads JSON on stdout.
-- `HttpEndpointAdapter` — POSTs each case to an HTTP endpoint and reads JSON.
+```yaml
+graders:
+  - name: task_shape
+    type: my_pkg.graders:TaskShapeGrader
+```
 
-See `src/selfevals/runner/adapters.py` for the contract and
-[`docs/adapters.md`](docs/adapters.md) for usage examples, per-adapter
-YAML/code snippets, and a comparison table.
+## Output
 
-## CLI reference
+Every run produces an optimization report:
 
-`selfevals --help` lists every command; `selfevals <command> --help` shows
-its arguments. The surface:
+- best iteration
+- proposed parameters
+- primary metric and deltas
+- guardrail and reliability metrics
+- per-grader pass rates
+- funnel breakdowns
+- failure mode counts
+- cost/time summary when present
+- decision outcome: keep, reject, investigate, spawn sub-experiment, or require tradeoff review
 
-| Command                                      | Purpose                                                                                                                                                       |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `init <slug>`                                | Create a workspace and seed the default failure-mode taxonomy.                                                                                                |
-| `run <spec.yaml>`                            | Run an experiment spec end-to-end.                                                                                                                            |
-| `report <ws> <exp>`                          | Render a stored experiment as markdown (`--format json` for JSON; the JSON now includes per-iteration `cache` hit counts and deduplicated `failure_reasons`). |
-| `compare <ws> <itr_a> <itr_b>`               | Diff two iterations side by side.                                                                                                                             |
-| `estimate`                                   | Dry-run cost estimate for a search space × cases × reps.                                                                                                      |
-| `workspace show <ws>`                        | Inspect a workspace.                                                                                                                                          |
-| `experiment list/show <ws> [exp]`            | List or inspect experiments.                                                                                                                                  |
-| `iteration list <ws> <exp>`                  | List recorded iterations.                                                                                                                                     |
-| `dataset create/import/list/show/freeze`     | Manage standalone datasets (upload cases from JSONL, inspect, freeze) — reusable across experiments via `dataset: {ref: ds_…}` or `run --dataset`.            |
-| `analyze pull/push <ws> <exp>`               | The error-analysis handshake (see below).                                                                                                                     |
-| `failuremode list/promote/retire/merge/edit` | Manage the failure-mode taxonomy.                                                                                                                             |
-| `skills list / path <name>`                  | Locate the agent skills bundled with the install.                                                                                                             |
-| `examples copy <name>`                       | Copy a runnable example into the current project.                                                                                                             |
-| `serve`                                      | Run the HTTP API (and the web dashboard, if built) in one process.                                                                                            |
-
-`--db <path>` is a global flag (default `./selfevals.sqlite`) and goes
-before the subcommand.
-
-## Running the API + dashboard (dev local)
-
-selfevals ships an HTTP API (its own "LangSmith") and a SvelteKit dashboard.
-Everything runs on localhost — no deploy required.
-
-**API only** (FastAPI on `:8000`, needs the `web` extra for `uvicorn`):
+JSON output is stable and documented in
+[docs/json_report_schema.md](docs/json_report_schema.md).
 
 ```bash
-uv sync --extra web
+selfevals run evals/experiments/my_eval.yaml --format json --no-persist
+```
+
+## API And Dashboard
+
+Run the API:
+
+```bash
 python -m selfevals.api --host 127.0.0.1 --port 8000 --db ./selfevals.sqlite
-# health check + smoke
-curl -s localhost:8000/api/health
-curl -s localhost:8000/api/workspaces
-curl -s localhost:8000/api/openapi.json | python3 -m json.tool | head
 ```
 
-Docs live at `/api/docs`; the OpenAPI schema at `/api/openapi.json` (a typed
-client can be generated from it). CORS already allows the Vite dev server on
-`:5173`.
-
-**API + dashboard together** — build the web bundle once, then `serve`:
+Or through the CLI:
 
 ```bash
-cd web && npm ci && npm run build && cd ..
-selfevals serve --host 127.0.0.1 --port 8000 --db ./selfevals.sqlite
+selfevals --db ./selfevals.sqlite serve --host 127.0.0.1 --port 8000 --no-web
 ```
 
-`serve` starts the API and, when `web/build/index.js` exists, the dashboard
-next to it (use `--no-web` for API-only). Add `--reload` for auto-reload in
-development.
-
-**Trace persistence + id contract.** By default only failing traces are kept
-(`persist_traces: "failed"` in the spec). To navigate every case from the UI,
-keep all traces — either set `persist_traces: "all"` in the spec, pass
-`"persist_traces": "all"` in the run request, or export
-`SELFEVALS_TRACE_SAMPLING=all` to force it process-wide (precedence: request >
-env > spec). `GET /traces/{id}` accepts **either** a trace id (`tr_…`) or a run
-id (`run_…`) and echoes both on the response, so case→trace links never have to
-guess which id a given endpoint emits.
-
-**Launch an experiment over HTTP** (non-blocking — returns `202` immediately
-and runs in the background; poll the experiment to follow progress):
+Launch an experiment over HTTP:
 
 ```bash
-curl -s -X POST "localhost:8000/api/workspaces/<ws>/experiments/run" \
-  -H 'content-type: application/json' \
-  -d '{"spec_path": "evals/experiments/example_pingpong.yaml", "max_iterations": 2}'
-# → {"experiment_id": "exp_…", "workspace_id": "<ws>", "state": "draft", ...}
-# then poll until state == "completed":
-curl -s "localhost:8000/api/workspaces/<ws>/experiments/<exp>" | python3 -m json.tool
+curl -s -X POST "http://localhost:8000/api/workspaces/<ws>/experiments/run" \
+  -H "content-type: application/json" \
+  -d '{"spec_path":"evals/experiments/example_pingpong.yaml","max_iterations":2}'
 ```
 
-The body accepts either `spec_path` (a YAML spec on the server) or `spec_inline`
-(the spec as a JSON object, with cases embedded under `dataset.cases_inline`).
-The path workspace is authoritative. See
-[`docs/api_reference.md`](docs/api_reference.md) for the full contract.
+The API returns `202` and runs the optimization loop in the background. Poll the
+experiment endpoint or stream spans from the dashboard.
 
-### Error analysis (closed loop)
+Full API reference: [docs/api_reference.md](docs/api_reference.md).
 
-selfevals grows a per-workspace failure-mode taxonomy and drives the next
-experiment from it — it never calls an LLM itself. `analyze pull` emits the
-failed traces plus the live taxonomy; an external coding agent does the
-open/axial coding and `analyze push`es the result back; a human promotes
-candidate modes via `failuremode promote`. The bundled
-[`error-analysis` skill](src/selfevals/.agents/skills/error-analysis/SKILL.md)
-(discoverable via `selfevals skills list`) encodes the method.
+## Error Analysis Loop
 
-## Case study: brain_os dogfooding its own memory
+`selfevals` can turn failed traces into a working taxonomy.
 
-selfevals isn't theoretical — it's used in production to grade a real agent.
-
-**brain_os** is a memory OS for AI agents: an append-only `event_log` of raw
-evidence, slowly distilled into `pages` by a _dream worker_, exposed to any
-agent (Claude Code, Codex, Cursor) over MCP. Its hardest problem is
-**retrieval** — given a query, surface the right pages — so it points
-selfevals at its own hybrid retriever (FTS5 keyword + named-entity + 1-hop
-graph, fused with RRF).
-
-The integration is real code: brain_os registers **5 deterministic graders**
-that extend selfevals' `Grader` contract (`task_shape_match`,
-`must_include_recall`, `must_not_include_violation`, `layers_overlap`,
-`citation_grounding`) and runs a parameter sweep over its retrieval config.
-On its golden set it measures **MRR 0.896 / Recall@8 1.0** (n=8 queries),
-with a CI regression gate at MRR ≥ 0.80.
-
-The interesting part is what the experiment found about **selfevals itself**.
-Running the sweep surfaced two framework limitations:
-
-1. The grid proposer was early-stopping on a plateau and never tried the
-   remaining `chunking × vector_weight` combinations.
-2. A conjunctive `pass@1` was masking each grader's individual signal.
-
-Those two complaints became the two headline features of **v0.5.0**:
-proposer-aware convergence and per-grader scoring. A self-improving evals
-framework improved by the agent it was grading — and the experiment also did
-its job, relocating brain*os's retrieval bottleneck to upstream task-shape
-classification \_with evidence, not intuition*.
-
-## Documentation
-
-| Doc                                                        | What it covers                                                                                                                                                             |
-| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`docs/eval_config.md`](docs/eval_config.md)               | The YAML experiment spec: top-level keys, `EvalCase`/`Expected` fields (including recall-based `must_include` via `min_recall`), graders, agent transports, and proposers. |
-| [`docs/api_reference.md`](docs/api_reference.md)           | The canonical HTTP API reference — every endpoint, response schema, and error codes.                                                                                       |
-| [`docs/json_report_schema.md`](docs/json_report_schema.md) | The `report --format json` output shape, including the per-iteration `cache` and `failure_reasons` keys.                                                                   |
-| [`docs/adapters.md`](docs/adapters.md)                     | Adapter contract and per-transport YAML/code snippets.                                                                                                                     |
-| [`docs/FRONTEND.md`](docs/FRONTEND.md)                     | The web UI spec (views, endpoints, roadmap).                                                                                                                               |
-| [`docs/STATUS.md`](docs/STATUS.md)                         | Honest what-works / what-doesn't snapshot.                                                                                                                                 |
-| [`docs/deploy.md`](docs/deploy.md)                         | Deploying the API to Fly.io (Dockerfile + `fly.toml` + volume), and why a serverless host like Vercel does not fit.                                                        |
-
-## Layout
-
+```bash
+selfevals analyze pull <workspace_id> <experiment_id> > bundle.json
+# external agent or human labels failures, proposes modes, writes result.json
+selfevals analyze push <workspace_id> <experiment_id> < result.json
+selfevals failuremode list <workspace_id> --status candidate
+selfevals failuremode promote <workspace_id> <failure_mode_id>
 ```
-src/selfevals/        # the SDK package
-  schemas/            # Pydantic v2 entities + contractual validators
-  storage/            # SQLite + filesystem object store (interface abstracted)
-  trace/              # native SDK decorators + OTel importer
-  runner/             # agent adapters + executor + sandbox modes
-  graders/            # deterministic + LLM-judge + calibration
-  optimization/       # OptimizationLoop + proposers (manual/grid/random)
-  decision/           # decision matrix → DecisionRecord
-  reporter/           # markdown + JSON reports
-  analysis/           # error-analysis handshake (pull/push, bundles)
-  cli/                # argparse entrypoint
-examples/             # runnable examples (pingpong, hello_llm, hello_openai)
-docs/spec/            # canonical + operational specs (source of truth)
-tests/                # pytest, mirrors src/selfevals layout
+
+This is deliberate: `selfevals` measures and stores the evidence. Your agent or
+team does the analysis. Humans gate the taxonomy.
+
+## CLI Surface
+
+```text
+selfevals init <slug>
+selfevals run <spec.yaml>
+selfevals report <workspace_id> <experiment_id> [--format markdown|json]
+selfevals compare <workspace_id> <iteration_a> <iteration_b>
+selfevals estimate --cases N --space-size N --reps N --cost-per-call USD
+selfevals workspace show <workspace_id>
+selfevals experiment list|show <workspace_id> [experiment_id]
+selfevals iteration list <workspace_id> <experiment_id>
+selfevals dataset create|import|list|show|freeze ...
+selfevals analyze pull|push <workspace_id> <experiment_id>
+selfevals failuremode list|promote|retire|merge|edit ...
+selfevals skills list|path <name>
+selfevals examples copy pingpong
+selfevals serve
+```
+
+## Project Layout
+
+```text
+src/selfevals/
+  schemas/        Pydantic contracts for cases, experiments, traces, metrics.
+  runner/         Agent adapters, executor, sandbox modes, launch wiring.
+  graders/        Built-in graders and registry.
+  optimization/   Proposers, aggregation, convergence, best-iteration selection.
+  decision/       Decision matrix.
+  trace/          Native recorder and OpenTelemetry import path.
+  storage/        SQLite persistence and filesystem object store.
+  reporter/       Markdown and JSON reports.
+  analysis/       Error-analysis pull/push handshake.
+  api/            FastAPI bridge and live span streaming.
+  cli/            `selfevals` command.
+web/              Svelte dashboard.
+docs/             Specs, API reference, adapter guide, report schema.
+tests/            Pytest suite mirroring package layout.
 ```
 
 ## Development
 
 ```bash
-uv sync --all-extras --dev        # venv + every extra + dev tooling
-uv run pytest                     # tests
-uv run mypy src/selfevals         # types (strict)
-uv run ruff check .               # lint
+uv sync --all-extras --dev
+uv run pytest
+uv run ruff check .
+uv run mypy src/selfevals
 ```
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the test layout, the optional
-telemetry/web extras some tests require, and PR conventions.
+Package smoke:
+
+```bash
+uv run selfevals --version
+uv run selfevals run src/selfevals/examples/evals/experiments/example_pingpong.yaml --no-persist --max-iterations 2
+```
+
+## Status
+
+Alpha, but real.
+
+The CLI run path, adapters, graders, SQLite persistence, reports, API run
+endpoint, live span bridge, trace detail endpoints, set matching, and judge
+panel are implemented and tested.
+
+Known rough edges:
+
+- The dashboard is still evolving.
+- HTTP adapters do not expose retry/backoff policy yet.
+- Advanced proposers such as Bayesian, bandit, and evolutionary search are not implemented.
+
+See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## License
 

@@ -1,4 +1,4 @@
-"""HTTP bridge between the SQLite-backed storage and the web UI.
+"""HTTP bridge between configured storage and the web UI.
 
 Read-only for MVP plus two writes: create workspace, queue experiment
 spec. FastAPI is an optional extra (`pip install selfevals[web]`);

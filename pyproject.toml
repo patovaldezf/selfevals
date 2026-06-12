@@ -32,6 +32,12 @@ web = [
     "python-multipart>=0.0.9,<1",
     "uvicorn>=0.29,<1",
 ]
+postgres = [
+    "psycopg[binary]>=3.2,<4",
+]
+redis = [
+    "redis>=5,<6",
+]
 # OTel capture pipe + OTLP bridge. Imported lazily in sdk/* and runner/*
 # under try/except ImportError, so the base install stays ~2MB.
 telemetry = [
@@ -80,7 +86,7 @@ crewai = [
     "openinference-instrumentation-crewai>=0.1",
 ]
 all = [
-    "selfevals[web,anthropic,openai,bedrock,vertex,langchain,crewai]",
+    "selfevals[web,postgres,redis,anthropic,openai,bedrock,vertex,langchain,crewai]",
 ]
 
 [project.scripts]
@@ -190,6 +196,18 @@ files = ["src/selfevals"]
 # try/except. Ignore the missing stub so the type check is deterministic
 # whether or not the extra is installed.
 module = ["uvicorn"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# psycopg is only present with the [postgres] extra. The backend imports it
+# lazily and raises a friendly install error when the extra is absent.
+module = ["psycopg", "psycopg.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# redis is only present with the [redis] extra. The API broker imports it
+# lazily when SELFEVALS_REDIS_URL is configured.
+module = ["redis", "redis.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -34,10 +34,18 @@ this file records what _is_.
 - **Graders**: `DeterministicGrader` (`must_include`,
   `must_not_include`, `required_tools`, `forbidden_tools`,
   `regex_match`, `structured_output` equality, `output_schema` JSON
-  Schema), `LLMJudgeGrader` (single judge, rubric template, optional
-  `GraderCard`-driven calibration with auto-degrade to advisory when
-  thresholds breach). Calibration utilities compute
-  precision/recall/F1/macro-F1 and high-risk false negatives.
+  Schema), `SetMatchGrader` (many-to-many set scoring —
+  completeness/precision/recall/F1 over `structured_output["detected"]`
+  vs `Expected.must_include`, with per-element funnel and case-level
+  `aliases`; declarable as `type: set_match`), `LLMJudgeGrader` (single
+  judge, rubric template, optional `GraderCard`-driven calibration with
+  auto-degrade to advisory when thresholds breach), `JudgePanelGrader`
+  (N judges + consensus, declarable as `type: judge_panel`; default 3 /
+  majority), `FunnelGrader` (declarable as `type: funnel`: N sequential
+  levels, each extracting a `structured_output`/trace slice via a path
+  selector and scoring it with a builtin match or any nested grader, with
+  gate short-circuit and per-level failure modes). Calibration utilities
+  compute precision/recall/F1/macro-F1 and high-risk false negatives.
 - **OptimizationLoop**: `ManualProposer`, `GridProposer`,
   `RandomProposer`, `LLMProposer` (offline deterministic hypothesis mode
   by default; LLM mode via an injected `AgentAdapter`). Convergence

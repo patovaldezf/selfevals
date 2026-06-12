@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from pathlib import Path
 
 from selfevals._errors import SelfEvalsUserError
 from selfevals.analysis import build_bundle, ingest_result
@@ -20,13 +19,14 @@ from selfevals.analysis.schemas import AnalysisResult
 from selfevals.cli.commands import _require_entity, _storage
 from selfevals.schemas.enums import FailureModeStatus
 from selfevals.schemas.failure_mode import FailureMode
+from selfevals.storage.factory import object_store_base_for_storage_url, resolve_storage_url
 from selfevals.storage.filesystem import FilesystemObjectStore
 from selfevals.storage.interface import ListFilter
 
 
 def _object_store(args: argparse.Namespace) -> FilesystemObjectStore:
     """Object store rooted next to the db, for payload-routed quotes."""
-    return FilesystemObjectStore(Path(args.db).parent / "objects")
+    return FilesystemObjectStore(object_store_base_for_storage_url(resolve_storage_url(args.db)))
 
 
 def cmd_analyze_pull(args: argparse.Namespace) -> int:

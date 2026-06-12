@@ -46,6 +46,34 @@ consume desde varios experimentos por referencia.
   idéntico a antes (todo el pool). El loader clasifica el block `dataset:` en
   `InlineDatasetSource`/`RefDatasetSource` sin tocar storage (sigue puro).
 
+---
+
+Dos graders más para cerrar los huecos que aparecieron al integrar selfevals
+con agentes reales: scoring de conjuntos (intention/extract) y panel de jueces
+declarable. selfevals sigue siendo la autoridad de scoring y permanece
+agnóstico al dominio — sin `passthrough`, sin importar código del cliente.
+
+### Added
+
+- **Grader `set_match`** (many-to-many) — para tareas donde el ground truth es
+  un _conjunto_ multi-etiqueta (intention-detection, entity-extraction).
+  Compara `structured_output["detected"]` contra `Expected.must_include` y
+  reporta completeness / precision / recall / F1 con un breakdown tree
+  por-elemento (mismo shape que el funnel del FE). Gating configurable
+  (`completeness` @ 1.0 por default, o `f1` @ threshold). Registrado por nombre
+  y declarable en el bloque `graders:` con `params: {gating, threshold}`.
+- **`Expected.aliases`** (`dict[str, str]`, aditivo) — mapa canónico
+  `{raw: canonical}` que `set_match` aplica a ambos lados antes de comparar. El
+  conocimiento de dominio (alias legacy, casing) vive en el _case_, no en el
+  motor: "no hacemos el mapping, pero podemos recibirlo".
+- **Grader `judge_panel` declarable en YAML** — el `JudgePanelGrader` ya existía
+  pero solo por construcción programática. Ahora se declara con
+  `type: judge_panel` (`rubric`, `n_judges`, `consensus`). Default **3 jueces /
+  majority**: panel impar → sin empates, ~3× costo de 1 juez con varianza mucho
+  menor. Soporta `majority` / `unanimous` / `weighted`.
+- **`GraderSpec.params`** — bolsa genérica de tuning por tipo de grader, para no
+  tocar el dataclass cada vez que un grader nuevo necesita config.
+
 ## [0.8.0] - 2026-06-05
 
 Cierra los gaps de datos que el FE reportó contra la API: resultados por caso,

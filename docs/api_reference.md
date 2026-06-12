@@ -1,7 +1,7 @@
 # HTTP API Reference
 
 The canonical reference for the selfevals HTTP bridge — a read-mostly
-FastAPI service over the SQLite store (`src/selfevals/api/app.py`). Every
+FastAPI service over configured storage (`src/selfevals/api/app.py`). Every
 endpoint maps roughly 1:1 to a page in the web UI, and every response shape
 is a Pydantic model in `src/selfevals/api/schemas.py`.
 
@@ -23,8 +23,13 @@ see [`json_report_schema.md`](json_report_schema.md).
   `http://127.0.0.1:5173`; methods `GET`, `POST`, `OPTIONS`.
 - **OpenAPI:** the generated schema is served at `/api/openapi.json`, and
   interactive Swagger docs at `/api/docs`.
-- **DB path:** resolved from the `--db` CLI flag / `db_path` build arg,
-  falling back to the `SELFEVALS_DB` env var, then `./selfevals.sqlite`.
+- **Storage:** resolved from an explicit `--db` CLI flag / `db_path` build arg
+  first, then `SELFEVALS_STORAGE_URL`, then `SELFEVALS_DB`, then
+  `./selfevals.sqlite`. Use a plain path or `sqlite:///...` for SQLite; use
+  `postgresql://...` with the `selfevals[postgres]` extra for Postgres.
+- **Live broker:** in-memory by default. Set `SELFEVALS_REDIS_URL` with the
+  `selfevals[redis]` extra to fan out live SSE events through Redis Streams
+  across API processes.
 - **Errors:** `404` for an unknown entity, `400` for a malformed request
   (e.g. a cross-experiment compare or an invalid object-store pointer),
   `500` for a stored-payload hash mismatch (corruption).
@@ -35,8 +40,8 @@ see [`json_report_schema.md`](json_report_schema.md).
 python -m selfevals.api --host 127.0.0.1 --port 8000 --db ./selfevals.sqlite
 ```
 
-`--reload` enables autoreload; `SELFEVALS_DB` is honored as a fallback for
-`--db`.
+`--reload` enables autoreload. `--db` is an explicit override; when it is
+absent, `SELFEVALS_STORAGE_URL` wins over `SELFEVALS_DB`.
 
 ---
 
@@ -108,6 +113,99 @@ and `recent_health` is `null` for a freshly seeded workspace.
 
 ---
 
+## Metrics
+
+Metrics endpoints summarize persisted traces for production agent monitoring:
+pass/fail rates, failure modes, tool usage, cost, tokens, and latency. With
+Postgres storage they read normalized fact tables (`trace_grader_results`,
+`tool_calls`, `llm_calls`, and `traces`). SQLite remains supported for local
+quickstarts by scanning canonical Trace JSON.
+
+All metrics endpoints accept:
+
+| Param           | Type     | Notes                                                                 |
+| --------------- | -------- | --------------------------------------------------------------------- |
+| `from`          | datetime | Optional inclusive lower bound on `trace.environment.started_at`.      |
+| `to`            | datetime | Optional inclusive upper bound on `trace.environment.started_at`.      |
+| `experiment_id` | string   | Optional. Restrict metrics to one experiment.                         |
+
+### `GET /api/workspaces/{workspace_id}/metrics/pass-rate`
+
+Counts grader labels and returns per-label rates.
+
+Extra query params:
+
+| Param    | Type   | Notes                              |
+| -------- | ------ | ---------------------------------- |
+| `grader` | string | Optional. Restrict to one grader. |
+
+**Response** (`PassRateMetricsResponse`): `{ workspace_id, window, experiment_id,
+total, items }`, where each item is `{ grader, label, count, rate }`.
+
+### `GET /api/workspaces/{workspace_id}/metrics/failure-modes`
+
+Counts failure-mode tags emitted by grader results.
+
+Extra query params:
+
+| Param    | Type   | Notes                              |
+| -------- | ------ | ---------------------------------- |
+| `grader` | string | Optional. Restrict to one grader. |
+
+**Response** (`FailureModeMetricsResponse`): each item is
+`{ failure_mode, count, rate }`.
+
+### `GET /api/workspaces/{workspace_id}/metrics/tools`
+
+Aggregates tool calls by tool name and status.
+
+Extra query params:
+
+| Param       | Type   | Notes                            |
+| ----------- | ------ | -------------------------------- |
+| `tool_name` | string | Optional. Restrict to one tool. |
+
+**Response** (`ToolMetricsResponse`): each item is
+`{ tool_name, status, count, error_count, avg_duration_ms, retry_count }`.
+
+### `GET /api/workspaces/{workspace_id}/metrics/cost`
+
+Aggregates LLM call cost by provider and model.
+
+Extra query params:
+
+| Param   | Type   | Notes                             |
+| ------- | ------ | --------------------------------- |
+| `model` | string | Optional. Restrict to one model. |
+
+**Response** (`CostMetricsResponse`): each item is
+`{ provider, model, call_count, total_cost_usd, avg_cost_usd }`.
+
+### `GET /api/workspaces/{workspace_id}/metrics/tokens`
+
+Aggregates LLM token usage by provider and model.
+
+Extra query params:
+
+| Param   | Type   | Notes                             |
+| ------- | ------ | --------------------------------- |
+| `model` | string | Optional. Restrict to one model. |
+
+**Response** (`TokenMetricsResponse`): each item is
+`{ provider, model, call_count, input_tokens, output_tokens, reasoning_tokens,
+total_tokens }`.
+
+### `GET /api/workspaces/{workspace_id}/metrics/latency`
+
+Returns percentile latency rows for trace duration, tool duration, and model
+time-to-first-token.
+
+**Response** (`LatencyMetricsResponse`): each item is
+`{ metric, count, p50_ms, p95_ms, p99_ms }`, where `metric` is one of
+`trace_duration_ms`, `tool_duration_ms`, or `ttft_ms`.
+
+---
+
 ## Experiments
 
 ### `GET /api/workspaces/{workspace_id}/experiments`
@@ -154,8 +252,10 @@ set.
 ### `POST /api/workspaces/{workspace_id}/experiments/run`
 
 Launch an experiment. **Non-blocking:** validates and persists synchronously,
-then runs the optimization loop on a background thread and returns `202`
-immediately. Follow progress by polling
+creates a durable `RunJob`, then returns `202` immediately. If
+`SELFEVALS_REDIS_URL` is configured, the job is delivered through Redis Streams
+and consumed by `selfevals worker runs`; otherwise local/dev mode falls back to
+the historical in-process background thread. Follow progress by polling
 `GET /api/workspaces/{workspace_id}/experiments/{experiment_id}` — its
 `summary.state` climbs `draft → queued → running → completed` (or `aborted` on
 failure). Persistence is on: the experiment, its iterations, and traces are
@@ -173,6 +273,14 @@ written to storage, exactly like `selfevals run`.
 
 The path `workspace_id` is authoritative — it overrides any `workspace:` in the
 spec, so the experiment always lands in the workspace from the URL.
+
+**Response** (`RunExperimentResponse`): `{ "experiment_id": str, "workspace_id": str, "state": str, "run_id": null, "job_id": str }`.
+
+### `POST /api/workspaces/{workspace_id}/experiments/{experiment_id}/cancel`
+
+Request cancellation for the latest durable run job on an experiment. Queued
+jobs are cancelled immediately and the experiment is marked `aborted`. Running
+jobs observe cancellation at worker boundaries and are not force-killed.
 
 **Response** (`RunExperimentResponse`, `202`):
 
@@ -417,7 +525,8 @@ conversation. Turns are ordered by `thread_position` when set, falling back to
 
 ### `GET /api/runs/active`
 
-Currently-streaming runs (from the in-memory span broker).
+Currently-streaming runs (from the configured span broker: in-memory locally,
+Redis Streams when `SELFEVALS_REDIS_URL` is set).
 
 **Response** (`ActiveRunsResponse`): `{ "runs": [{ "workspace_id": str, "run_id": str }] }`.
 

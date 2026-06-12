@@ -8,7 +8,6 @@ against. Pure read — it never mutates storage. See design §4.
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING
 
 from selfevals.analysis.schemas import (
@@ -21,9 +20,10 @@ from selfevals.analysis.schemas import (
 )
 from selfevals.schemas.failure_mode import FailureMode
 from selfevals.schemas.trace import ErrorSpan, LLMCallSpan, ToolCallSpan, Trace
+from selfevals.storage.interface import ListFilter
 
 if TYPE_CHECKING:
-    from selfevals.storage.sqlite import SQLiteStorage
+    from selfevals.storage.interface import StorageInterface
 
 # Labels that count as "needs coding". PASS/SKIPPED are dropped.
 _FAILED_LABELS = {"fail", "error", "partial"}
@@ -101,7 +101,7 @@ def _is_failed(trace: Trace) -> bool:
 
 
 def build_bundle(
-    storage: SQLiteStorage,
+    storage: StorageInterface,
     *,
     workspace_id: str,
     experiment_id: str,
@@ -110,37 +110,30 @@ def build_bundle(
 ) -> AnalysisBundle:
     """Assemble the bundle. Traces are matched by experiment (and iteration)
     via the run metadata stored in each trace's payload."""
-    clauses = [
-        "workspace_id = ?",
-        "entity_type = 'Trace'",
-        "json_extract(payload, '$.run.experiment_id') = ?",
-    ]
-    params: list[object] = [workspace_id, experiment_id]
-    if iteration is not None:
-        clauses.append("json_extract(payload, '$.run.iteration') = ?")
-        params.append(iteration)
-    sql = "SELECT payload FROM entities WHERE " + " AND ".join(clauses)
-    rows = storage.connection.execute(sql, tuple(params)).fetchall()
-
-    traces = [Trace.model_validate(json.loads(p)) for (p,) in rows]
-
-    bundle_traces: list[BundleTrace] = []
-    for trace in traces:
-        if only_failed and not _is_failed(trace):
-            continue
-        bundle_traces.append(
-            BundleTrace(
-                trace_id=trace.id,
-                run_id=trace.run.run_id,
-                thread_id=trace.run.thread_id,
-                eval_case_id=trace.run.eval_case_id,
-                grade=_grade(trace),
-                transcript=_transcript(trace),
-                first_error_span=_first_error_span(trace),
-            )
-        )
-
     with storage.open(workspace_id) as scope:
+        trace_filter: dict[str, object] = {"run.experiment_id": experiment_id}
+        if iteration is not None:
+            trace_filter["run.iteration"] = iteration
+        traces = [
+            t
+            for t in scope.list_entities(Trace, ListFilter(where=trace_filter))
+            if isinstance(t, Trace)
+        ]
+        bundle_traces: list[BundleTrace] = []
+        for trace in traces:
+            if only_failed and not _is_failed(trace):
+                continue
+            bundle_traces.append(
+                BundleTrace(
+                    trace_id=trace.id,
+                    run_id=trace.run.run_id,
+                    thread_id=trace.run.thread_id,
+                    eval_case_id=trace.run.eval_case_id,
+                    grade=_grade(trace),
+                    transcript=_transcript(trace),
+                    first_error_span=_first_error_span(trace),
+                )
+            )
         taxonomy = [
             TaxonomyEntry(
                 id=fm.id,
