@@ -7,6 +7,38 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-12
+
+Grader `funnel`: scoring declarativo de N niveles para evaluar agentes por
+etapas (finder → resolver → …), con short-circuit por gate, failure modes por
+nivel y un breakdown tree con drill-down a profundidad arbitraria. Además, el
+camino de escala (Postgres/Redis, worker async) y datasets como entidad de
+primer orden quedan integrados en la misma release.
+
+### Added
+
+- **Grader `funnel`** (`type: funnel`) — N niveles secuenciales declarables en
+  YAML. Cada nivel extrae un slice del `structured_output`/trace vía un **path
+  selector** (`graders/_select.py`: `foo.bar`, `foo[]`, `foo[].bar`) y lo puntúa
+  con un match builtin (`exists`/`equals`/`set_match`/`by_key`/`by_index`/
+  `tool_called`/`span_exists`) o con cualquier grader anidado (incl.
+  `llm_judge`/`judge_panel`) por referencia. Un nivel `gate: true` que falla
+  hace short-circuit de sus descendientes (no gradeas el resolver si el finder
+  no encontró nada). Cada nivel emite su nodo en el breakdown, así el
+  reporter/FE renderizan el funnel a cualquier profundidad.
+- **`SetMatchGrader.extract`** (default `"detected"`) — el set detectado se lee
+  vía el mismo path selector, así un `set_match` puede apuntar a cualquier slice
+  del contrato (`"candidates[].id"`) sin conocer su shape. Sin ruptura: el
+  default reproduce el comportamiento histórico.
+
+### Changed
+
+- **`serialize_experiment_spec` round-trippea el `dataset_source`** — un
+  `RefDatasetSource` (override `dataset_id` al lanzar) se serializa como
+  `{ref, version}` en vez de `cases_inline: []`, para que el worker async
+  rehidrate el spec y resuelva el dataset desde storage en vez de fallar con
+  "zero cases".
+
 ## [0.9.0] - 2026-06-09
 
 Datasets pasan de schema huérfano a entidad de primer orden: persistidos,
