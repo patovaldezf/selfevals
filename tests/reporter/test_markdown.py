@@ -170,7 +170,7 @@ def test_render_markdown_includes_header_and_table() -> None:
     # Target line.
     assert "`pass@1` >= 0.5" in md
     # Table header is present.
-    assert "| # | primary | Δ | outcome | rationale |" in md
+    assert "| # | primary | Δ | consistency | outcome | rationale |" in md
     # Two iterations from the grid → two table rows.
     assert md.count("\n| 0 |") == 1
     assert md.count("\n| 1 |") == 1
@@ -353,12 +353,13 @@ def _synthetic_iteration(
     duration_ms: int = 0,
     cache_hit_count: int = 0,
     llm_call_count: int = 0,
+    reliability: dict[str, float] | None = None,
 ) -> IterationOutcome:
     aggregate = IterationAggregate(
         primary_metric="pass@1",
         primary_value=primary,
         guardrails={},
-        reliability={},
+        reliability=reliability or {},
         failure_mode_counts=failure_modes or {},
         total_cost_usd=cost,
         total_duration_ms=duration_ms,
@@ -406,3 +407,26 @@ def _synthetic_iteration(
         iteration_record=iteration_record,
         decision_record=decision_record,
     )
+
+
+def test_markdown_iteration_table_includes_consistency_column() -> None:
+    exp = _experiment()
+    result = OptimizationResult(experiment=exp)
+    result.iterations.append(
+        _synthetic_iteration(primary=0.5, reliability={"consistency_rate": 0.83})
+    )
+    md = render_markdown(result)
+    assert "| consistency |" in md
+    # 0.83 → "83%" in the iteration row.
+    assert "83%" in md
+
+
+def test_markdown_consistency_column_shows_dash_when_absent() -> None:
+    exp = _experiment()
+    result = OptimizationResult(experiment=exp)
+    # No consistency_rate in reliability (e.g. rehydrated / never measured).
+    result.iterations.append(_synthetic_iteration(primary=0.5, reliability={}))
+    md = render_markdown(result)
+    assert "| consistency |" in md
+    # The row renders an em dash for the missing value without raising.
+    assert "—" in md
