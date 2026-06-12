@@ -39,6 +39,7 @@ from selfevals.cli import _friendly
 from selfevals.repo.loader import (
     ExperimentSpec,
     LoaderError,
+    RefDatasetSource,
     build_spec_from_mapping,
     deserialize_experiment_spec,
 )
@@ -126,11 +127,34 @@ def _load_spec(*, workspace_id: str, body: RunExperimentRequest) -> ExperimentSp
     """
     try:
         if body.spec_inline is not None:
-            return build_spec_from_mapping(body.spec_inline, workspace_id=workspace_id)
-        assert body.spec_path is not None  # guaranteed by the request validator
-        return _friendly.load_spec(body.spec_path, workspace_id=workspace_id)
+            spec = build_spec_from_mapping(body.spec_inline, workspace_id=workspace_id)
+        else:
+            assert body.spec_path is not None  # guaranteed by the request validator
+            spec = _friendly.load_spec(body.spec_path, workspace_id=workspace_id)
     except (SelfEvalsUserError, LoaderError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if body.dataset_id is not None:
+        spec = _override_dataset(spec, body.dataset_id)
+    return spec
+
+
+def _override_dataset(spec: ExperimentSpec, dataset_id: str) -> ExperimentSpec:
+    """Swap the spec's dataset source for a reference to `dataset_id`.
+
+    `ExperimentSpec` is a frozen dataclass, so we rebuild it via `replace`. The
+    referenced dataset is resolved at launch (`build_loop`), which also hydrates
+    the cases — so we clear `cases` here, mirroring how the loader leaves a
+    ref-sourced spec empty until storage fills it."""
+    from dataclasses import replace
+
+    from selfevals.schemas._base import EntityRef
+
+    return replace(
+        spec,
+        dataset_source=RefDatasetSource(ref=EntityRef(id=dataset_id)),
+        cases=[],
+    )
 
 
 def _apply_overrides(spec: ExperimentSpec, body: RunExperimentRequest) -> None:

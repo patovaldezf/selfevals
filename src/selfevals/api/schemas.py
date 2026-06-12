@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class HealthResponse(BaseModel):
@@ -310,71 +310,102 @@ class CaseListResponse(BaseModel):
     holdout_count: int
 
 
-class CaseResultRow(BaseModel):
-    """One scenario's outcome in the best iteration: what was expected, what the
-    agent produced, and whether it matched.
+class ExpectedView(BaseModel):
+    """What the case declared it expected — only the dimensions it actually
+    declares are populated. A classification case carries `structured_output`; a
+    substring case carries `must_include`; a tool case carries `required_tools`.
+    Unused dimensions are omitted from the JSON (serialized with
+    `exclude_none`/empty-skipped), so the payload stays compact at scale instead
+    of carrying nulls for every possible rule."""
 
-    The fix for "best_iteration.failure_reasons dice que falló pero no cuál caso":
-    every row carries its `case_id`/`case_name`, the `expected` spec, the
-    `detected` output, the pass/fail `matched`, and the graders' verdicts —
-    plus `run_id`/`trace_id` so the FE opens the trace inline."""
+    model_config = ConfigDict(extra="forbid")
+
+    structured_output: dict[str, Any] | None = None
+    must_include: list[str] | None = None
+    must_not_include: list[str] | None = None
+    required_tools: list[str] | None = None
+    forbidden_tools: list[str] | None = None
+
+
+class DetectedView(BaseModel):
+    """What the agent actually produced, projected to mirror the declared
+    `ExpectedView` so the FE can render a direct expected-vs-detected diff.
+
+    `content` is the classified message (the agent's reply). `structured_output`
+    is its structured payload. `missing`/`forbidden_present` name the specific
+    substrings that broke a `must_include`/`must_not_include` rule.
+    `tools_invoked` lists the tools the run actually called. Like `ExpectedView`,
+    only relevant keys are emitted."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    content: str | None = None
+    structured_output: dict[str, Any] | None = None
+    missing: list[str] | None = None
+    forbidden_present: list[str] | None = None
+    tools_invoked: list[str] | None = None
+
+
+class ScenarioResult(BaseModel):
+    """One evaluated scenario — a case, or one turn of a conversation case.
+
+    The single recursive shape used everywhere the FE needs "expected vs detected
+    vs matched": `/experiments/{id}/results` (per case) and `/threads/{id}` (per
+    turn). A conversation case carries its turns in `turns`, each a `ScenarioResult`
+    of the same shape, so the FE renders identically at any depth.
+
+    `expected`/`detected` are derived per declared dimension (see `ExpectedView`),
+    not fixed blobs — they're `None` when the case declares nothing to compare.
+    `message` is the classified reply text, always present when the trace has one."""
 
     case_id: str
     case_name: str | None = None
     run_id: str | None = None
     trace_id: str | None = None
     iteration: int
-    expected: dict[str, Any] | None = None
-    """The case's `Expected` spec (must_include, structured_output, …). None when
-    the experiment's cases are no longer on disk to cross-reference."""
-    detected: dict[str, Any] | None = None
-    """What the agent produced: `{content, structured_output, tools_invoked}`,
-    read off the persisted trace. None when no trace was persisted for this case
-    (e.g. it passed under `persist_traces="failed"`)."""
+    position: int | None = None
+    """0-based turn index within a conversation; None for a top-level case."""
     matched: bool | None = None
-    """Whether the primary grade passed. None when there's no persisted trace to
-    grade from."""
+    """Whether the primary grade passed. None when there's no persisted trace."""
     score: float | None = None
     label: str | None = None
+    message: str | None = None
+    """The classified message — the agent's reply text for this case/turn."""
     failure_modes: list[str] = Field(default_factory=list)
+    expected: ExpectedView | None = None
+    detected: DetectedView | None = None
     grader_results: list[dict[str, Any]] = Field(default_factory=list)
+    turns: list[ScenarioResult] = Field(default_factory=list)
+    """Per-turn breakdown for a conversation case; empty for single-shot cases or
+    when turn expansion wasn't requested (`?include=turns`)."""
+
+
+ScenarioResult.model_rebuild()  # resolve the recursive `turns` forward ref
 
 
 class ExperimentResultsResponse(BaseModel):
     """Per-scenario results for an experiment's best iteration.
 
-    Cases with no persisted trace are still listed (with `expected` and
-    `matched=None`) so the set is reported honestly — under `persist_traces`
+    Cases with no persisted trace are still listed (`expected` from the spec,
+    `detected`/`matched=None`) so the set is honest — under `persist_traces`
     other than `"all"`, passing cases have no trace to show."""
 
     experiment_id: str
     iteration: int | None = None
-    cases: list[CaseResultRow] = Field(default_factory=list)
+    cases: list[ScenarioResult] = Field(default_factory=list)
     total: int
 
 
-class ThreadTurn(BaseModel):
-    """One trace within a thread, projected as a turn for the thread view."""
-
-    trace_id: str
-    run_id: str
-    position: int
-    experiment_id: str | None = None
-    iteration: int | None = None
-    final_state: str
-    started_at: datetime
-    ended_at: datetime | None = None
-    primary_grade: str | None = None
-    grader_results: list[dict[str, Any]] = Field(default_factory=list)
-    metrics: dict[str, Any] = Field(default_factory=dict)
-
-
 class ThreadResponse(BaseModel):
-    """All traces sharing a thread_id, assembled into an ordered conversation."""
+    """All traces sharing a thread_id, assembled into an ordered conversation.
+
+    Each turn is a `ScenarioResult` — the same shape `/results` uses — so the FE
+    renders a turn and a case identically, with per-turn expected/detected/matched
+    and the classified `message`. (Replaces the old `ThreadTurn`.)"""
 
     thread_id: str
     turn_count: int
-    turns: list[ThreadTurn] = Field(default_factory=list)
+    turns: list[ScenarioResult] = Field(default_factory=list)
 
 
 class FunnelNodeResponse(BaseModel):
@@ -521,6 +552,10 @@ class RunExperimentRequest(BaseModel):
 
     spec_path: str | None = None
     spec_inline: dict[str, Any] | None = None
+    dataset_id: str | None = None
+    """Optional override: run against this persisted dataset instead of whatever
+    the spec's `dataset:` block declares. Lets the FE pick a dataset at launch
+    without editing the spec — the experiment consumes the dataset by reference."""
     max_iterations: int | None = Field(default=None, ge=1)
     reps: int | None = Field(default=None, ge=1)
     persist_traces: Literal["none", "all", "failed"] | None = None
@@ -546,3 +581,94 @@ class RunExperimentResponse(BaseModel):
     state: str
     run_id: str | None = None
     job_id: str | None = None
+
+
+class SplitAllocationView(BaseModel):
+    """A dataset's optimization/holdout/reliability split fractions."""
+
+    optimization: float
+    holdout: float
+    reliability: float
+    other: dict[str, float] = Field(default_factory=dict)
+
+
+class DatasetStatisticsView(BaseModel):
+    """Portfolio counts for a dataset's cases (computed at materialization)."""
+
+    total_cases: int
+    by_level: dict[str, int] = Field(default_factory=dict)
+    by_feature: dict[str, int] = Field(default_factory=dict)
+    by_source: dict[str, int] = Field(default_factory=dict)
+    by_risk: dict[str, int] = Field(default_factory=dict)
+    holdout_count: int = 0
+    pii_breakdown: dict[str, int] = Field(default_factory=dict)
+
+
+class DatasetSummary(BaseModel):
+    """A dataset as it appears in a list — identity + shape, no case bodies."""
+
+    id: str
+    name: str
+    description: str | None = None
+    dataset_type: str
+    status: str
+    case_count: int
+    manifest_hash: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class DatasetListPage(BaseModel):
+    """Paginated `GET /workspaces/{ws}/datasets`."""
+
+    items: list[DatasetSummary] = Field(default_factory=list)
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+
+
+class DatasetDetailResponse(BaseModel):
+    """One dataset with its split, statistics, and resolved case summaries.
+
+    `cases` reuses `CaseSummary` — the same shape the experiment cases list
+    returns — so the FE renders a dataset's cases with one component.
+    """
+
+    id: str
+    name: str
+    description: str | None = None
+    dataset_type: str
+    status: str
+    case_count: int
+    manifest_hash: str | None = None
+    split_allocation: SplitAllocationView
+    statistics: DatasetStatisticsView | None = None
+    cases: list[CaseSummary] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateDatasetRequest(BaseModel):
+    """Create a dataset over HTTP (JSON body). Provide exactly one case source:
+
+    * `cases` — the case dicts inline in the request body.
+    * `cases_path` — a path to a JSONL file already on the server's disk.
+
+    (To upload a `.jsonl` file directly, use the multipart `…/datasets/upload`
+    endpoint instead.) `dataset_type` defaults to `capability`; an optional
+    `split_allocation` overrides the default 0.7/0.2/0.1 portfolio.
+    """
+
+    name: str = Field(min_length=1)
+    description: str | None = None
+    dataset_type: str = "capability"
+    cases: list[dict[str, Any]] | None = None
+    cases_path: str | None = None
+    split_allocation: dict[str, float] | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_source(self) -> CreateDatasetRequest:
+        if (self.cases is None) == (self.cases_path is None):
+            raise ValueError("provide exactly one of `cases` or `cases_path`")
+        return self

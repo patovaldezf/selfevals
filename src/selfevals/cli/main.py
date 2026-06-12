@@ -12,7 +12,7 @@ import sys
 from collections.abc import Sequence
 
 from selfevals._errors import SelfEvalsUserError
-from selfevals.cli import analyze_commands, commands
+from selfevals.cli import analyze_commands, commands, dataset_commands
 from selfevals.cli._help import make_subparser
 from selfevals.version import __version__
 
@@ -121,6 +121,95 @@ def _build_parser() -> argparse.ArgumentParser:
     p_iter_list.add_argument("workspace_id")
     p_iter_list.add_argument("experiment_id")
     p_iter_list.set_defaults(func=commands.cmd_iteration_list)
+    p_dataset = make_subparser(
+        sub,
+        "dataset",
+        help_text="Create, list, inspect, and freeze datasets (no experiment needed).",
+        examples=[
+            "selfevals dataset create ws_01HZZZ... --from cases.jsonl --name golden-v1",
+            "selfevals dataset list ws_01HZZZ...",
+            "selfevals dataset show ws_01HZZZ... ds_01HXXX...",
+            "selfevals dataset freeze ws_01HZZZ... ds_01HXXX...",
+        ],
+    )
+    ds_sub = p_dataset.add_subparsers(dest="dataset_command", required=True)
+    p_ds_create = ds_sub.add_parser(
+        "create",
+        help="Create a dataset from a JSONL file of cases.",
+        description=(
+            "Load cases from a JSONL file and persist a standalone dataset "
+            "(manifest hash + statistics computed). Runs no experiment."
+        ),
+        epilog=(
+            "Example:\n"
+            "  selfevals dataset create ws_01HZZZ... --from cases.jsonl "
+            "--name golden-v1 --type golden"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_ds_create.add_argument("workspace_id")
+    p_ds_create.add_argument(
+        "--from", dest="from_path", required=True, help="Path to a JSONL file (one case per line)."
+    )
+    p_ds_create.add_argument("--name", required=True, help="Human-readable dataset name.")
+    p_ds_create.add_argument(
+        "--type",
+        default="capability",
+        help="Dataset type (e.g. capability, golden, regression, smoke). Default: capability.",
+    )
+    p_ds_create.add_argument("--description", default=None, help="Optional description.")
+    p_ds_create.set_defaults(func=dataset_commands.cmd_dataset_create)
+    p_ds_import = ds_sub.add_parser(
+        "import",
+        help="Alias of `create` — import cases from a JSONL file.",
+        description="Alias of `dataset create`: load cases from JSONL into a new dataset.",
+        epilog="Example:\n  selfevals dataset import ws_01HZZZ... --from cases.jsonl --name x",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_ds_import.add_argument("workspace_id")
+    p_ds_import.add_argument("--from", dest="from_path", required=True)
+    p_ds_import.add_argument("--name", required=True)
+    p_ds_import.add_argument("--type", default="capability")
+    p_ds_import.add_argument("--description", default=None)
+    p_ds_import.set_defaults(func=dataset_commands.cmd_dataset_create)
+    p_ds_list = ds_sub.add_parser(
+        "list",
+        help="List datasets in a workspace.",
+        description="List every dataset stored in the given workspace.",
+        epilog="Example:\n  selfevals dataset list ws_01HZZZ... --status active",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_ds_list.add_argument("workspace_id")
+    p_ds_list.add_argument(
+        "--status",
+        default=None,
+        choices=["draft", "frozen", "active", "archived"],
+        help="Filter by lifecycle status.",
+    )
+    p_ds_list.set_defaults(func=dataset_commands.cmd_dataset_list)
+    p_ds_show = ds_sub.add_parser(
+        "show",
+        help="Show one dataset (metadata + statistics).",
+        description="Show a dataset's metadata, split allocation, and case statistics.",
+        epilog="Example:\n  selfevals dataset show ws_01HZZZ... ds_01HXXX...",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_ds_show.add_argument("workspace_id")
+    p_ds_show.add_argument("dataset_id")
+    p_ds_show.set_defaults(func=dataset_commands.cmd_dataset_show)
+    p_ds_freeze = ds_sub.add_parser(
+        "freeze",
+        help="Freeze a dataset (recompute manifest, set status=frozen).",
+        description=(
+            "Recompute the manifest hash and statistics from the current cases "
+            "and mark the dataset FROZEN. Regression datasets become immutable."
+        ),
+        epilog="Example:\n  selfevals dataset freeze ws_01HZZZ... ds_01HXXX...",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_ds_freeze.add_argument("workspace_id")
+    p_ds_freeze.add_argument("dataset_id")
+    p_ds_freeze.set_defaults(func=dataset_commands.cmd_dataset_freeze)
     p_report = make_subparser(
         sub,
         "report",
@@ -157,6 +246,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p_run.add_argument(
         "--workspace",
         help="Workspace id override (otherwise read from the spec's `workspace:` key).",
+    )
+    p_run.add_argument(
+        "--dataset",
+        default=None,
+        help=(
+            "Run against this persisted dataset id instead of the spec's `dataset:` "
+            "block (resolves its cases + split from storage). Needs persistence."
+        ),
     )
     p_run.add_argument(
         "--max-iterations",

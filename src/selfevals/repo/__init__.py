@@ -12,14 +12,23 @@ Public API:
 
 from __future__ import annotations
 
+from selfevals.repo.datasets import (
+    build_dataset,
+    compute_manifest_hash,
+    compute_statistics,
+    persist_dataset,
+)
 from selfevals.repo.loader import (
     AgentEntrypoint,
     AgentSpec,
     CliAgentSpec,
+    DatasetSpec,
     EmbeddedAgentSpec,
     ExperimentSpec,
     HttpAgentSpec,
+    InlineDatasetSource,
     LoaderError,
+    RefDatasetSource,
     load_experiment_spec,
     resolve_agent_callable,
 )
@@ -28,10 +37,17 @@ __all__ = [
     "AgentEntrypoint",
     "AgentSpec",
     "CliAgentSpec",
+    "DatasetSpec",
     "EmbeddedAgentSpec",
     "ExperimentSpec",
     "HttpAgentSpec",
+    "InlineDatasetSource",
     "LoaderError",
+    "RefDatasetSource",
+    "build_dataset",
+    "compute_manifest_hash",
+    "compute_statistics",
     "load_experiment_spec",
+    "persist_dataset",
     "resolve_agent_callable",
 ]

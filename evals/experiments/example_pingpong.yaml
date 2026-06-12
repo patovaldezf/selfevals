@@ -18,6 +18,11 @@ experiment:
       - commerce.product_resolution
     dataset_types:
       - capability
+  # These refs are placeholders: when the run uses inline cases (the `dataset:`
+  # block below), launch materializes a real Dataset over them and rewrites
+  # `datasets.optimization` / `frozen.datasets` to point at it. To reuse a
+  # dataset you uploaded separately, replace the `dataset:` block with
+  # `dataset: { ref: ds_<id> }` and these will resolve to that dataset instead.
   datasets:
     optimization: { id: ds_pingpong, version: 1 }
   target:
@@ -56,6 +61,14 @@ experiment:
       threshold: 0.10
     scope: failed_only
 
+# How this experiment gets its cases. Three shapes (pick one):
+#   cases_path: ../datasets/pingpong.jsonl   # JSONL on disk (this example)
+#   cases_inline: [ {...}, {...} ]           # cases declared right here
+#   ref: ds_01H...                           # reuse a persisted dataset by id
+# The first two materialize a Dataset at launch; `ref` resolves an existing one
+# (create it with `selfevals dataset create` or POST .../datasets first).
+# Optional metadata for the materialized dataset: name, dataset_type,
+# split_allocation, description.
 dataset:
   cases_path: ../datasets/pingpong.jsonl
 

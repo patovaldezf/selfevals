@@ -344,6 +344,7 @@ selfevals estimate --cases N --space-size N --reps N --cost-per-call USD
 selfevals workspace show <workspace_id>
 selfevals experiment list|show <workspace_id> [experiment_id]
 selfevals iteration list <workspace_id> <experiment_id>
+selfevals dataset create|import|list|show|freeze ...
 selfevals analyze pull|push <workspace_id> <experiment_id>
 selfevals failuremode list|promote|retire|merge|edit ...
 selfevals skills list|path <name>

@@ -12,17 +12,34 @@ Auth: stubbed via a single `X-SelfEvals-User` header (default
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 
 from selfevals.api.broker import get_broker
+from selfevals.api.dataset_writer import (
+    DatasetNotFoundError,
+    DatasetWriteError,
+    create_dataset_from_jsonl_bytes,
+    create_dataset_from_request,
+    freeze_dataset,
+)
 from selfevals.api.metrics import (
     cost_metrics,
     failure_mode_metrics,
@@ -34,12 +51,14 @@ from selfevals.api.metrics import (
 from selfevals.api.queries import (
     AnchorPoint,
     anchor_set_history,
+    dataset_detail,
     experiment_cases,
     experiment_decisions,
     experiment_detail,
     experiment_iterations,
     experiment_results,
     iteration_detail,
+    list_datasets,
     list_experiments,
     list_workspaces,
     load_compare,
@@ -56,7 +75,10 @@ from selfevals.api.schemas import (
     CaseListResponse,
     CompareResponse,
     CostMetricsResponse,
+    CreateDatasetRequest,
     CreateWorkspaceRequest,
+    DatasetDetailResponse,
+    DatasetListPage,
     DecisionRecordResponse,
     ExperimentDetailResponse,
     ExperimentListPage,
@@ -77,7 +99,7 @@ from selfevals.api.schemas import (
     WorkspaceResponse,
 )
 from selfevals.api.sse import stream_trace
-from selfevals.schemas.enums import ExperimentState
+from selfevals.schemas.enums import DatasetStatus, ExperimentState
 from selfevals.storage.errors import ObjectNotFoundError, PointerHashMismatchError
 from selfevals.storage.factory import (
     DEFAULT_SQLITE_PATH,
@@ -91,6 +113,25 @@ from selfevals.storage.filesystem import FilesystemObjectStore, parse_pointer
 from selfevals.storage.interface import StorageInterface
 
 _USER_HEADER = "X-SelfEvals-User"
+
+# Dev frontends that may call the API cross-origin. 5173 is the bundled
+# SvelteKit web UI; 3000 is the common Next/Vite default (e.g. the seals
+# playground). Override with SELFEVALS_CORS_ORIGINS (comma-separated) to add a
+# tunnel/deploy origin without code changes.
+_DEFAULT_CORS_ORIGINS = (
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+)
+
+
+def _cors_origins() -> list[str]:
+    raw = os.environ.get("SELFEVALS_CORS_ORIGINS")
+    if raw:
+        # Explicit override wins outright; trim blanks and empties.
+        return [o.strip() for o in raw.split(",") if o.strip()]
+    return list(_DEFAULT_CORS_ORIGINS)
 
 UserHeader = Annotated[
     str | None,
@@ -131,7 +172,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_origins=_cors_origins(),
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],
@@ -219,6 +260,127 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
             )
         finally:
             storage.close()
+
+    # --- datasets (first-class, experiment-independent) ------------------
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/datasets",
+        response_model=DatasetListPage,
+        tags=["datasets"],
+    )
+    def datasets_index(
+        workspace_id: str,
+        storage: StorageInterface = Depends(_storage),
+        limit: Annotated[int, Query(ge=1, le=500)] = 100,
+        offset: Annotated[int, Query(ge=0)] = 0,
+        status: Annotated[
+            DatasetStatus | None,
+            Query(description="Filter by lifecycle status (draft/active/frozen/archived)."),
+        ] = None,
+        dataset_type: Annotated[
+            str | None, Query(description="Filter by dataset type (e.g. capability, golden).")
+        ] = None,
+        _user: UserHeader = None,
+    ) -> DatasetListPage:
+        try:
+            return list_datasets(
+                storage,
+                workspace_id=workspace_id,
+                limit=limit,
+                offset=offset,
+                status=status,
+                dataset_type=dataset_type,
+            )
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/datasets/{dataset_id}",
+        response_model=DatasetDetailResponse,
+        tags=["datasets"],
+    )
+    def datasets_show(
+        workspace_id: str,
+        dataset_id: str,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> DatasetDetailResponse:
+        try:
+            detail = dataset_detail(
+                storage, workspace_id=workspace_id, dataset_id=dataset_id
+            )
+            if detail is None:
+                raise HTTPException(status_code=404, detail=f"dataset {dataset_id} not found")
+            return detail
+        finally:
+            storage.close()
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/datasets",
+        response_model=DatasetDetailResponse,
+        status_code=201,
+        tags=["datasets"],
+    )
+    def datasets_create(
+        workspace_id: str,
+        body: CreateDatasetRequest,
+        _user: UserHeader = None,
+    ) -> DatasetDetailResponse:
+        # Inline cases or a server-side cases_path. Persists the dataset + its
+        # cases synchronously (a dataset is small; no background needed).
+        try:
+            return create_dataset_from_request(
+                db_path=resolved, workspace_id=workspace_id, body=body
+            )
+        except DatasetWriteError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/datasets/upload",
+        response_model=DatasetDetailResponse,
+        status_code=201,
+        tags=["datasets"],
+    )
+    async def datasets_upload(
+        workspace_id: str,
+        name: Annotated[str, Form(description="Dataset name.")],
+        file: Annotated[UploadFile, File(description="A .jsonl file, one case per line.")],
+        dataset_type: Annotated[str, Form()] = "capability",
+        description: Annotated[str | None, Form()] = None,
+        _user: UserHeader = None,
+    ) -> DatasetDetailResponse:
+        # Multipart upload of a raw .jsonl — the file-drag path for a FE.
+        raw = await file.read()
+        try:
+            return create_dataset_from_jsonl_bytes(
+                db_path=resolved,
+                workspace_id=workspace_id,
+                name=name,
+                raw=raw,
+                dataset_type=dataset_type,
+                description=description,
+            )
+        except DatasetWriteError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/datasets/{dataset_id}/freeze",
+        response_model=DatasetDetailResponse,
+        tags=["datasets"],
+    )
+    def datasets_freeze(
+        workspace_id: str,
+        dataset_id: str,
+        _user: UserHeader = None,
+    ) -> DatasetDetailResponse:
+        try:
+            return freeze_dataset(
+                db_path=resolved, workspace_id=workspace_id, dataset_id=dataset_id
+            )
+        except DatasetNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"dataset {dataset_id} not found") from exc
+        except DatasetWriteError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get(
         "/api/workspaces/{workspace_id}/metrics/pass-rate",
@@ -530,22 +692,52 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     @app.get(
         "/api/workspaces/{workspace_id}/experiments/{experiment_id}/results",
         response_model=ExperimentResultsResponse,
+        # Each scenario's expected/detected only carries the dimensions the case
+        # declared; exclude_none keeps the JSON compact (no null rules) at scale.
+        response_model_exclude_none=True,
         tags=["experiments"],
+        summary="Per-scenario expected vs detected vs matched (best iteration)",
+        description=(
+            "Returns one `ScenarioResult` per case of the best iteration. "
+            "`expected`/`detected` are **derived per declared dimension**: a case "
+            "that declares `structured_output` gets only that; a `must_include` "
+            "case gets substrings + the produced `content` (+ `missing` on a gap); "
+            "a tool case gets `required_tools` vs `tools_invoked`. Undeclared "
+            "dimensions are omitted (not null), so the payload stays compact. "
+            "`message` is the classified reply. A conversation case carries its "
+            "per-turn breakdown in `turns[]` (same shape) when called with "
+            "`?include=turns`.\n\n"
+            "**Migration (0.8.0 → 0.9.0, breaking):** the old flat `CaseResultRow` "
+            "(with fixed `detected={content,structured_output,tools_invoked}`) is "
+            "replaced by this recursive, dimension-derived `ScenarioResult`."
+        ),
     )
     def experiments_results(
         workspace_id: str,
         experiment_id: str,
+        include: Annotated[
+            str | None,
+            Query(
+                description=(
+                    "Comma-separated expansions. `turns` expands each conversation "
+                    "case into per-turn `ScenarioResult`s (off by default — the "
+                    "case-level grid stays one representative trace per case)."
+                ),
+            ),
+        ] = None,
         storage: StorageInterface = Depends(_storage),
         _user: UserHeader = None,
     ) -> ExperimentResultsResponse:
         # Per-scenario expected/detected/matched for the best iteration. Cases
         # whose traces weren't persisted are listed with detected/matched null
         # rather than dropped, so the grid is honest.
+        include_set = {p.strip() for p in (include or "").split(",") if p.strip()}
         try:
             results = experiment_results(
                 storage,
                 workspace_id=workspace_id,
                 experiment_id=experiment_id,
+                include_turns="turns" in include_set,
             )
             if results is None:
                 raise HTTPException(
@@ -707,7 +899,16 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     @app.get(
         "/api/workspaces/{workspace_id}/threads/{thread_id}",
         response_model=ThreadResponse,
+        response_model_exclude_none=True,
         tags=["traces"],
+        summary="A conversation thread as ordered per-turn ScenarioResults",
+        description=(
+            "Every trace sharing `thread_id`, ordered by turn, each projected as a "
+            "`ScenarioResult` — the same shape as `/results`, with per-turn "
+            "expected/detected/matched and the classified `message`.\n\n"
+            "**Migration (breaking):** `turns[]` items are now `ScenarioResult` "
+            "(was `ThreadTurn`); use `label` instead of `primary_grade`."
+        ),
     )
     def threads_show(
         workspace_id: str,

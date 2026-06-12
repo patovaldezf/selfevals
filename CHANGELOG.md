@@ -9,6 +9,45 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [0.9.0] - 2026-06-09
 
+Datasets pasan de schema huérfano a entidad de primer orden: persistidos,
+reusables entre experimentos, gestionables por CLI y API, con sus splits/holdout
+ejecutándose de verdad. Un dataset se sube una vez (sin experimento) y se
+consume desde varios experimentos por referencia.
+
+### Added
+
+- **`selfevals dataset`** — subcomando CLI standalone: `create`/`import` (desde
+  JSONL, sin lanzar experimento), `list`, `show` (metadata + statistics),
+  `freeze` (recomputa manifest_hash y marca FROZEN).
+- **Endpoints REST de datasets** (tipados, Orval-ready) bajo
+  `/workspaces/{ws}/datasets`: `GET` list paginada (filtros `status`/`type`),
+  `GET` detail (split + statistics + cases), `POST` create (cases inline JSON o
+  `cases_path` en disco), `POST .../upload` (multipart `.jsonl`), `POST
+.../{id}/freeze`. Añade `python-multipart` al extra `[web]`.
+- **`repo/datasets.py`** — núcleo puro: `compute_manifest_hash` (invariante al
+  orden, idempotente), `compute_statistics`, y `persist_dataset`, el camino
+  canónico que CLI/API/launch comparten para crear un dataset.
+- **Materialización inline en launch** — un experimento con cases inline crea un
+  `Dataset` real (manifest + statistics) y reescribe `datasets.optimization` /
+  `frozen.datasets` para apuntar a él (id derivado del experiment_id →
+  idempotente entre reruns). Cierra el `ds_pingpong` decorativo.
+- **Modo `dataset: { ref: ds_xxx }`** — un experimento reutiliza un dataset
+  persistido por referencia: launch resuelve sus cases y su `split_allocation`
+  desde storage. Un dataset → muchos experimentos.
+- **Override `dataset_id` al lanzar** — `RunExperimentRequest.dataset_id` (API) y
+  `selfevals run --dataset <id>` (CLI) seleccionan un dataset standalone sin
+  editar el spec.
+
+### Changed
+
+- **`build_loop` pasa el `split_allocation` real al `OptimizationLoop`** (antes
+  siempre `None`): `sample_strategy` (`random_subset`/`stratified`) y el split
+  del dataset ahora se ejecutan. Sin split declarado, el comportamiento es
+  idéntico a antes (todo el pool). El loader clasifica el block `dataset:` en
+  `InlineDatasetSource`/`RefDatasetSource` sin tocar storage (sigue puro).
+
+---
+
 Dos graders más para cerrar los huecos que aparecieron al integrar selfevals
 con agentes reales: scoring de conjuntos (intention/extract) y panel de jueces
 declarable. selfevals sigue siendo la autoridad de scoring y permanece

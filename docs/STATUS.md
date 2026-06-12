@@ -1,4 +1,4 @@
-# Status — v0.3.0
+# Status — v0.9.0
 
 This file is the honest snapshot of what selfevals can and cannot do
 today. Updated on every release; the CHANGELOG records what _changed_,
@@ -56,6 +56,17 @@ this file records what _is_.
   with rationale.
 - **Storage**: SQLite-backed with optimistic concurrency, workspace
   isolation, migrations. Filesystem object store for blobs.
+- **Datasets** (v0.9.0): first-class, persisted, reusable across
+  experiments. `repo/datasets.py::persist_dataset` is the canonical
+  create path (manifest hash + statistics) shared by the CLI
+  (`selfevals dataset create/import/list/show/freeze`), the API
+  (`/workspaces/{ws}/datasets` — list/detail/create/upload/freeze,
+  three upload modes), and inline materialization at launch. An
+  experiment consumes a dataset inline (`dataset.cases_*`, materialized
+  to a real Dataset on run) or by reference (`dataset: {ref: ds_xxx}`,
+  or `--dataset`/`dataset_id` at launch). The dataset's
+  `split_allocation` now reaches the loop, so `sample_strategy`
+  (`random_subset`/`stratified`) and holdout actually run.
 - **Reporter**: markdown (PR-friendly) and JSON. Cost & time
   summaries appear when data is present, omitted gracefully when
   not. Compare two iterations with proposal diff, metrics diff,
@@ -102,9 +113,11 @@ this file records what _is_.
 
 ### API and web UI
 
-- `src/selfevals/api/` ships endpoints under FastAPI but the write
-  side is minimal (workspace creation is the only POST). All
-  experiment lifecycle goes through the CLI.
+- `src/selfevals/api/` ships read endpoints plus a growing write side:
+  create workspace, launch an experiment run (`POST
+.../experiments/run`, background + 202), and full dataset CRUD
+  (create/upload/freeze). Experiment authoring/editing beyond launch
+  still goes through the CLI.
 - `web/` (SvelteKit) is scaffolded but not feature-complete.
   `selfevals serve` is referenced in some prompts but no
   `cmd_serve` exists in `commands.py` today.
@@ -160,8 +173,9 @@ on the backlog until it earns its place.
 ### Still on the backlog
 
 - `breakdown: dict[str, Any]` on `GradeResult` for funnel-style scores.
-- A `selfevals dataset import` CLI command that pulls EvalCases from
-  a SQL source.
+- Importing a dataset from a SQL/production source. `selfevals dataset
+import` exists for JSONL files (v0.9.0); pulling EvalCases straight
+  from a SQL query is still backlog.
 - Retries and timeout configuration on `HttpEndpointAdapter`.
 - A `serve` CLI that mounts the FastAPI app and the optimization
   loop concurrently.

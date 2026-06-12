@@ -35,7 +35,9 @@ from typing import Any, cast
 
 import yaml
 
-from selfevals.schemas.enums import SpanKind
+from selfevals.schemas._base import EntityRef
+from selfevals.schemas.dataset import SplitAllocation
+from selfevals.schemas.enums import DatasetType, SpanKind
 from selfevals.schemas.eval_case import EvalCase
 from selfevals.schemas.experiment import Experiment
 
@@ -162,23 +164,79 @@ class GraderSpec:
 
 
 @dataclass(frozen=True)
+class InlineDatasetSource:
+    """`dataset: {cases_inline | cases_path, name?, dataset_type?, ...}`.
+
+    The cases are declared in the spec itself (inline list or a JSONL path).
+    The loader parses them into `cases`; `runner.launch` materializes a real
+    `Dataset` entity over them at run time (the loader stays storage-free). The
+    optional `name` / `dataset_type` / `split_allocation` / `description` carry
+    the manifest metadata for that materialization, with sensible defaults when
+    omitted so existing specs keep working unchanged.
+    """
+
+    cases: list[EvalCase]
+    name: str | None = None
+    dataset_type: DatasetType | None = None
+    split_allocation: SplitAllocation | None = None
+    description: str | None = None
+
+
+@dataclass(frozen=True)
+class RefDatasetSource:
+    """`dataset: {ref: ds_xxx, version?}` — reference a persisted Dataset.
+
+    No cases are declared in the spec; `runner.launch` resolves the referenced
+    `Dataset` from storage, hydrates its cases, and adopts its split allocation.
+    This is how one standalone dataset is reused across many experiments. A ref
+    cannot be resolved without persistence, so an ephemeral run (`--no-persist`)
+    over a ref is a user error, raised at launch.
+    """
+
+    ref: EntityRef
+
+
+DatasetSpec = InlineDatasetSource | RefDatasetSource
+"""Tagged declaration of where an experiment's cases come from. `runner.launch`
+dispatches on the concrete variant: materialize (inline) vs resolve (ref)."""
+
+
+@dataclass(frozen=True)
 class ExperimentSpec:
     workspace_id: str
     experiment: Experiment
     cases: list[EvalCase]
     agent: AgentSpec
+    dataset_source: DatasetSpec
     graders: list[GraderSpec] = field(default_factory=list)
 
 
 def serialize_experiment_spec(spec: ExperimentSpec) -> dict[str, Any]:
-    """JSON-safe representation of a fully validated experiment spec."""
+    """JSON-safe representation of a fully validated experiment spec.
+
+    The `dataset` block round-trips the spec's `dataset_source`: a
+    `RefDatasetSource` serializes to `{ref, version}` (so a worker rehydrating
+    the payload resolves the dataset from storage instead of choking on the
+    empty inline case list), while an inline source serializes its cases.
+    """
     return {
         "workspace": spec.workspace_id,
         "experiment": spec.experiment.model_dump(mode="json"),
-        "dataset": {"cases_inline": [case.model_dump(mode="json") for case in spec.cases]},
+        "dataset": _dump_dataset_source(spec),
         "agent": _dump_agent_spec(spec.agent),
         "graders": [_dump_grader_spec(grader) for grader in spec.graders],
     }
+
+
+def _dump_dataset_source(spec: ExperimentSpec) -> dict[str, Any]:
+    """Serialize the spec's dataset source for `serialize_experiment_spec`."""
+    if isinstance(spec.dataset_source, RefDatasetSource):
+        ref = spec.dataset_source.ref
+        block: dict[str, Any] = {"ref": ref.id}
+        if ref.version is not None:
+            block["version"] = ref.version
+        return block
+    return {"cases_inline": [case.model_dump(mode="json") for case in spec.cases]}
 
 
 def deserialize_experiment_spec(payload: dict[str, Any]) -> ExperimentSpec:
@@ -239,7 +297,12 @@ def build_spec_from_mapping(
     spec_path = (source_dir / "<inline>") if source_dir is not None else Path("<inline>")
 
     experiment = _build_experiment(spec_path, raw, ws_id)
-    cases = _build_cases(spec_path, raw, ws_id)
+    dataset_source = _build_dataset_source(spec_path, raw, ws_id)
+    # Inline sources carry their cases in the spec; ref sources resolve at
+    # launch, so `cases` stays empty until storage hydrates it.
+    cases = (
+        dataset_source.cases if isinstance(dataset_source, InlineDatasetSource) else []
+    )
     agent = _build_agent_spec(spec_path, raw)
     graders = _build_grader_specs(spec_path, raw)
     _validate_primary_grader(spec_path, experiment, graders, cases)
@@ -249,6 +312,7 @@ def build_spec_from_mapping(
         experiment=experiment,
         cases=cases,
         agent=agent,
+        dataset_source=dataset_source,
         graders=graders,
     )
 
@@ -334,16 +398,96 @@ def _build_experiment(spec_path: Path, raw: dict[str, Any], workspace_id: str) -
         raise LoaderError(f"{spec_path}: invalid experiment payload: {exc}") from exc
 
 
-def _build_cases(spec_path: Path, raw: dict[str, Any], workspace_id: str) -> list[EvalCase]:
+def _build_dataset_source(
+    spec_path: Path, raw: dict[str, Any], workspace_id: str
+) -> DatasetSpec:
+    """Classify the `dataset:` block into a tagged source (no storage access).
+
+    Three shapes, mutually exclusive:
+    - `cases_inline:` / `cases_path:` → `InlineDatasetSource` (cases declared
+      here; optional `name`/`dataset_type`/`split_allocation`/`description`
+      describe the Dataset that launch will materialize).
+    - `ref:` → `RefDatasetSource` (reuse a persisted Dataset; resolved at launch).
+    Mixing `ref:` with inline cases is rejected, mirroring the inline XOR.
+    """
     dataset = raw.get("dataset", {})
     if not isinstance(dataset, dict):
         raise LoaderError(f"{spec_path}: `dataset:` must be a mapping")
 
+    ref = dataset.get("ref")
+    inline = dataset.get("cases_inline")
+    cases_path = dataset.get("cases_path")
+    has_inline = inline is not None or cases_path is not None
+
+    if ref is not None and has_inline:
+        raise LoaderError(
+            f"{spec_path}: dataset cannot mix `ref:` with `cases_inline:`/`cases_path:` "
+            "— a ref reuses a persisted dataset, inline declares its own cases"
+        )
+    if ref is not None:
+        return _build_ref_dataset_source(spec_path, dataset, ref)
+
+    cases = _build_cases(spec_path, dataset, workspace_id)
+    return InlineDatasetSource(
+        cases=cases,
+        name=_opt_str(spec_path, dataset, "name"),
+        dataset_type=_opt_dataset_type(spec_path, dataset),
+        split_allocation=_opt_split_allocation(spec_path, dataset),
+        description=_opt_str(spec_path, dataset, "description"),
+    )
+
+
+def _build_ref_dataset_source(
+    spec_path: Path, dataset: dict[str, Any], ref: Any
+) -> RefDatasetSource:
+    if not isinstance(ref, str) or not ref:
+        raise LoaderError(f"{spec_path}: `dataset.ref:` must be a non-empty dataset id string")
+    version = dataset.get("version")
+    if version is not None and not isinstance(version, int):
+        raise LoaderError(f"{spec_path}: `dataset.version:` must be an integer when given")
+    try:
+        return RefDatasetSource(ref=EntityRef(id=ref, version=version))
+    except Exception as exc:
+        raise LoaderError(f"{spec_path}: invalid `dataset.ref:`: {exc}") from exc
+
+
+def _opt_str(spec_path: Path, dataset: dict[str, Any], key: str) -> str | None:
+    value = dataset.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise LoaderError(f"{spec_path}: `dataset.{key}:` must be a non-empty string when given")
+    return value
+
+
+def _opt_dataset_type(spec_path: Path, dataset: dict[str, Any]) -> DatasetType | None:
+    value = dataset.get("dataset_type")
+    if value is None:
+        return None
+    try:
+        return DatasetType(value)
+    except ValueError as exc:
+        raise LoaderError(f"{spec_path}: invalid `dataset.dataset_type:` {value!r}: {exc}") from exc
+
+
+def _opt_split_allocation(spec_path: Path, dataset: dict[str, Any]) -> SplitAllocation | None:
+    value = dataset.get("split_allocation")
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise LoaderError(f"{spec_path}: `dataset.split_allocation:` must be a mapping when given")
+    try:
+        return SplitAllocation(**value)
+    except Exception as exc:
+        raise LoaderError(f"{spec_path}: invalid `dataset.split_allocation:`: {exc}") from exc
+
+
+def _build_cases(spec_path: Path, dataset: dict[str, Any], workspace_id: str) -> list[EvalCase]:
     inline = dataset.get("cases_inline")
     cases_path = dataset.get("cases_path")
     if inline is None and cases_path is None:
         raise LoaderError(
-            f"{spec_path}: dataset must provide either `cases_inline:` or `cases_path:`"
+            f"{spec_path}: dataset must provide `cases_inline:`, `cases_path:`, or `ref:`"
         )
     if inline is not None and cases_path is not None:
         raise LoaderError(
