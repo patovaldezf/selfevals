@@ -10,13 +10,14 @@ Versions follow [SemVer](https://semver.org/).
 ### Added
 
 - **`run.parallelism` ahora se consume (antes dead code)** — el campo
-  `run.parallelism` del YAML (`schemas/experiment.py:163`, default 1, `ge=1
-  le=64`) estaba definido pero nunca leído: el `Executor` y el
-  `OptimizationLoop` usaban su semáforo hardcoded a 8. `runner/launch.py`
-  ahora cablea `parallelism` a `Executor(concurrency=...)` y
-  `OptimizationLoop(grade_concurrency=...)`, de modo que el campo controla de
-  verdad cuántos cases corre el executor en paralelo y cuántos graders puntúa
-  el loop a la vez. Parte de SF-3 del SCALING_ROADMAP.
+  `run.parallelism` del YAML (`schemas/experiment.py:163`, `ge=1 le=64`) estaba
+  definido pero nunca leído: el `Executor` y el `OptimizationLoop` usaban su
+  semáforo hardcoded a 8. `runner/launch.py` ahora cablea `parallelism` a
+  `Executor(concurrency=...)` y `OptimizationLoop(grade_concurrency=...)`, de
+  modo que el campo controla de verdad cuántos cases corre el executor en
+  paralelo y cuántos graders puntúa el loop a la vez. Su default subió de 1 a 8
+  para preservar la concurrencia legacy de los runs que no lo declaran (ver
+  Changed). Parte de SF-3 del SCALING_ROADMAP.
 
 - **Ejemplo `showcase`** — segundo ejemplo copiable (`selfevals examples copy
 showcase`) que ejercita todo el surface de grading en un solo spec: un grader
@@ -33,12 +34,11 @@ showcase`) que ejercita todo el surface de grading en un solo spec: un grader
 ### Changed
 
 - **Default-behavior: la concurrencia por-run pasa de 8 fijo a
-  `run.parallelism` (default 1).** Como el schema de `parallelism` trae default
-  1, un run que no lo declare ahora corre **serial** en vez de con la
-  concurrencia 8 implícita de antes. Es el costo de hacer el campo load-bearing
-  sin rediseñar el schema; subir la concurrencia es ahora explícito
-  (`run: {parallelism: N}`). Si se decide que el default debería ser mayor, se
-  cambia en el schema en un PR aparte.
+  `run.parallelism` (default 8).** El semáforo del executor/loop ya no está
+  hardcoded a 8: lo dicta `run.parallelism`. Para no regresar la performance de
+  los runs que nunca declaran el campo, su default en el schema subió de 1 a 8,
+  de modo que el comportamiento por defecto es idéntico al legacy (concurrencia 8) y ahora un run puede ajustarlo explícitamente (`run: {parallelism: N}`,
+  `ge=1 le=64`).
 
 ### Fixed
 
