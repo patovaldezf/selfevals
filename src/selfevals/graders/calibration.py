@@ -15,10 +15,10 @@ this avoids the "100% precision on a class with 0 predictions" trap.
 
 from __future__ import annotations
 
-from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from selfevals.graders._confusion import confusion_from_pairs, f1_score
 from selfevals.graders.base import GradeLabel
 
 
@@ -50,18 +50,6 @@ class CalibrationReport:
     confusion: dict[tuple[str, str], int] = field(default_factory=dict)
 
 
-def _safe_div(num: float, den: float) -> float | None:
-    if den == 0:
-        return None
-    return num / den
-
-
-def _f1(p: float | None, r: float | None) -> float | None:
-    if p is None or r is None or (p + r) == 0:
-        return None
-    return 2 * p * r / (p + r)
-
-
 def compute_classification_metrics(
     predictions: list[PredictedLabel],
     human_labels: list[HumanLabel],
@@ -77,9 +65,8 @@ def compute_classification_metrics(
     pred_by_case: Mapping[str, PredictedLabel] = {p.case_id: p for p in predictions}
     human_by_case: Mapping[str, HumanLabel] = {h.case_id: h for h in human_labels}
     paired_ids = sorted(set(pred_by_case) & set(human_by_case))
-    n = len(paired_ids)
 
-    if n == 0:
+    if not paired_ids:
         return CalibrationReport(
             n_pairs=0,
             precision=None,
@@ -90,15 +77,14 @@ def compute_classification_metrics(
             high_risk_false_negatives=0,
         )
 
-    confusion: Counter[tuple[str, str]] = Counter()
-    correct = 0
+    # `(human, pred)` is `(expected, predicted)` — the row=actual / column=predicted
+    # convention the shared confusion helper expects.
+    pairs: list[tuple[str, str]] = []
     high_risk_fns = 0
     for case_id in paired_ids:
         pred = pred_by_case[case_id].label.value
         human = human_by_case[case_id].label.value
-        confusion[(human, pred)] += 1
-        if pred == human:
-            correct += 1
+        pairs.append((human, pred))
         if (
             human == positive_label.value
             and pred != positive_label.value
@@ -106,40 +92,22 @@ def compute_classification_metrics(
         ):
             high_risk_fns += 1
 
-    accuracy = correct / n
-
-    labels = sorted({k[0] for k in confusion} | {k[1] for k in confusion})
-    per_label_precision: dict[str, float | None] = {}
-    per_label_recall: dict[str, float | None] = {}
-    f1_values: list[float] = []
-    for label in labels:
-        tp = confusion[(label, label)]
-        pred_pos = sum(c for (h, p), c in confusion.items() if p == label)
-        actual_pos = sum(c for (h, p), c in confusion.items() if h == label)
-        precision_l = _safe_div(tp, pred_pos)
-        recall_l = _safe_div(tp, actual_pos)
-        per_label_precision[label] = precision_l
-        per_label_recall[label] = recall_l
-        f1_l = _f1(precision_l, recall_l)
-        if f1_l is not None:
-            f1_values.append(f1_l)
-
-    macro_f1 = sum(f1_values) / len(f1_values) if f1_values else None
+    report = confusion_from_pairs(pairs)
 
     pos = positive_label.value
-    precision_pos = per_label_precision.get(pos)
-    recall_pos = per_label_recall.get(pos)
-    f1_pos = _f1(precision_pos, recall_pos)
+    precision_pos = report.per_label_precision.get(pos)
+    recall_pos = report.per_label_recall.get(pos)
+    f1_pos = f1_score(precision_pos, recall_pos)
 
     return CalibrationReport(
-        n_pairs=n,
+        n_pairs=report.n_pairs,
         precision=precision_pos,
         recall=recall_pos,
         f1=f1_pos,
-        macro_f1=macro_f1,
-        accuracy=accuracy,
+        macro_f1=report.macro_f1,
+        accuracy=report.accuracy,
         high_risk_false_negatives=high_risk_fns,
-        per_label_precision=per_label_precision,
-        per_label_recall=per_label_recall,
-        confusion=dict(confusion),
+        per_label_precision=report.per_label_precision,
+        per_label_recall=report.per_label_recall,
+        confusion=report.confusion,
     )
