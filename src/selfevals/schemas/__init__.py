@@ -5,6 +5,7 @@ from selfevals.schemas._base import BaseEntity, EntityRef
 from selfevals.schemas.annotation import Annotation, AnnotationLabels
 from selfevals.schemas.dataset import (
     Dataset,
+    DatasetBaseline,
     DatasetStatistics,
     SplitAllocation,
 )
@@ -137,6 +138,7 @@ __all__ = [
     "CounterfactualSpec",
     "CustomSpan",
     "Dataset",
+    "DatasetBaseline",
     "DatasetStatistics",
     "DatasetUsage",
     "DecisionPolicy",

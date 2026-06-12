@@ -50,10 +50,10 @@ LLM proposer PR-13) — lo referencia.
 | 2   | **Errored/timeout fuera de pass@1**                                     | hoy un agente colgado cuenta como 0.0 de calidad               | ✅ cases errored excluidos del denominador de pass@1 + `error_rate` separado (`aggregator.py`)                                                                                   | S        | SF-1      |
 | 3   | **`consistency_rate` al reporte**                                       | el no-determinismo se computa pero no se ve                    | ✅ columna `consistency` en la tabla de iteraciones (`markdown.py`)                                                                                                              | S        | SF-1      |
 | ★4  | **`ClassificationGrader` (`type: confusion`) + matriz NxN agregada**    | "special orders se confunden con full orders" es la señal real | ✅ grader `confusion` + rollup NxN + per-class F1 + render markdown; matemática extraída a `graders/_confusion.py` reusada por calibración (`classification.py`/`aggregator.py`) | M        | SF-2      |
-| 5   | **Worker concurrente** (consumir `run.parallelism` + pool de N workers) | serial = no escala a N experimentos                            | ❌ `parallelism` definido (`experiment.py:163`), **dead code**                                                                                                                   | M        | SF-3      |
+| 5   | **Worker concurrente** (consumir `run.parallelism` + pool de N workers) | serial = no escala a N experimentos                            | ✅ `run.parallelism` cableado a los semáforos del executor/loop (default 8); pool inter-run vía Redis consumer-group (#47) (`launch.py`)                                         | M        | SF-3      |
 | 6   | Observabilidad en la respuesta (nodos/tokens/latencia)                  | cuando un eval falla, el dev no ve por qué sin reproducir      | 🟡 = ROADMAP PR-2/#9                                                                                                                                                             | M        | (ROADMAP) |
 | 7   | Análisis de fallas auto (clustering de failure-modes)                   | clasificar fallos a mano no escala                             | 🟡 = ROADMAP PR-13/#6                                                                                                                                                            | S–M      | (ROADMAP) |
-| 8   | Regresión en CI + baselines versionados                                 | "intention bajó de 0.88 a 0.67, falla el build"                | ❌ nuevo (hoy diferido)                                                                                                                                                          | M        | SF-4      |
+| 8   | Regresión en CI + baselines versionados                                 | "intention bajó de 0.88 a 0.67, falla el build"                | ✅ baseline auto-anclado al dataset en la 1ra ejecución + `regression check` con exit code (primary/pass@1 + per-class F1) (`ci/regression.py`/`runner/baseline.py`)             | M        | SF-4      |
 
 Leyenda: ✅ done · 🟡 parcial · ❌ ausente. `★` = capacidad estrella (lo que más
 mueve la aguja para el diagnóstico real).
@@ -148,12 +148,18 @@ se documenta en su propio repo.
   worker y validar el reparto. El executor ya es async (`executor.py:142`), así que la
   concurrencia intra-run es ortogonal al pool inter-run.
 
-### SF-4 — Regresión en CI + baselines (M) · depende de ★Capa 2
+### SF-4 — Regresión en CI + baselines (M) · depende de ★Capa 2 ✅
 
-- Baseline versionado por experimento (el "best iteration" ya se selecciona) +
-  un gate que compara el run actual contra el baseline y falla si pass@1 (o per-class
-  F1 de la confusion matrix) cae más de un umbral. Hoy diferido explícitamente en
-  `ROADMAP.md` ("Analítica en producción: CI regression gate").
+- **Hecho.** El baseline se ancla al **dataset** (no al experimento) y se fija
+  **automáticamente en la primera ejecución**: el primer run que completa sobre
+  un `ds_xxx` registra su `best_iteration` como baseline de ese dataset
+  (`DatasetBaseline`, idempotente — un run posterior mejor no lo mueve). El gate
+  `selfevals regression check` compara la iteración actual contra ese baseline y
+  falla con exit code si pass@1/primary o la per-class F1 de la confusion matrix
+  cae más de un umbral configurable; consumible por CI
+  (`selfevals regression check ... || exit 1`). La matemática vive en
+  `ci/regression.py::evaluate_regression` (pura). Anclar al dataset mide
+  regresión del agente contra un set de casos fijo, cross-experimento.
 
 ---
 

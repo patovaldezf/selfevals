@@ -360,6 +360,8 @@ selfevals workspace show <workspace_id>
 selfevals experiment list|show <workspace_id> [experiment_id]
 selfevals iteration list <workspace_id> <experiment_id>
 selfevals dataset create|import|list|show|freeze ...
+selfevals baseline show|set <workspace_id> --dataset <ds_id> [--iteration <itr_id>]
+selfevals regression check <workspace_id> --dataset <ds_id> --iteration <itr_id>
 selfevals analyze pull|push <workspace_id> <experiment_id>
 selfevals failuremode list|promote|retire|merge|edit ...
 selfevals skills list|path <name>

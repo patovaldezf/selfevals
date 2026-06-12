@@ -10,7 +10,7 @@ and `status=frozen`, attempts to mutate `cases` or `dataset_type` raise.
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from pydantic import Field, field_validator, model_validator
 
@@ -109,3 +109,34 @@ class Dataset(BaseEntity):
         ):
             super().__setattr__("statistics", None)
         super().__setattr__(name, value)
+
+
+class DatasetBaseline(BaseEntity):
+    """The fixed reference point a dataset is measured against (regression gate).
+
+    Anchored to a *dataset*, not an experiment: the semantics are "did the agent
+    regress on this FIXED set of cases vs the first time we ran them?". The first
+    COMPLETED iteration to run over a dataset is auto-registered as its baseline
+    (see `runner.baseline.maybe_autoset_baseline`); the auto-set is idempotent —
+    once a baseline exists it is never silently overwritten. `selfevals baseline
+    set` re-baselines explicitly (raising the bar on purpose).
+
+    The `id` is derived deterministically from `dataset_id` (`runner.baseline`),
+    so there is at most one baseline per dataset and lookups are a direct
+    `get_entity`. Stores the best iteration's headline metrics so the gate can
+    compare without re-loading the whole iteration ledger; `confusion` carries the
+    serialized NxN report (per-class F1) when a confusion grader ran.
+    """
+
+    _id_prefix: ClassVar[str] = "dbl"
+
+    dataset_id: NonEmptyStr
+    iteration_id: NonEmptyStr
+    experiment_id: NonEmptyStr
+    primary_metric: NonEmptyStr
+    primary_value: float
+    error_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    confusion: dict[str, Any] | None = None
+    """Serialized `ConfusionReport.to_dict()` (per-class P/R/F1 + macro-F1) for the
+    baseline iteration, or `None` when no confusion grader ran. The regression gate
+    compares per-class F1 against the current run's confusion when both are present."""

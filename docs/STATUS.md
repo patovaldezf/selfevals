@@ -7,8 +7,18 @@ this file records what _is_.
 ## What works end-to-end
 
 - **CLI**: `init`, `workspace`, `experiment`, `iteration`, `report`,
-  `run`, `compare`, `estimate`. Every subcommand has a one-line
-  description and a copy-paste `Example:` epilog.
+  `run`, `compare`, `estimate`, `baseline`, `regression`. Every
+  subcommand has a one-line description and a copy-paste `Example:`
+  epilog.
+- **Regression gate + dataset baseline**: the first run that completes
+  on a dataset auto-registers its best iteration as that dataset's
+  baseline (`DatasetBaseline`, idempotent — a later better run does not
+  move it). `selfevals regression check <ws> --dataset <ds>
+--iteration <itr>` compares the current iteration against the dataset
+  baseline and exits `0` (ok) / `1` (regression) / `2` (usage error),
+  so CI can gate on it. It flags drops in primary/pass@1, per-class F1
+  of the confusion matrix, and (optionally) error-rate rises.
+  `selfevals baseline show|set` inspects or re-baselines explicitly.
 - **`selfevals run <spec.yaml>`**: load an experiment spec, resolve
   the agent entrypoint, run cases through an adapter, grade each
   trace, persist iterations to SQLite, render a markdown or JSON

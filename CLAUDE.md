@@ -67,7 +67,8 @@ uv run selfevals --help             # CLI (o `selfevals` con venv activo)
 ```
 
 CLI: `init`, `run`, `report`, `compare`, `estimate`, `analyze`, `experiment`,
-`iteration`, `workspace`, `failuremode`, `skills`, `examples`, `serve`.
+`iteration`, `workspace`, `dataset`, `baseline`, `regression`, `failuremode`,
+`skills`, `examples`, `serve`.
 
 ## Subproyectos (DISTINTOS del core Python)
 

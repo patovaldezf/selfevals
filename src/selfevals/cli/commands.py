@@ -489,6 +489,15 @@ def cmd_run(args: argparse.Namespace) -> int:
             payload_router=payload_router,
         )
         result = asyncio.run(loop.run())
+        # Auto-register the dataset's regression baseline on its FIRST run. This
+        # lives here (not in the loop) to stay decoupled: the loop owns
+        # iterations; the baseline is a CI concern hung off the completed run.
+        # Idempotent (no-op if the dataset is already baselined) and defensive
+        # (a storage failure is logged, never fails the run).
+        if scope is not None:
+            from selfevals.runner.baseline import maybe_autoset_baseline
+
+            maybe_autoset_baseline(scope, spec, result)
     finally:
         if scope is not None:
             scope.close()
