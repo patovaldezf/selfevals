@@ -138,6 +138,11 @@ class IterationMetrics(SelfEvalsModel):
     reliability: dict[str, float] = Field(default_factory=dict)
     cost_usd: float | None = Field(default=None, ge=0.0)
     duration_seconds: float | None = Field(default=None, ge=0.0)
+    error_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    """Fraction of cases whose first repetition errored out (the run blew up
+    rather than the agent answering wrong). Errored cases are excluded from the
+    pass@1 denominator, so this is the separate honest signal that pass@1 alone
+    would otherwise hide. 0.0 when nothing errored. See `aggregator.IterationAggregate`."""
     failure_mode_counts: dict[str, int] = Field(default_factory=dict)
     """How often each failure mode occurred this iteration, keyed by the stable
     mode identity (a `FailureMode` id once analysis has run, or a raw
