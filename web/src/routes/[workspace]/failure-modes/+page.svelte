@@ -102,8 +102,8 @@
   <header class="mb-7">
     <h1 class="text-2xl font-semibold tracking-tight">Failure modes</h1>
     <p class="text-text-2 mt-1.5 text-sm">
-      The taxonomy of how this workspace's agents fail. Candidates come from error analysis;
-      promote the real ones to official — only official modes feed the proposer.
+      The taxonomy of how this workspace's agents fail. Candidates come from error analysis; promote
+      the real ones to official — only official modes feed the proposer.
     </p>
   </header>
 
@@ -209,7 +209,12 @@
     Move <span class="font-mono text-text-1">{mergeTarget?.slug}</span>'s examples into another mode
     and retire it. History is preserved via a back-pointer.
   </p>
-  <Select label="Merge into" placeholder="Pick a destination" options={mergeOptions} bind:value={mergeInto} />
+  <Select
+    label="Merge into"
+    placeholder="Pick a destination"
+    options={mergeOptions}
+    bind:value={mergeInto}
+  />
   <svelte:fragment slot="footer">
     <Button variant="ghost" on:click={() => (mergeTarget = null)}>Cancel</Button>
     <Button variant="primary" disabled={!mergeInto} on:click={saveMerge}>Merge</Button>

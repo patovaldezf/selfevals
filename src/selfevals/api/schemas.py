@@ -758,13 +758,16 @@ class RegressionCheckRequest(BaseModel):
 
 
 class RegressionFindingResponse(BaseModel):
+    """Mirrors `ci.regression.RegressionFinding`. `regressed=True` means this
+    signal failed the gate; a populated `detail` with `regressed=False` is an
+    informational note (improvement / class appeared)."""
+
     signal: str
-    label: str | None = None
-    baseline_value: float
-    current_value: float
-    delta: float
-    threshold: float
+    baseline: float | None = None
+    current: float | None = None
+    delta: float | None = None
     regressed: bool
+    detail: str
 
 
 class RegressionResultResponse(BaseModel):

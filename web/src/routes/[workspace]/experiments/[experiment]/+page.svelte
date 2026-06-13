@@ -13,6 +13,7 @@
   import { toast } from '$lib/stores/toasts';
   import Button from '$lib/components/ui/Button.svelte';
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+  import BaselinePanel from '$lib/components/BaselinePanel.svelte';
 
   export let data: PageData;
 
@@ -236,6 +237,13 @@
         {#if isActive}<span class="pulse" aria-hidden="true"></span>{/if}
         {summary.state}
       </span>
+      <Button
+        variant="secondary"
+        size="sm"
+        href={`/${workspaceId}/experiments/${summary.id}/analyze`}
+      >
+        Analyze failures
+      </Button>
       {#if isActive}
         <Button variant="danger" size="sm" on:click={() => (showCancel = true)}>Cancel run</Button>
       {/if}
@@ -780,6 +788,16 @@
         <dt class="text-text-3 text-xs mb-0.5">Record id</dt>
         <dd><CopyableId id={openIteration.id} label="iteration record id" /></dd>
       </div>
+      {#if openIteration.primary_metric_value !== null}
+        <div class="pt-2 border-t border-border">
+          <dt class="text-text-3 text-xs mb-2 uppercase tracking-wide">
+            Baseline &amp; regression
+          </dt>
+          <dd>
+            <BaselinePanel {workspaceId} iterationId={openIteration.id} datasets={data.datasets} />
+          </dd>
+        </div>
+      {/if}
     </dl>
   </aside>
 {/if}

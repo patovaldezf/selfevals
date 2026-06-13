@@ -412,12 +412,11 @@ export type Baseline = {
 
 export type RegressionFinding = {
   signal: string;
-  label: string | null;
-  baseline_value: number;
-  current_value: number;
-  delta: number;
-  threshold: number;
+  baseline: number | null;
+  current: number | null;
+  delta: number | null;
   regressed: boolean;
+  detail: string;
 };
 
 export type RegressionResult = {
@@ -428,11 +427,69 @@ export type RegressionResult = {
 };
 
 // --- Error-analysis (loop-closer 2C) -----------------------------------
-// The bundle/result bodies are the backend's domain models, passed through
-// as opaque JSON — the contract lives in `analysis/schemas.py`.
+// Mirror of `analysis/schemas.py`. The bundle is the failed-traces + live
+// taxonomy the human codes against; the result is what they compose back.
 
-export type AnalysisBundle = Record<string, unknown>;
-export type AnalysisResult = Record<string, unknown>;
+export type TaxonomyEntry = {
+  id: string;
+  slug: string;
+  title: string;
+  definition: string;
+  status: string;
+};
+
+export type BundleGrade = {
+  label: string;
+  score: number | null;
+  deterministic_modes: string[];
+  judge_reason: string | null;
+};
+
+export type BundleMessage = { role: string; content: string };
+export type BundleErrorSpan = { kind: string; name: string; error: string | null };
+
+export type BundleTrace = {
+  trace_id: string;
+  run_id: string;
+  thread_id: string | null;
+  eval_case_id: string | null;
+  grade: BundleGrade;
+  transcript: BundleMessage[];
+  first_error_span: BundleErrorSpan | null;
+};
+
+export type AnalysisBundle = {
+  schema_version: string;
+  workspace_id: string;
+  experiment_id: string;
+  iteration: number | null;
+  taxonomy: TaxonomyEntry[];
+  traces: BundleTrace[];
+  instructions_ref: string;
+};
+
+// An assignment classifies a trace against an existing mode (`mode_id`) XOR
+// proposes a new one (`new_mode_slug`). `proposed_modes` carries the new modes'
+// definitions. This is what the annotation UI composes and POSTs.
+export type AnalysisAssignment = {
+  trace_id: string;
+  mode_id?: string;
+  new_mode_slug?: string;
+  open_note?: string;
+  quote?: string;
+};
+
+export type AnalysisProposedMode = {
+  slug: string;
+  title: string;
+  definition: string;
+  parent_slug?: string;
+};
+
+export type AnalysisResult = {
+  assignments?: AnalysisAssignment[];
+  proposed_modes?: AnalysisProposedMode[];
+};
 
 export type AnalysisIngestSummary = {
   assignments_applied: number;
@@ -762,10 +819,9 @@ export const api = {
     opts: { status?: string } = {},
     fetch?: typeof globalThis.fetch
   ) =>
-    request<{ items: FailureMode[] }>(
-      `/api/workspaces/${workspaceId}/failure-modes${qs(opts)}`,
-      { fetch }
-    ),
+    request<{ items: FailureMode[] }>(`/api/workspaces/${workspaceId}/failure-modes${qs(opts)}`, {
+      fetch
+    }),
 
   promoteFailureMode: (workspaceId: string, id: string, fetch?: typeof globalThis.fetch) =>
     request<FailureMode>(`/api/workspaces/${workspaceId}/failure-modes/${id}/promote`, {

@@ -16,6 +16,7 @@
   $: ds = data.dataset;
   $: stats = ds.statistics;
   $: isFrozen = ds.status === 'frozen';
+  $: baseline = data.baseline;
 
   let showFreeze = false;
 
@@ -107,6 +108,48 @@
       {/each}
     </section>
   {/if}
+
+  <!-- Regression baseline -->
+  <section class="mb-8">
+    <h2 class="mb-3 text-sm font-semibold">Regression baseline</h2>
+    {#if baseline}
+      <div class="rounded-lg border border-border bg-surface p-5">
+        <div class="flex flex-wrap items-center gap-x-8 gap-y-3">
+          <div>
+            <div class="text-xs uppercase tracking-wide text-text-3">
+              {baseline.primary_metric_name}
+            </div>
+            <div class="font-mono text-lg tabular-nums" data-numeric>
+              {baseline.primary_metric_value.toFixed(4)}
+            </div>
+          </div>
+          {#if baseline.error_rate !== null}
+            <div>
+              <div class="text-xs uppercase tracking-wide text-text-3">Error rate</div>
+              <div class="font-mono text-lg tabular-nums" data-numeric>
+                {baseline.error_rate.toFixed(4)}
+              </div>
+            </div>
+          {/if}
+          <div class="min-w-0">
+            <div class="text-xs uppercase tracking-wide text-text-3">Anchored to</div>
+            <div class="mt-0.5"><CopyableId id={baseline.iteration_id} label="iteration id" /></div>
+          </div>
+        </div>
+        <p class="mt-3 text-xs text-text-3">
+          Every run over this dataset is gated against this fixed point. Re-baseline from an
+          iteration on its experiment page to raise the bar.
+        </p>
+      </div>
+    {:else}
+      <div
+        class="rounded-lg border border-dashed border-border bg-surface px-6 py-8 text-center text-sm text-text-3"
+      >
+        No baseline yet. The first completed run over this dataset auto-anchors one, or set it
+        explicitly from an iteration.
+      </div>
+    {/if}
+  </section>
 
   <!-- Cases -->
   <section>
