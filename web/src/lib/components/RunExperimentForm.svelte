@@ -1,3 +1,29 @@
+<script context="module" lang="ts">
+  const STARTER = `workspace: REPLACE_WITH_WS_ID
+
+experiment:
+  name: my experiment
+  goal: describe what you're testing
+  mode: handoff
+  target:
+    primary: { name: pass@1, operator: ">=", value: 0.5 }
+  proposer:
+    strategy: grid
+  search_space:
+    model_params:
+      level: [0.0, 1.0]
+  run:
+    sandbox: mock
+    max_iterations: 4
+
+dataset:
+  cases_inline:
+    - id: case_1
+      input: { messages: [{ role: user, content: "ping" }] }
+      expected: { must_include: ["pong"] }
+`;
+</script>
+
 <script lang="ts">
   /**
    * Launch-a-run form. Mirrors `RunExperimentRequest`: exactly one of
@@ -136,7 +162,12 @@
       ]}
       bind:value={persistTraces}
     />
-    <TextField label="Max iterations" bind:value={maxIterations} type="number" placeholder="spec default" />
+    <TextField
+      label="Max iterations"
+      bind:value={maxIterations}
+      type="number"
+      placeholder="spec default"
+    />
     <TextField label="Reps" bind:value={reps} type="number" placeholder="1" />
   </div>
 
@@ -149,29 +180,3 @@
     <Button variant="primary" type="submit" loading={submitting}>Launch run</Button>
   </div>
 </form>
-
-<script context="module" lang="ts">
-  const STARTER = `workspace: REPLACE_WITH_WS_ID
-
-experiment:
-  name: my experiment
-  goal: describe what you're testing
-  mode: handoff
-  target:
-    primary: { name: pass@1, operator: ">=", value: 0.5 }
-  proposer:
-    strategy: grid
-  search_space:
-    model_params:
-      level: [0.0, 1.0]
-  run:
-    sandbox: mock
-    max_iterations: 4
-
-dataset:
-  cases_inline:
-    - id: case_1
-      input: { messages: [{ role: user, content: "ping" }] }
-      expected: { must_include: ["pong"] }
-`;
-</script>

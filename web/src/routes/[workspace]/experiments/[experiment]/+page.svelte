@@ -8,6 +8,11 @@
   import { api, ApiError } from '$lib/api/client';
   import type { CompareResponse, FunnelDetail, IterationSummary } from '$lib/api/client';
   import type { PageData } from './$types';
+  import { onDestroy } from 'svelte';
+  import { invalidateAll } from '$app/navigation';
+  import { toast } from '$lib/stores/toasts';
+  import Button from '$lib/components/ui/Button.svelte';
+  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 
   export let data: PageData;
 
@@ -40,6 +45,49 @@
   $: trendValues = iterations
     .map((it) => it.primary_metric_value)
     .filter((v): v is number => v !== null);
+
+  // --- Live run state: cancel + poll -------------------------------------
+  // While a run is queued/running we poll the experiment so iterations and
+  // state climb without a manual refresh — same lightweight cadence as
+  // ActiveRunsPill. Polling stops the moment the run reaches a terminal state.
+  const ACTIVE_STATES = new Set(['queued', 'running', 'draft']);
+  $: isActive = ACTIVE_STATES.has(summary.state);
+
+  let showCancel = false;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  function startPoll() {
+    if (pollTimer || typeof window === 'undefined') return;
+    pollTimer = setInterval(() => void invalidateAll(), 2500);
+  }
+  function stopPoll() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+  $: if (isActive) startPoll();
+  else stopPoll();
+  onDestroy(stopPoll);
+
+  async function cancelRun() {
+    try {
+      await api.cancelExperiment(workspaceId, summary.id);
+      toast.success('Cancel requested', 'The run will stop after the current step.');
+      await invalidateAll();
+    } catch (err) {
+      toast.error('Cancel failed', err instanceof ApiError ? err.detail : String(err));
+    }
+  }
+
+  const STATE_TONE: Record<string, string> = {
+    running: 'state-running',
+    queued: 'state-queued',
+    draft: 'state-queued',
+    completed: 'state-done',
+    aborted: 'state-aborted',
+    failed: 'state-aborted'
+  };
 
   // Compare tab (B3): the diff is computed server-side (one math source
   // shared with the CLI). The FE picks A and B, fetches the structured
@@ -172,14 +220,25 @@
     <span class="text-text-2">{summary.name}</span>
   </nav>
 
-  <header class="mb-10">
-    <div class="text-xs uppercase tracking-wide text-text-3 mb-2">
-      Experiment · {summary.mode}
+  <header class="mb-10 flex items-start justify-between gap-6">
+    <div class="min-w-0">
+      <div class="text-xs uppercase tracking-wide text-text-3 mb-2">
+        Experiment · {summary.mode}
+      </div>
+      <h1 class="text-3xl font-semibold tracking-tight">{summary.name}</h1>
+      <p class="text-text-2 mt-2 max-w-2xl">{summary.goal}</p>
+      <div class="mt-3">
+        <CopyableId id={summary.id} label="experiment id" />
+      </div>
     </div>
-    <h1 class="text-3xl font-semibold tracking-tight">{summary.name}</h1>
-    <p class="text-text-2 mt-2 max-w-2xl">{summary.goal}</p>
-    <div class="mt-3">
-      <CopyableId id={summary.id} label="experiment id" />
+    <div class="flex shrink-0 items-center gap-3">
+      <span class="state-badge {STATE_TONE[summary.state] ?? 'state-queued'}">
+        {#if isActive}<span class="pulse" aria-hidden="true"></span>{/if}
+        {summary.state}
+      </span>
+      {#if isActive}
+        <Button variant="danger" size="sm" on:click={() => (showCancel = true)}>Cancel run</Button>
+      {/if}
     </div>
   </header>
 
@@ -724,3 +783,67 @@
     </dl>
   </aside>
 {/if}
+
+<ConfirmDialog
+  open={showCancel}
+  title="Cancel this run?"
+  message="The run stops after the current step finishes. Iterations already completed are kept."
+  confirmLabel="Cancel run"
+  cancelLabel="Keep running"
+  tone="danger"
+  onConfirm={cancelRun}
+  on:close={() => (showCancel = false)}
+/>
+
+<style>
+  .state-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: var(--radius-md);
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: capitalize;
+    border: 1px solid var(--color-border);
+  }
+  .state-running {
+    color: var(--color-success);
+    border-color: color-mix(in srgb, var(--color-success) 35%, transparent);
+    background: color-mix(in srgb, var(--color-success) 8%, transparent);
+  }
+  .state-queued {
+    color: var(--color-warning);
+    border-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
+    background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+  }
+  .state-done {
+    color: var(--color-text-2);
+  }
+  .state-aborted {
+    color: var(--color-danger);
+    border-color: color-mix(in srgb, var(--color-danger) 35%, transparent);
+    background: color-mix(in srgb, var(--color-danger) 8%, transparent);
+  }
+  .pulse {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pulse {
+      animation: none;
+    }
+  }
+</style>

@@ -4,7 +4,6 @@
   import type { PageData } from './$types';
   import MetricChip from '$lib/components/MetricChip.svelte';
   import BarChart from '$lib/components/charts/BarChart.svelte';
-  import EmptyState from '$lib/components/EmptyState.svelte';
   import Select from '$lib/components/ui/Select.svelte';
 
   export let data: PageData;
@@ -56,9 +55,8 @@
       : null;
   $: overallPass =
     passRate.ok && passRate.value.total > 0
-      ? passRate.value.items
-          .filter((r) => r.label === 'pass')
-          .reduce((s, r) => s + r.count, 0) / passRate.value.total
+      ? passRate.value.items.filter((r) => r.label === 'pass').reduce((s, r) => s + r.count, 0) /
+        passRate.value.total
       : null;
   $: latencyP95 =
     latency.ok && latency.value.items.length
@@ -67,9 +65,11 @@
       : null;
 
   $: failureBars = failureModes.ok
-    ? failureModes.value.items
-        .slice(0, 10)
-        .map((r) => ({ label: r.failure_mode, value: r.count, sublabel: `${(r.rate * 100).toFixed(1)}%` }))
+    ? failureModes.value.items.slice(0, 10).map((r) => ({
+        label: r.failure_mode,
+        value: r.count,
+        sublabel: `${(r.rate * 100).toFixed(1)}%`
+      }))
     : [];
   $: passBars = passRate.ok
     ? passRate.value.items.map((r) => ({
@@ -114,13 +114,21 @@
   <!-- Top-line chips -->
   <div class="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
     <MetricChip label="Pass rate" value={overallPass} format="percent" />
-    <MetricChip label="Total cost" value={totalCost === null ? null : fmtUsd(totalCost)} format="plain" />
+    <MetricChip
+      label="Total cost"
+      value={totalCost === null ? null : fmtUsd(totalCost)}
+      format="plain"
+    />
     <MetricChip
       label="Total tokens"
       value={totalTokens === null ? null : fmtInt(totalTokens)}
       format="plain"
     />
-    <MetricChip label="Latency p95" value={latencyP95 === null ? null : fmtMs(latencyP95)} format="plain" />
+    <MetricChip
+      label="Latency p95"
+      value={latencyP95 === null ? null : fmtMs(latencyP95)}
+      format="plain"
+    />
   </div>
 
   <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -158,7 +166,9 @@
       {:else}
         <table class="w-full text-sm">
           <thead>
-            <tr class="border-b border-border text-left text-xs uppercase tracking-wide text-text-3">
+            <tr
+              class="border-b border-border text-left text-xs uppercase tracking-wide text-text-3"
+            >
               <th class="pb-2 font-medium">Model</th>
               <th class="pb-2 text-right font-medium">Calls</th>
               <th class="pb-2 text-right font-medium">Total</th>
@@ -173,8 +183,12 @@
                   <span class="ml-1 text-xs text-text-3">{r.provider}</span>
                 </td>
                 <td class="py-2 text-right font-mono tabular-nums" data-numeric>{r.call_count}</td>
-                <td class="py-2 text-right font-mono tabular-nums" data-numeric>{fmtUsd(r.total_cost_usd)}</td>
-                <td class="py-2 text-right font-mono tabular-nums text-text-2" data-numeric>{fmtUsd(r.avg_cost_usd)}</td>
+                <td class="py-2 text-right font-mono tabular-nums" data-numeric
+                  >{fmtUsd(r.total_cost_usd)}</td
+                >
+                <td class="py-2 text-right font-mono tabular-nums text-text-2" data-numeric
+                  >{fmtUsd(r.avg_cost_usd)}</td
+                >
               </tr>
             {/each}
           </tbody>
@@ -192,7 +206,9 @@
       {:else}
         <table class="w-full text-sm">
           <thead>
-            <tr class="border-b border-border text-left text-xs uppercase tracking-wide text-text-3">
+            <tr
+              class="border-b border-border text-left text-xs uppercase tracking-wide text-text-3"
+            >
               <th class="pb-2 font-medium">Model</th>
               <th class="pb-2 text-right font-medium">In</th>
               <th class="pb-2 text-right font-medium">Out</th>
@@ -203,9 +219,15 @@
             {#each tokens.value.items as r}
               <tr class="border-b border-border last:border-0">
                 <td class="py-2 text-text-1">{r.model}</td>
-                <td class="py-2 text-right font-mono tabular-nums text-text-2" data-numeric>{fmtInt(r.input_tokens)}</td>
-                <td class="py-2 text-right font-mono tabular-nums text-text-2" data-numeric>{fmtInt(r.output_tokens)}</td>
-                <td class="py-2 text-right font-mono tabular-nums" data-numeric>{fmtInt(r.total_tokens)}</td>
+                <td class="py-2 text-right font-mono tabular-nums text-text-2" data-numeric
+                  >{fmtInt(r.input_tokens)}</td
+                >
+                <td class="py-2 text-right font-mono tabular-nums text-text-2" data-numeric
+                  >{fmtInt(r.output_tokens)}</td
+                >
+                <td class="py-2 text-right font-mono tabular-nums" data-numeric
+                  >{fmtInt(r.total_tokens)}</td
+                >
               </tr>
             {/each}
           </tbody>
@@ -223,7 +245,9 @@
       {:else}
         <table class="w-full text-sm">
           <thead>
-            <tr class="border-b border-border text-left text-xs uppercase tracking-wide text-text-3">
+            <tr
+              class="border-b border-border text-left text-xs uppercase tracking-wide text-text-3"
+            >
               <th class="pb-2 font-medium">Tool</th>
               <th class="pb-2 text-right font-medium">Calls</th>
               <th class="pb-2 text-right font-medium">Errors</th>
@@ -238,8 +262,14 @@
                   <span class="ml-1 text-xs text-text-3">{r.status}</span>
                 </td>
                 <td class="py-2 text-right font-mono tabular-nums" data-numeric>{r.count}</td>
-                <td class="py-2 text-right font-mono tabular-nums" class:text-danger={r.error_count > 0} data-numeric>{r.error_count}</td>
-                <td class="py-2 text-right font-mono tabular-nums text-text-2" data-numeric>{fmtMs(r.avg_duration_ms)}</td>
+                <td
+                  class="py-2 text-right font-mono tabular-nums"
+                  class:text-danger={r.error_count > 0}
+                  data-numeric>{r.error_count}</td
+                >
+                <td class="py-2 text-right font-mono tabular-nums text-text-2" data-numeric
+                  >{fmtMs(r.avg_duration_ms)}</td
+                >
               </tr>
             {/each}
           </tbody>
@@ -257,7 +287,9 @@
       {:else}
         <table class="w-full text-sm">
           <thead>
-            <tr class="border-b border-border text-left text-xs uppercase tracking-wide text-text-3">
+            <tr
+              class="border-b border-border text-left text-xs uppercase tracking-wide text-text-3"
+            >
               <th class="pb-2 font-medium">Metric</th>
               <th class="pb-2 text-right font-medium">p50</th>
               <th class="pb-2 text-right font-medium">p95</th>
@@ -268,9 +300,15 @@
             {#each latency.value.items as r}
               <tr class="border-b border-border last:border-0">
                 <td class="py-2 text-text-1">{r.metric}</td>
-                <td class="py-2 text-right font-mono tabular-nums text-text-2" data-numeric>{fmtMs(r.p50_ms)}</td>
-                <td class="py-2 text-right font-mono tabular-nums" data-numeric>{fmtMs(r.p95_ms)}</td>
-                <td class="py-2 text-right font-mono tabular-nums text-text-2" data-numeric>{fmtMs(r.p99_ms)}</td>
+                <td class="py-2 text-right font-mono tabular-nums text-text-2" data-numeric
+                  >{fmtMs(r.p50_ms)}</td
+                >
+                <td class="py-2 text-right font-mono tabular-nums" data-numeric
+                  >{fmtMs(r.p95_ms)}</td
+                >
+                <td class="py-2 text-right font-mono tabular-nums text-text-2" data-numeric
+                  >{fmtMs(r.p99_ms)}</td
+                >
               </tr>
             {/each}
           </tbody>

@@ -9,7 +9,10 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
   // as an override; a failure there must not block the experiments list.
   const [page, datasets] = await Promise.all([
     api.listExperiments(params.workspace, fetch),
-    api.listDatasets(params.workspace, fetch).then((d) => d.items).catch(() => [])
+    api
+      .listDatasets(params.workspace, fetch)
+      .then((d) => d.items)
+      .catch(() => [])
   ]);
   return {
     experiments: page.items,

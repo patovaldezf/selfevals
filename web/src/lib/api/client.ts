@@ -505,11 +505,7 @@ export const api = {
       fetch
     }),
 
-  cancelExperiment: (
-    workspaceId: string,
-    experimentId: string,
-    fetch?: typeof globalThis.fetch
-  ) =>
+  cancelExperiment: (workspaceId: string, experimentId: string, fetch?: typeof globalThis.fetch) =>
     request<RunExperimentResponse>(
       `/api/workspaces/${workspaceId}/experiments/${experimentId}/cancel`,
       { method: 'POST', fetch }
@@ -637,11 +633,7 @@ export const api = {
     }),
 
   /** Upload a `.jsonl` file as a new dataset (multipart). */
-  uploadDataset: (
-    workspaceId: string,
-    form: FormData,
-    fetch?: typeof globalThis.fetch
-  ) =>
+  uploadDataset: (workspaceId: string, form: FormData, fetch?: typeof globalThis.fetch) =>
     request<DatasetDetail>(`/api/workspaces/${workspaceId}/datasets/upload`, {
       method: 'POST',
       form,
@@ -663,41 +655,36 @@ export const api = {
     opts: { from?: string; to?: string; experiment_id?: string; grader?: string } = {},
     fetch?: typeof globalThis.fetch
   ) =>
-    request<PassRateMetrics>(
-      `/api/workspaces/${workspaceId}/metrics/pass-rate${qs(opts)}`,
-      { fetch }
-    ),
+    request<PassRateMetrics>(`/api/workspaces/${workspaceId}/metrics/pass-rate${qs(opts)}`, {
+      fetch
+    }),
 
   metricsFailureModes: (
     workspaceId: string,
     opts: { from?: string; to?: string; experiment_id?: string; grader?: string } = {},
     fetch?: typeof globalThis.fetch
   ) =>
-    request<FailureModeMetrics>(
-      `/api/workspaces/${workspaceId}/metrics/failure-modes${qs(opts)}`,
-      { fetch }
-    ),
+    request<FailureModeMetrics>(`/api/workspaces/${workspaceId}/metrics/failure-modes${qs(opts)}`, {
+      fetch
+    }),
 
   metricsTools: (
     workspaceId: string,
     opts: { from?: string; to?: string; experiment_id?: string; tool_name?: string } = {},
     fetch?: typeof globalThis.fetch
-  ) =>
-    request<ToolMetrics>(`/api/workspaces/${workspaceId}/metrics/tools${qs(opts)}`, { fetch }),
+  ) => request<ToolMetrics>(`/api/workspaces/${workspaceId}/metrics/tools${qs(opts)}`, { fetch }),
 
   metricsCost: (
     workspaceId: string,
     opts: { from?: string; to?: string; experiment_id?: string; model?: string } = {},
     fetch?: typeof globalThis.fetch
-  ) =>
-    request<CostMetrics>(`/api/workspaces/${workspaceId}/metrics/cost${qs(opts)}`, { fetch }),
+  ) => request<CostMetrics>(`/api/workspaces/${workspaceId}/metrics/cost${qs(opts)}`, { fetch }),
 
   metricsTokens: (
     workspaceId: string,
     opts: { from?: string; to?: string; experiment_id?: string; model?: string } = {},
     fetch?: typeof globalThis.fetch
-  ) =>
-    request<TokenMetrics>(`/api/workspaces/${workspaceId}/metrics/tokens${qs(opts)}`, { fetch }),
+  ) => request<TokenMetrics>(`/api/workspaces/${workspaceId}/metrics/tokens${qs(opts)}`, { fetch }),
 
   metricsLatency: (
     workspaceId: string,
