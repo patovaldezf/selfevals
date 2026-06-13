@@ -381,6 +381,66 @@ export type CreateDatasetRequest = {
   split_allocation?: Record<string, number>;
 };
 
+// --- Failure-mode taxonomy (loop-closer 2A) ----------------------------
+
+export type FailureMode = {
+  id: string;
+  slug: string;
+  title: string;
+  definition: string;
+  status: string;
+  parent_mode_id: string | null;
+  proposed_by: string;
+  example_count: number;
+  first_seen_iteration: number | null;
+  superseded_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// --- Baseline & regression (loop-closer 2B) ----------------------------
+
+export type Baseline = {
+  dataset_id: string;
+  iteration_id: string;
+  experiment_id: string | null;
+  primary_metric_name: string;
+  primary_metric_value: number;
+  error_rate: number | null;
+  created_at: string;
+};
+
+export type RegressionFinding = {
+  signal: string;
+  label: string | null;
+  baseline_value: number;
+  current_value: number;
+  delta: number;
+  threshold: number;
+  regressed: boolean;
+};
+
+export type RegressionResult = {
+  dataset_id: string;
+  iteration_id: string;
+  regressed: boolean;
+  findings: RegressionFinding[];
+};
+
+// --- Error-analysis (loop-closer 2C) -----------------------------------
+// The bundle/result bodies are the backend's domain models, passed through
+// as opaque JSON — the contract lives in `analysis/schemas.py`.
+
+export type AnalysisBundle = Record<string, unknown>;
+export type AnalysisResult = Record<string, unknown>;
+
+export type AnalysisIngestSummary = {
+  assignments_applied: number;
+  created_candidates: string[];
+  updated_candidates: string[];
+  hypotheses_recorded: number;
+};
+
 export class ApiError extends Error {
   status: number;
   body: unknown;
@@ -693,5 +753,113 @@ export const api = {
   ) =>
     request<LatencyMetrics>(`/api/workspaces/${workspaceId}/metrics/latency${qs(opts)}`, {
       fetch
-    })
+    }),
+
+  // --- Failure-mode taxonomy (2A) --------------------------------------
+
+  listFailureModes: (
+    workspaceId: string,
+    opts: { status?: string } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<{ items: FailureMode[] }>(
+      `/api/workspaces/${workspaceId}/failure-modes${qs(opts)}`,
+      { fetch }
+    ),
+
+  promoteFailureMode: (workspaceId: string, id: string, fetch?: typeof globalThis.fetch) =>
+    request<FailureMode>(`/api/workspaces/${workspaceId}/failure-modes/${id}/promote`, {
+      method: 'POST',
+      fetch
+    }),
+
+  retireFailureMode: (workspaceId: string, id: string, fetch?: typeof globalThis.fetch) =>
+    request<FailureMode>(`/api/workspaces/${workspaceId}/failure-modes/${id}/retire`, {
+      method: 'POST',
+      fetch
+    }),
+
+  mergeFailureMode: (
+    workspaceId: string,
+    id: string,
+    intoId: string,
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<FailureMode>(`/api/workspaces/${workspaceId}/failure-modes/${id}/merge`, {
+      method: 'POST',
+      json: { into_id: intoId },
+      fetch
+    }),
+
+  editFailureMode: (
+    workspaceId: string,
+    id: string,
+    patch: { title?: string; definition?: string },
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<FailureMode>(`/api/workspaces/${workspaceId}/failure-modes/${id}`, {
+      method: 'PATCH',
+      json: patch,
+      fetch
+    }),
+
+  // --- Baseline & regression (2B) --------------------------------------
+
+  getBaseline: (workspaceId: string, datasetId: string, fetch?: typeof globalThis.fetch) =>
+    request<Baseline>(`/api/workspaces/${workspaceId}/datasets/${datasetId}/baseline`, { fetch }),
+
+  setBaseline: (
+    workspaceId: string,
+    datasetId: string,
+    iterationId: string | null,
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<Baseline>(`/api/workspaces/${workspaceId}/datasets/${datasetId}/baseline`, {
+      method: 'PUT',
+      json: { iteration_id: iterationId ?? null },
+      fetch
+    }),
+
+  regressionCheck: (
+    workspaceId: string,
+    datasetId: string,
+    body: {
+      iteration_id: string;
+      primary_drop?: number;
+      per_class_f1_drop?: number;
+      error_rate_rise?: number;
+    },
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<RegressionResult>(
+      `/api/workspaces/${workspaceId}/datasets/${datasetId}/regression-check`,
+      { method: 'POST', json: body, fetch }
+    ),
+
+  // --- Error-analysis bundle / ingest (2C) -----------------------------
+
+  analysisBundle: (
+    workspaceId: string,
+    experimentId: string,
+    opts: { iteration?: number; all?: boolean } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<AnalysisBundle>(
+      `/api/workspaces/${workspaceId}/experiments/${experimentId}/analysis/bundle${qs({
+        iteration: opts.iteration,
+        all: opts.all ? 'true' : undefined
+      })}`,
+      { fetch }
+    ),
+
+  analysisIngest: (
+    workspaceId: string,
+    experimentId: string,
+    result: AnalysisResult,
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<AnalysisIngestSummary>(
+      `/api/workspaces/${workspaceId}/experiments/${experimentId}/analysis/ingest`,
+      { method: 'POST', json: result, fetch }
+    )
 };

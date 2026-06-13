@@ -678,3 +678,111 @@ class CreateDatasetRequest(BaseModel):
         if (self.cases is None) == (self.cases_path is None):
             raise ValueError("provide exactly one of `cases` or `cases_path`")
         return self
+
+
+# --- Failure-mode taxonomy (loop-closer) --------------------------------
+# View + request shapes for the taxonomy UI. The domain logic lives in
+# `cli/analyze_commands.py`; these expose it over HTTP. A mode's status is the
+# promotion gate (candidate → official → retired); `example_count` keeps the
+# list cheap (no full example bodies until the detail view needs them).
+
+
+class FailureModeResponse(BaseModel):
+    """One failure mode, projected for the taxonomy UI."""
+
+    id: str
+    slug: str
+    title: str
+    definition: str
+    status: str
+    parent_mode_id: str | None = None
+    proposed_by: str
+    example_count: int = 0
+    first_seen_iteration: int | None = None
+    superseded_by: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class FailureModeListResponse(BaseModel):
+    items: list[FailureModeResponse] = Field(default_factory=list)
+
+
+class MergeFailureModeRequest(BaseModel):
+    """Merge this mode's examples into `into_id`, then retire the source."""
+
+    into_id: str = Field(min_length=1)
+
+
+class EditFailureModeRequest(BaseModel):
+    """Patch a mode's human-facing text. At least one field must be set."""
+
+    title: str | None = None
+    definition: str | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one(self) -> EditFailureModeRequest:
+        if self.title is None and self.definition is None:
+            raise ValueError("provide at least one of `title` or `definition`")
+        return self
+
+
+# --- Baseline & regression (loop-closer) --------------------------------
+# Exposes `runner/baseline.py` + `ci/regression.py` over HTTP, anchored to a
+# dataset. The FE shows the current baseline on the dataset/iteration views and
+# runs a regression check against it.
+
+
+class BaselineResponse(BaseModel):
+    dataset_id: str
+    iteration_id: str
+    experiment_id: str | None = None
+    primary_metric_name: str
+    primary_metric_value: float
+    error_rate: float | None = None
+    created_at: datetime
+
+
+class SetBaselineRequest(BaseModel):
+    """Re-anchor a dataset's baseline. `iteration_id` omitted = use the best
+    completed iteration on the dataset (same default as the CLI)."""
+
+    iteration_id: str | None = None
+
+
+class RegressionCheckRequest(BaseModel):
+    iteration_id: str = Field(min_length=1)
+    primary_drop: float = 0.0
+    per_class_f1_drop: float = 0.05
+    error_rate_rise: float = 0.0
+
+
+class RegressionFindingResponse(BaseModel):
+    signal: str
+    label: str | None = None
+    baseline_value: float
+    current_value: float
+    delta: float
+    threshold: float
+    regressed: bool
+
+
+class RegressionResultResponse(BaseModel):
+    dataset_id: str
+    iteration_id: str
+    regressed: bool
+    findings: list[RegressionFindingResponse] = Field(default_factory=list)
+
+
+# --- Error-analysis bundle / ingest (loop-closer) -----------------------
+# Thin HTTP envelopes around `analysis/bundle.py` + `analysis/ingest.py`. The
+# bundle/result bodies themselves are the domain Pydantic models from
+# `analysis/schemas.py`, passed through as opaque JSON so the contract stays
+# defined in one place.
+
+
+class AnalysisIngestSummaryResponse(BaseModel):
+    assignments_applied: int
+    created_candidates: list[str] = Field(default_factory=list)
+    updated_candidates: list[str] = Field(default_factory=list)
+    hypotheses_recorded: int
