@@ -2,8 +2,23 @@
   import CopyableId from '$lib/components/CopyableId.svelte';
   import type { PageData } from './$types';
   import type { LayoutData } from '../$types';
+  import { goto, invalidateAll } from '$app/navigation';
+  import type { RunExperimentResponse } from '$lib/api/client';
+  import Button from '$lib/components/ui/Button.svelte';
+  import Modal from '$lib/components/ui/Modal.svelte';
+  import EmptyState from '$lib/components/EmptyState.svelte';
+  import RunExperimentForm from '$lib/components/RunExperimentForm.svelte';
 
   export let data: PageData & LayoutData;
+
+  let showRun = false;
+
+  async function onLaunched(res: RunExperimentResponse) {
+    showRun = false;
+    await invalidateAll();
+    // Follow the run on its detail page (state climbs queued → running → done).
+    goto(`/${data.workspace.id}/experiments/${res.experiment_id}`);
+  }
 </script>
 
 <svelte:head>
@@ -11,22 +26,36 @@
 </svelte:head>
 
 <div class="px-12 py-10 max-w-6xl mx-auto">
-  <header class="mb-8 flex items-baseline justify-between">
+  <header class="mb-8 flex items-end justify-between gap-4">
     <div>
       <h1 class="text-2xl font-semibold tracking-tight">Experiments</h1>
       <p class="text-text-2 mt-1.5 text-sm">
         All experiments in {data.workspace.name}.
       </p>
     </div>
-    <div class="text-xs text-text-3 font-mono" data-numeric>
-      {#if data.experimentsHasMore}
-        {data.experiments.length} of {data.experimentsTotal}
-      {:else}
-        {data.experimentsTotal} total
-      {/if}
+    <div class="flex items-center gap-4">
+      <div class="text-xs text-text-3 font-mono" data-numeric>
+        {#if data.experimentsHasMore}
+          {data.experiments.length} of {data.experimentsTotal}
+        {:else}
+          {data.experimentsTotal} total
+        {/if}
+      </div>
+      <Button variant="primary" on:click={() => (showRun = true)}>Run experiment</Button>
     </div>
   </header>
 
+  {#if data.experiments.length === 0}
+    <EmptyState
+      icon="◆"
+      title="No experiments yet"
+      description="Launch your first run from a YAML spec. Inline cases, a grid proposer and a mock sandbox are enough to see the loop end-to-end."
+    >
+      <svelte:fragment slot="action">
+        <Button variant="primary" on:click={() => (showRun = true)}>Run experiment</Button>
+      </svelte:fragment>
+    </EmptyState>
+  {:else}
   <div class="border border-border rounded-lg overflow-hidden bg-surface">
     <table class="w-full text-sm">
       <thead class="bg-surface-2 text-text-3 text-xs uppercase tracking-wide">
@@ -65,4 +94,14 @@
       </tbody>
     </table>
   </div>
+  {/if}
 </div>
+
+<Modal open={showRun} title="Run experiment" size="lg" on:close={() => (showRun = false)}>
+  <RunExperimentForm
+    workspaceId={data.workspace.id}
+    datasets={data.datasets}
+    on:launched={(e) => onLaunched(e.detail)}
+    on:cancel={() => (showRun = false)}
+  />
+</Modal>
