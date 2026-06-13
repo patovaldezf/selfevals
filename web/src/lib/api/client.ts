@@ -218,6 +218,169 @@ export type CompareResponse = {
   holdout_status: string;
 };
 
+// --- Metrics (observability layer) -------------------------------------
+// Mirror of `selfevals.api.schemas.*MetricsResponse`. Every metrics endpoint
+// shares the `{ workspace_id, window, experiment_id, total, items }` envelope;
+// only the row shape differs. All take a `from`/`to` time-range (ISO strings).
+
+export type MetricsWindow = { start: string | null; end: string | null };
+
+type MetricsEnvelope<Row> = {
+  workspace_id: string;
+  window: MetricsWindow;
+  experiment_id: string | null;
+  total: number;
+  items: Row[];
+};
+
+export type PassRateRow = { grader: string; label: string; count: number; rate: number };
+export type FailureModeRow = { failure_mode: string; count: number; rate: number };
+export type ToolRow = {
+  tool_name: string;
+  status: string;
+  count: number;
+  error_count: number;
+  avg_duration_ms: number | null;
+  retry_count: number;
+};
+export type CostRow = {
+  provider: string;
+  model: string;
+  call_count: number;
+  total_cost_usd: number;
+  avg_cost_usd: number;
+};
+export type TokenRow = {
+  provider: string;
+  model: string;
+  call_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  reasoning_tokens: number;
+  total_tokens: number;
+};
+export type LatencyRow = {
+  metric: string;
+  count: number;
+  p50_ms: number | null;
+  p95_ms: number | null;
+  p99_ms: number | null;
+};
+
+export type PassRateMetrics = MetricsEnvelope<PassRateRow>;
+export type FailureModeMetrics = MetricsEnvelope<FailureModeRow>;
+export type ToolMetrics = MetricsEnvelope<ToolRow>;
+export type CostMetrics = MetricsEnvelope<CostRow>;
+export type TokenMetrics = MetricsEnvelope<TokenRow>;
+export type LatencyMetrics = MetricsEnvelope<LatencyRow>;
+
+// --- Datasets ----------------------------------------------------------
+
+export type SplitAllocationView = {
+  optimization: number;
+  holdout: number;
+  reliability: number;
+  other: Record<string, number>;
+};
+
+export type DatasetStatisticsView = {
+  total_cases: number;
+  by_level: Record<string, number>;
+  by_feature: Record<string, number>;
+  by_source: Record<string, number>;
+  by_risk: Record<string, number>;
+  holdout_count: number;
+  pii_breakdown: Record<string, number>;
+};
+
+export type DatasetSummary = {
+  id: string;
+  name: string;
+  description: string | null;
+  dataset_type: string;
+  status: string;
+  case_count: number;
+  manifest_hash: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DatasetListPage = {
+  items: DatasetSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+};
+
+export type FeatureRef = { id: string; name: string } | Record<string, unknown>;
+
+export type CaseSummary = {
+  id: string;
+  name: string;
+  task_type: string;
+  modalities: string[];
+  input: Record<string, unknown>;
+  graders: string[];
+  holdout: boolean;
+  is_conversation: boolean;
+  feature: FeatureRef | null;
+  level: string | null;
+  dataset_type: string | null;
+  latest_run_id: string | null;
+  latest_trace_id: string | null;
+};
+
+export type DatasetDetail = {
+  id: string;
+  name: string;
+  description: string | null;
+  dataset_type: string;
+  status: string;
+  case_count: number;
+  manifest_hash: string | null;
+  split_allocation: SplitAllocationView;
+  statistics: DatasetStatisticsView | null;
+  cases: CaseSummary[];
+  created_at: string;
+  updated_at: string;
+};
+
+// --- Run / workspace mutation contracts --------------------------------
+
+export type RunExperimentResponse = {
+  experiment_id: string;
+  workspace_id: string;
+  state: string;
+  run_id: string | null;
+  job_id: string | null;
+  dispatch: string;
+};
+
+export type RunExperimentRequest = {
+  spec_path?: string;
+  spec_inline?: Record<string, unknown>;
+  dataset_id?: string;
+  max_iterations?: number;
+  reps?: number;
+  persist_traces?: 'none' | 'all' | 'failed';
+};
+
+export type CreateWorkspaceRequest = {
+  slug: string;
+  name?: string;
+  description?: string;
+};
+
+export type CreateDatasetRequest = {
+  name: string;
+  description?: string;
+  dataset_type?: string;
+  cases?: Record<string, unknown>[];
+  cases_path?: string;
+  split_allocation?: Record<string, number>;
+};
+
 export class ApiError extends Error {
   status: number;
   body: unknown;
@@ -226,17 +389,45 @@ export class ApiError extends Error {
     this.status = status;
     this.body = body;
   }
+
+  /** A human-facing message: FastAPI's `{detail}` if present, else the status. */
+  get detail(): string {
+    const b = this.body;
+    if (b && typeof b === 'object' && 'detail' in b) {
+      const d = (b as { detail: unknown }).detail;
+      if (typeof d === 'string') return d;
+    }
+    if (typeof b === 'string' && b.trim()) return b;
+    return `Request failed (${this.status})`;
+  }
 }
 
-async function request<T>(path: string, init?: RequestInit & { fetch?: typeof fetch }): Promise<T> {
+type RequestInitX = Omit<RequestInit, 'body'> & {
+  fetch?: typeof fetch;
+  /** JSON body — serialized and sent with `Content-Type: application/json`. */
+  json?: unknown;
+  /** Multipart body — sent as-is; the browser owns the `Content-Type` boundary. */
+  form?: FormData;
+};
+
+async function request<T>(path: string, init?: RequestInitX): Promise<T> {
   const f = init?.fetch ?? fetch;
+  const { fetch: _f, json, form, headers, ...rest } = init ?? {};
+
+  // A bare GET keeps the original `X-SelfEvals-User` + JSON content type. A
+  // mutation either serializes `json` (JSON content type) or passes `form`
+  // through *without* setting Content-Type so the browser appends the
+  // multipart boundary itself — setting it by hand corrupts the upload.
+  const mergedHeaders: Record<string, string> = {
+    'X-SelfEvals-User': 'local',
+    ...(form ? {} : { 'Content-Type': 'application/json' }),
+    ...((headers as Record<string, string>) ?? {})
+  };
+
   const res = await f(DEFAULT_BASE + path, {
-    ...init,
-    headers: {
-      'X-SelfEvals-User': 'local',
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {})
-    }
+    ...rest,
+    headers: mergedHeaders,
+    body: form ?? (json !== undefined ? JSON.stringify(json) : undefined)
   });
   if (!res.ok) {
     // Read the body once as text, then try JSON. Calling `res.json()` then
@@ -253,7 +444,20 @@ async function request<T>(path: string, init?: RequestInit & { fetch?: typeof fe
     }
     throw new ApiError(res.status, body);
   }
-  return res.json() as Promise<T>;
+  // 204 / empty body (some mutations ack without content).
+  if (res.status === 204) return undefined as T;
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
+}
+
+/** Build a `?from=&to=&...` query string, dropping undefined values. */
+function qs(params: Record<string, string | number | undefined>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined) sp.set(k, String(v));
+  }
+  const s = sp.toString();
+  return s ? `?${s}` : '';
 }
 
 export const api = {
@@ -266,22 +470,50 @@ export const api = {
   workspace: (id: string, fetch?: typeof globalThis.fetch) =>
     request<WorkspaceDetail>(`/api/workspaces/${id}`, { fetch }),
 
+  /** Create a workspace. Returns the new workspace; redirect to its slug. */
+  createWorkspace: (body: CreateWorkspaceRequest, fetch?: typeof globalThis.fetch) =>
+    request<WorkspaceDetail>('/api/workspaces', { method: 'POST', json: body, fetch }),
+
   listExperiments: (
     workspaceId: string,
     fetch?: typeof globalThis.fetch,
     options: { limit?: number; offset?: number } = {}
-  ) => {
+  ) =>
     // A8: server returns a paginated envelope. Default page size matches
     // the server default (100) so the FE doesn't have to track it.
-    const params = new URLSearchParams();
-    if (options.limit !== undefined) params.set('limit', String(options.limit));
-    if (options.offset !== undefined) params.set('offset', String(options.offset));
-    const qs = params.toString();
-    return request<ExperimentListPage>(
-      `/api/workspaces/${workspaceId}/experiments${qs ? `?${qs}` : ''}`,
+    request<ExperimentListPage>(
+      `/api/workspaces/${workspaceId}/experiments${qs({
+        limit: options.limit,
+        offset: options.offset
+      })}`,
       { fetch }
-    );
-  },
+    ),
+
+  /**
+   * Launch a run. The body carries exactly one of `spec_path` / `spec_inline`
+   * (the form enforces this). Returns 202 with `dispatch` — `redis-worker`
+   * needs a live `selfevals worker runs`; the caller surfaces that.
+   */
+  runExperiment: (
+    workspaceId: string,
+    body: RunExperimentRequest,
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<RunExperimentResponse>(`/api/workspaces/${workspaceId}/experiments/run`, {
+      method: 'POST',
+      json: body,
+      fetch
+    }),
+
+  cancelExperiment: (
+    workspaceId: string,
+    experimentId: string,
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<RunExperimentResponse>(
+      `/api/workspaces/${workspaceId}/experiments/${experimentId}/cancel`,
+      { method: 'POST', fetch }
+    ),
 
   experiment: (workspaceId: string, experimentId: string, fetch?: typeof globalThis.fetch) =>
     request<ExperimentDetail>(`/api/workspaces/${workspaceId}/experiments/${experimentId}`, {
@@ -371,5 +603,108 @@ export const api = {
     request<CompareResponse>(
       `/api/workspaces/${workspaceId}/experiments/${experimentId}/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`,
       { fetch }
-    )
+    ),
+
+  // --- Datasets --------------------------------------------------------
+
+  listDatasets: (
+    workspaceId: string,
+    fetch?: typeof globalThis.fetch,
+    options: { limit?: number; offset?: number; status?: string; dataset_type?: string } = {}
+  ) =>
+    request<DatasetListPage>(
+      `/api/workspaces/${workspaceId}/datasets${qs({
+        limit: options.limit,
+        offset: options.offset,
+        status: options.status,
+        dataset_type: options.dataset_type
+      })}`,
+      { fetch }
+    ),
+
+  dataset: (workspaceId: string, datasetId: string, fetch?: typeof globalThis.fetch) =>
+    request<DatasetDetail>(`/api/workspaces/${workspaceId}/datasets/${datasetId}`, { fetch }),
+
+  createDataset: (
+    workspaceId: string,
+    body: CreateDatasetRequest,
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<DatasetDetail>(`/api/workspaces/${workspaceId}/datasets`, {
+      method: 'POST',
+      json: body,
+      fetch
+    }),
+
+  /** Upload a `.jsonl` file as a new dataset (multipart). */
+  uploadDataset: (
+    workspaceId: string,
+    form: FormData,
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<DatasetDetail>(`/api/workspaces/${workspaceId}/datasets/upload`, {
+      method: 'POST',
+      form,
+      fetch
+    }),
+
+  /** Freeze a dataset (irreversible — recomputes the manifest hash). */
+  freezeDataset: (workspaceId: string, datasetId: string, fetch?: typeof globalThis.fetch) =>
+    request<DatasetDetail>(`/api/workspaces/${workspaceId}/datasets/${datasetId}/freeze`, {
+      method: 'POST',
+      fetch
+    }),
+
+  // --- Metrics (observability) -----------------------------------------
+  // Each takes an optional `from`/`to` (ISO 8601) window + per-metric filter.
+
+  metricsPassRate: (
+    workspaceId: string,
+    opts: { from?: string; to?: string; experiment_id?: string; grader?: string } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<PassRateMetrics>(
+      `/api/workspaces/${workspaceId}/metrics/pass-rate${qs(opts)}`,
+      { fetch }
+    ),
+
+  metricsFailureModes: (
+    workspaceId: string,
+    opts: { from?: string; to?: string; experiment_id?: string; grader?: string } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<FailureModeMetrics>(
+      `/api/workspaces/${workspaceId}/metrics/failure-modes${qs(opts)}`,
+      { fetch }
+    ),
+
+  metricsTools: (
+    workspaceId: string,
+    opts: { from?: string; to?: string; experiment_id?: string; tool_name?: string } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<ToolMetrics>(`/api/workspaces/${workspaceId}/metrics/tools${qs(opts)}`, { fetch }),
+
+  metricsCost: (
+    workspaceId: string,
+    opts: { from?: string; to?: string; experiment_id?: string; model?: string } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<CostMetrics>(`/api/workspaces/${workspaceId}/metrics/cost${qs(opts)}`, { fetch }),
+
+  metricsTokens: (
+    workspaceId: string,
+    opts: { from?: string; to?: string; experiment_id?: string; model?: string } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<TokenMetrics>(`/api/workspaces/${workspaceId}/metrics/tokens${qs(opts)}`, { fetch }),
+
+  metricsLatency: (
+    workspaceId: string,
+    opts: { from?: string; to?: string; experiment_id?: string } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<LatencyMetrics>(`/api/workspaces/${workspaceId}/metrics/latency${qs(opts)}`, {
+      fetch
+    })
 };
