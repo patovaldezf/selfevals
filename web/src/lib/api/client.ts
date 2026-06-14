@@ -70,6 +70,54 @@ export type ExperimentListPage = {
   has_more: boolean;
 };
 
+/** What the case declared it expected — only declared dimensions are present.
+ * Mirror of `api.schemas.ExpectedView`. */
+export type ExpectedView = {
+  structured_output?: Record<string, unknown> | null;
+  must_include?: string[] | null;
+  must_not_include?: string[] | null;
+  required_tools?: string[] | null;
+  forbidden_tools?: string[] | null;
+};
+
+/** What the agent produced, projected to mirror `ExpectedView` for a direct
+ * expected-vs-detected diff. Mirror of `api.schemas.DetectedView`. */
+export type DetectedView = {
+  content?: string | null;
+  structured_output?: Record<string, unknown> | null;
+  missing?: string[] | null;
+  forbidden_present?: string[] | null;
+  tools_invoked?: string[] | null;
+};
+
+/** One evaluated scenario — a case, or one turn of a conversation case.
+ * The single recursive shape behind `/results` and `/threads`. Mirror of
+ * `api.schemas.ScenarioResult`. `expected`/`detected` are null when the case
+ * declares nothing to compare; `matched`/`detected` are null with no trace. */
+export type ScenarioResult = {
+  case_id: string;
+  case_name?: string | null;
+  run_id?: string | null;
+  trace_id?: string | null;
+  iteration: number;
+  position?: number | null;
+  matched?: boolean | null;
+  score?: number | null;
+  label?: string | null;
+  message?: string | null;
+  failure_modes: string[];
+  expected?: ExpectedView | null;
+  detected?: DetectedView | null;
+  grader_results: Record<string, unknown>[];
+  turns: ScenarioResult[];
+};
+
+export type ExperimentResults = {
+  experiment_id: string;
+  iteration: number | null;
+  cases: ScenarioResult[];
+  total: number;
+};
 export type DecisionRow = {
   id: string;
   iteration: number;
@@ -651,6 +699,26 @@ export const api = {
     request<DecisionRow[]>(`/api/workspaces/${workspaceId}/experiments/${experimentId}/decisions`, {
       fetch
     }),
+
+  /**
+   * Per-scenario expected-vs-detected-vs-matched for the experiment's best
+   * iteration. Lazy-loaded only when the Results tab opens — it can be large.
+   * `includeTurns` expands each conversation case into per-turn `ScenarioResult`s
+   * (off by default). Cases with no persisted trace are still listed
+   * (`detected`/`matched` null) so the grid is honest.
+   */
+  experimentResults: (
+    workspaceId: string,
+    experimentId: string,
+    opts: { includeTurns?: boolean } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<ExperimentResults>(
+      `/api/workspaces/${workspaceId}/experiments/${experimentId}/results${qs({
+        include: opts.includeTurns ? 'turns' : undefined
+      })}`,
+      { fetch }
+    ),
 
   trace: (workspaceId: string, traceId: string, fetch?: typeof globalThis.fetch) =>
     request<TraceDetail>(`/api/workspaces/${workspaceId}/traces/${traceId}`, {

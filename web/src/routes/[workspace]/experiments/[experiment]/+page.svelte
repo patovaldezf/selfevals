@@ -6,7 +6,13 @@
   import MetricChip from '$lib/components/MetricChip.svelte';
   import Sparkline from '$lib/components/Sparkline.svelte';
   import { api, ApiError } from '$lib/api/client';
-  import type { CompareResponse, FunnelDetail, IterationSummary } from '$lib/api/client';
+  import type {
+    CompareResponse,
+    ExperimentResults,
+    FunnelDetail,
+    IterationSummary
+  } from '$lib/api/client';
+  import CaseResultRow from '$lib/components/CaseResultRow.svelte';
   import type { PageData } from './$types';
   import { onDestroy } from 'svelte';
   import { invalidateAll } from '$app/navigation';
@@ -24,10 +30,17 @@
   // `[workspace]` is a required route param, so it is always present here.
   $: workspaceId = $page.params.workspace as string;
 
-  type Tab = 'iterations' | 'compare' | 'funnel' | 'decisions';
+  type Tab = 'iterations' | 'results' | 'compare' | 'funnel' | 'decisions';
   let tab: Tab = 'iterations';
   function setTab(id: string) {
-    if (id === 'iterations' || id === 'compare' || id === 'funnel' || id === 'decisions') tab = id;
+    if (
+      id === 'iterations' ||
+      id === 'results' ||
+      id === 'compare' ||
+      id === 'funnel' ||
+      id === 'decisions'
+    )
+      tab = id;
   }
   let openIteration: IterationSummary | null = null;
 
@@ -171,6 +184,50 @@
 
   $: funnelKeys = funnelDetail ? Object.keys(funnelDetail.nodes).sort() : [];
 
+  // --- Results tab: per-case expected vs detected vs matched ---------------
+  // Lazy like the funnel — the per-scenario grid can be large, so it stays off
+  // the server load and is fetched only when the tab opens. `includeTurns`
+  // re-fetches with per-turn breakdowns for conversation cases; a token guard
+  // keeps an out-of-order response from clobbering a newer one.
+  let resultsData: ExperimentResults | null = null;
+  let resultsError: string | null = null;
+  let resultsLoading = false;
+  let resultsIncludeTurns = false;
+  let resultsRequest = 0;
+
+  $: if (tab === 'results') {
+    void loadResults(resultsIncludeTurns);
+  }
+
+  async function loadResults(includeTurns: boolean): Promise<void> {
+    const token = ++resultsRequest;
+    resultsLoading = true;
+    resultsError = null;
+    try {
+      const detail = await api.experimentResults(workspaceId, summary.id, { includeTurns });
+      if (token !== resultsRequest) return;
+      resultsData = detail;
+    } catch (err) {
+      if (token !== resultsRequest) return;
+      resultsData = null;
+      resultsError =
+        err instanceof ApiError && err.status === 404
+          ? 'No results yet for this experiment.'
+          : 'Could not load per-case results.';
+    } finally {
+      if (token === resultsRequest) resultsLoading = false;
+    }
+  }
+
+  function toggleResultTurns(): void {
+    resultsIncludeTurns = !resultsIncludeTurns;
+    void loadResults(resultsIncludeTurns);
+  }
+
+  // A case carries a multi-turn conversation when it has any persisted turns.
+  $: resultsHasConversations = (resultsData?.cases ?? []).some((c) => c.turns.length > 0);
+  $: resultsPassCount = (resultsData?.cases ?? []).filter((c) => c.matched === true).length;
+
   function fmtNumber(value: number | null, digits = 4): string {
     if (value === null) return '—';
     if (Number.isInteger(value)) return `${value}`;
@@ -279,7 +336,7 @@
 
   <div class="border-b border-border mb-6">
     <div class="flex gap-6 text-sm">
-      {#each [{ id: 'iterations', label: `Iterations · ${iterations.length}` }, { id: 'compare', label: 'Compare' }, { id: 'funnel', label: 'Funnel' }, { id: 'decisions', label: `Decisions · ${data.decisions.length}` }] as t}
+      {#each [{ id: 'iterations', label: `Iterations · ${iterations.length}` }, { id: 'results', label: 'Results' }, { id: 'compare', label: 'Compare' }, { id: 'funnel', label: 'Funnel' }, { id: 'decisions', label: `Decisions · ${data.decisions.length}` }] as t}
         <button
           type="button"
           class="-mb-px py-2.5 border-b-2 transition-colors {tab === t.id
@@ -360,6 +417,51 @@
         </tbody>
       </table>
     </div>
+  {:else if tab === 'results'}
+    <section>
+      <div class="flex items-baseline justify-between mb-4">
+        <div class="flex items-baseline gap-3">
+          <h2 class="text-lg font-semibold">Per-case results</h2>
+          {#if resultsData}
+            <span class="text-xs text-text-3 font-mono" data-numeric>
+              {resultsPassCount}/{resultsData.total} passed
+              {#if resultsData.iteration !== null}· iter {resultsData.iteration}{/if}
+            </span>
+          {/if}
+        </div>
+        {#if resultsHasConversations}
+          <button
+            type="button"
+            class="text-xs text-text-2 underline-offset-2 hover:text-text-1 hover:underline"
+            on:click={toggleResultTurns}
+          >
+            {resultsIncludeTurns ? 'Hide turns' : 'Expand turns'}
+          </button>
+        {/if}
+      </div>
+
+      {#if resultsLoading && !resultsData}
+        <div class="space-y-3">
+          {#each Array(3) as _}
+            <div class="h-20 rounded-md border border-border bg-surface animate-pulse"></div>
+          {/each}
+        </div>
+      {:else if resultsError}
+        <div class="rounded-lg border border-border bg-surface px-6 py-8 text-center text-text-2">
+          {resultsError}
+        </div>
+      {:else if resultsData && resultsData.cases.length === 0}
+        <div class="rounded-lg border border-border bg-surface px-6 py-12 text-center text-text-2">
+          No cases recorded for the best iteration yet.
+        </div>
+      {:else if resultsData}
+        <div class="space-y-3" class:opacity-60={resultsLoading}>
+          {#each resultsData.cases as c (c.case_id)}
+            <CaseResultRow result={c} {workspaceId} />
+          {/each}
+        </div>
+      {/if}
+    </section>
   {:else if tab === 'compare'}
     <div class="grid grid-cols-2 gap-6 mb-6">
       <div class="rounded-lg border border-border bg-surface px-5 py-4">
