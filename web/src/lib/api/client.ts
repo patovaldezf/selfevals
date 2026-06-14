@@ -381,6 +381,20 @@ export type CreateDatasetRequest = {
   split_allocation?: Record<string, number>;
 };
 
+export type PromoteCaseDraft = {
+  case: Record<string, unknown>;
+  source_trace_id: string;
+  source_run_id: string;
+  source_case_id: string;
+  warnings: string[];
+};
+
+export type AppendDatasetCaseResult = {
+  dataset: DatasetDetail;
+  case_id: string;
+  created_new_dataset: boolean;
+};
+
 // --- Failure-mode taxonomy (loop-closer 2A) ----------------------------
 
 export type FailureMode = {
@@ -761,6 +775,30 @@ export const api = {
   freezeDataset: (workspaceId: string, datasetId: string, fetch?: typeof globalThis.fetch) =>
     request<DatasetDetail>(`/api/workspaces/${workspaceId}/datasets/${datasetId}/freeze`, {
       method: 'POST',
+      fetch
+    }),
+
+  draftCaseFromTrace: (
+    workspaceId: string,
+    traceId: string,
+    body: { name?: string; notes?: string } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<PromoteCaseDraft>(`/api/workspaces/${workspaceId}/traces/${traceId}/case-draft`, {
+      method: 'POST',
+      json: body,
+      fetch
+    }),
+
+  appendDatasetCase: (
+    workspaceId: string,
+    datasetId: string,
+    body: { case: Record<string, unknown>; create_version_if_frozen?: boolean },
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<AppendDatasetCaseResult>(`/api/workspaces/${workspaceId}/datasets/${datasetId}/cases`, {
+      method: 'POST',
+      json: body,
       fetch
     }),
 

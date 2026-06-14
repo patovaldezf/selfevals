@@ -680,6 +680,41 @@ class CreateDatasetRequest(BaseModel):
         return self
 
 
+class PromoteCaseDraftRequest(BaseModel):
+    """Optional edits when drafting a regression case from a trace."""
+
+    name: str | None = None
+    notes: str | None = None
+
+
+class PromoteCaseDraftResponse(BaseModel):
+    """Human-reviewable EvalCase draft built from a persisted trace."""
+
+    case: dict[str, Any]
+    source_trace_id: str
+    source_run_id: str
+    source_case_id: str
+    warnings: list[str] = Field(default_factory=list)
+
+
+class AppendDatasetCaseRequest(BaseModel):
+    """Append one validated EvalCase dict to a dataset.
+
+    Frozen regression datasets are immutable. When `create_version_if_frozen`
+    is true, the backend creates a new active dataset version instead of
+    mutating the frozen manifest.
+    """
+
+    case: dict[str, Any]
+    create_version_if_frozen: bool = True
+
+
+class AppendDatasetCaseResponse(BaseModel):
+    dataset: DatasetDetailResponse
+    case_id: str
+    created_new_dataset: bool = False
+
+
 # --- Failure-mode taxonomy (loop-closer) --------------------------------
 # View + request shapes for the taxonomy UI. The domain logic lives in
 # `cli/analyze_commands.py`; these expose it over HTTP. A mode's status is the

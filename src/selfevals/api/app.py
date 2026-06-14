@@ -43,8 +43,11 @@ from selfevals.api.broker import get_broker
 from selfevals.api.dataset_writer import (
     DatasetNotFoundError,
     DatasetWriteError,
+    TracePromotionError,
+    append_case_to_dataset,
     create_dataset_from_jsonl_bytes,
     create_dataset_from_request,
+    draft_regression_case_from_trace,
     freeze_dataset,
 )
 from selfevals.api.failure_mode_ops import (
@@ -89,6 +92,8 @@ from selfevals.api.schemas import (
     ActiveRun,
     ActiveRunsResponse,
     AnalysisIngestSummaryResponse,
+    AppendDatasetCaseRequest,
+    AppendDatasetCaseResponse,
     BaselineResponse,
     CaseListResponse,
     CompareResponse,
@@ -111,6 +116,8 @@ from selfevals.api.schemas import (
     LatencyMetricsResponse,
     MergeFailureModeRequest,
     PassRateMetricsResponse,
+    PromoteCaseDraftRequest,
+    PromoteCaseDraftResponse,
     RegressionCheckRequest,
     RegressionResultResponse,
     RunExperimentRequest,
@@ -406,6 +413,33 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=f"dataset {dataset_id} not found") from exc
         except DatasetWriteError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/datasets/{dataset_id}/cases",
+        response_model=AppendDatasetCaseResponse,
+        tags=["datasets"],
+    )
+    def datasets_append_case(
+        workspace_id: str,
+        dataset_id: str,
+        body: AppendDatasetCaseRequest,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> AppendDatasetCaseResponse:
+        try:
+            return append_case_to_dataset(
+                storage,
+                workspace_id=workspace_id,
+                dataset_id=dataset_id,
+                case_data=body.case,
+                create_version_if_frozen=body.create_version_if_frozen,
+            )
+        except DatasetNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"dataset {dataset_id} not found") from exc
+        except DatasetWriteError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            storage.close()
 
     # --- failure-mode taxonomy (loop-closer) ----------------------------
 
@@ -1180,6 +1214,32 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
             if trace is None:
                 raise HTTPException(status_code=404, detail="trace not found")
             return trace
+        finally:
+            storage.close()
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/traces/{trace_id}/case-draft",
+        response_model=PromoteCaseDraftResponse,
+        tags=["traces"],
+    )
+    def traces_case_draft(
+        workspace_id: str,
+        trace_id: str,
+        body: PromoteCaseDraftRequest | None = None,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> PromoteCaseDraftResponse:
+        try:
+            return draft_regression_case_from_trace(
+                storage,
+                workspace_id=workspace_id,
+                trace_id=trace_id,
+                body=body,
+            )
+        except TracePromotionError as exc:
+            message = str(exc)
+            status = 404 if "not found" in message else 422
+            raise HTTPException(status_code=status, detail=message) from exc
         finally:
             storage.close()
 
