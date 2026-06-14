@@ -6,6 +6,7 @@
   import MetricChip from '$lib/components/MetricChip.svelte';
   import Sparkline from '$lib/components/Sparkline.svelte';
   import { api, ApiError } from '$lib/api/client';
+  import { openTraceStream, type StreamHandle } from '$lib/api/sse';
   import type {
     CompareResponse,
     ExperimentResults,
@@ -93,6 +94,71 @@
       toast.error('Cancel failed', err instanceof ApiError ? err.detail : String(err));
     }
   }
+
+  // --- Live run: stream spans as they land --------------------------------
+  // While the experiment is active we look up the live run id from /runs/active
+  // (filtered to this workspace) and subscribe to its span stream, so the page
+  // shows real motion — span count climbing, last span name — instead of a
+  // static "running" badge. The trace viewer owns the full tree; here we want a
+  // pulse of life and a one-click jump to it. Everything tears down on
+  // complete / when the run leaves the active set / on navigate away.
+  let liveRunId: string | null = null;
+  let liveSpanCount = 0;
+  let liveLastSpan: string | null = null;
+  let liveStream: StreamHandle | null = null;
+  let liveLookupTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function findLiveRun(): Promise<void> {
+    try {
+      const { runs } = await api.activeRuns();
+      const mine = runs.find((r) => r.workspace_id === workspaceId);
+      if (mine && mine.run_id !== liveRunId) attachLive(mine.run_id);
+      else if (!mine) detachLive();
+    } catch {
+      /* transient — keep the last known live state */
+    }
+  }
+
+  function attachLive(runId: string): void {
+    detachLive();
+    liveRunId = runId;
+    liveSpanCount = 0;
+    liveLastSpan = null;
+    liveStream = openTraceStream(workspaceId, runId, {
+      onSnapshot: (trace) => {
+        liveSpanCount = trace.spans?.length ?? 0;
+      },
+      onSpan: (span) => {
+        liveSpanCount += 1;
+        liveLastSpan = span.name ?? span.kind ?? 'span';
+      },
+      onComplete: () => detachLive()
+    });
+  }
+
+  function detachLive(): void {
+    liveStream?.close();
+    liveStream = null;
+    liveRunId = null;
+  }
+
+  // Poll for the live run id only while active; the SSE itself is push-based.
+  $: if (isActive) startLiveLookup();
+  else stopLiveLookup();
+
+  function startLiveLookup(): void {
+    if (liveLookupTimer || typeof window === 'undefined') return;
+    void findLiveRun();
+    liveLookupTimer = setInterval(() => void findLiveRun(), 3000);
+  }
+  function stopLiveLookup(): void {
+    if (liveLookupTimer) {
+      clearInterval(liveLookupTimer);
+      liveLookupTimer = null;
+    }
+    detachLive();
+  }
+  onDestroy(stopLiveLookup);
 
   const STATE_TONE: Record<string, string> = {
     running: 'state-running',
@@ -306,6 +372,21 @@
       {/if}
     </div>
   </header>
+
+  {#if isActive && liveRunId}
+    <div class="live-banner mb-8">
+      <span class="live-dot" aria-hidden="true"></span>
+      <span class="text-sm">
+        <span class="font-medium">Live run</span>
+        <span class="text-text-2"
+          >· {liveSpanCount} span{liveSpanCount === 1 ? '' : 's'}{liveLastSpan
+            ? ` · ${liveLastSpan}`
+            : ''}</span
+        >
+      </span>
+      <a class="watch-link" href={`/${workspaceId}/traces/${liveRunId}`}>Watch live →</a>
+    </div>
+  {/if}
 
   <section class="grid grid-cols-4 gap-4 mb-10">
     <MetricChip
@@ -965,5 +1046,35 @@
     .pulse {
       animation: none;
     }
+    .live-dot {
+      animation: none;
+    }
+  }
+
+  .live-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.6rem 0.9rem;
+    border: 1px solid color-mix(in srgb, var(--color-success) 30%, var(--color-border));
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--color-success) 7%, transparent);
+  }
+  .live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-success);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  .watch-link {
+    margin-left: auto;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--color-success);
+    text-underline-offset: 2px;
+  }
+  .watch-link:hover {
+    text-decoration: underline;
   }
 </style>

@@ -756,6 +756,12 @@ export const api = {
       fetch
     }),
 
+  /** Runs currently streaming spans through the broker, across all workspaces.
+   *  The caller filters by workspace. Used to surface a live run and open its
+   *  trace stream. (The backend's `ActiveRun` carries no experiment_id.) */
+  activeRuns: (fetch?: typeof globalThis.fetch) =>
+    request<{ runs: { workspace_id: string; run_id: string }[] }>('/api/runs/active', { fetch }),
+
   /**
    * Resolve a `*_pointer` field from a span detail. The API returns the
    * raw bytes; the caller decides how to render (JSON, markdown, plain).
