@@ -141,11 +141,10 @@
     <div class="rounded-lg border border-border bg-surface px-5 py-5">
       <div class="flex items-baseline justify-between mb-2">
         <h3 class="font-medium">Failure clusters</h3>
-        <span class="text-xs text-text-3 font-mono">soon</span>
       </div>
       <p class="text-sm text-text-2 leading-relaxed">
-        Clusters of failing traces grouped by failure mode will land here once the §J.6 module
-        ships. Reserved real estate so the design doesn't retrofit later.
+        Failing traces grouped by failure mode, ranked by how often they bite.
+        <a class="underline" href={`/${data.workspace.id}/clusters`}>Open ▸</a>
       </p>
     </div>
     <div class="rounded-lg border border-border bg-surface px-5 py-5">

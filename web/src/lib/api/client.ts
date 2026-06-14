@@ -118,6 +118,32 @@ export type ExperimentResults = {
   cases: ScenarioResult[];
   total: number;
 };
+
+export type FailureClusterExample = {
+  run_id: string;
+  experiment_id?: string | null;
+};
+
+/** One cluster = one failure mode (§J.6 v1). `status` is `"unknown"` for a mode
+ * seen on a grade but not yet registered in the taxonomy. */
+export type FailureClusterRow = {
+  failure_mode: string;
+  failure_mode_id?: string | null;
+  title?: string | null;
+  status: string;
+  count: number;
+  rate: number;
+  examples: FailureClusterExample[];
+};
+
+export type FailureClusters = {
+  workspace_id: string;
+  window: { start: string | null; end: string | null };
+  experiment_id: string | null;
+  total: number;
+  items: FailureClusterRow[];
+};
+
 export type DecisionRow = {
   id: string;
   iteration: number;
@@ -915,6 +941,20 @@ export const api = {
     fetch?: typeof globalThis.fetch
   ) =>
     request<LatencyMetrics>(`/api/workspaces/${workspaceId}/metrics/latency${qs(opts)}`, {
+      fetch
+    }),
+
+  /**
+   * Failing traces grouped by failure mode (§J.6). A first-order view (not under
+   * `/metrics`) — each cluster carries example `run_id`s that link straight into
+   * the trace viewer. v1 clusters by the stable taxonomy slug.
+   */
+  clusters: (
+    workspaceId: string,
+    opts: { from?: string; to?: string; experiment_id?: string; grader?: string; limit?: number } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<FailureClusters>(`/api/workspaces/${workspaceId}/clusters${qs(opts)}`, {
       fetch
     }),
 

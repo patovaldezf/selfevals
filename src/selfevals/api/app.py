@@ -61,6 +61,7 @@ from selfevals.api.failure_mode_ops import (
 )
 from selfevals.api.metrics import (
     cost_metrics,
+    failure_clusters,
     failure_mode_metrics,
     latency_metrics,
     pass_rate_metrics,
@@ -107,6 +108,7 @@ from selfevals.api.schemas import (
     ExperimentDetailResponse,
     ExperimentListPage,
     ExperimentResultsResponse,
+    FailureClustersResponse,
     FailureModeListResponse,
     FailureModeMetricsResponse,
     FailureModeResponse,
@@ -1309,6 +1311,41 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     ) -> list[AnchorPoint]:
         try:
             return anchor_set_history(storage, workspace_id=workspace_id)
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/clusters",
+        response_model=FailureClustersResponse,
+        tags=["clusters"],
+        summary="Failing traces grouped by failure mode (§J.6)",
+        description=(
+            "Groups failing traces by their stable failure-mode slug, ranked by "
+            "frequency, with capped example `run_id`s for drill-down and "
+            "title/status enriched from the workspace taxonomy. v1 clusters by the "
+            "existing taxonomy (cluster ≡ mode); semantic clustering is future work."
+        ),
+    )
+    def clusters(
+        workspace_id: str,
+        storage: StorageInterface = Depends(_storage),
+        start: Annotated[datetime | None, Query(alias="from")] = None,
+        end: Annotated[datetime | None, Query(alias="to")] = None,
+        experiment_id: str | None = None,
+        grader: str | None = None,
+        limit: Annotated[int | None, Query(ge=1, le=200)] = None,
+        _user: UserHeader = None,
+    ) -> FailureClustersResponse:
+        try:
+            return failure_clusters(
+                storage,
+                workspace_id=workspace_id,
+                start=start,
+                end=end,
+                experiment_id=experiment_id,
+                grader=grader,
+                limit=limit,
+            )
         finally:
             storage.close()
 

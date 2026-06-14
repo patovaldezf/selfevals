@@ -55,6 +55,43 @@ class FailureModeMetricsResponse(BaseModel):
     items: list[FailureModeMetricRow] = Field(default_factory=list)
 
 
+class FailureClusterExample(BaseModel):
+    """A concrete failing trace inside a cluster — enough to drill straight into
+    the trace viewer (`/traces/{run_id}` resolves both `run_…` and `tr_…` ids)."""
+
+    run_id: str
+    experiment_id: str | None = None
+
+
+class FailureClusterRow(BaseModel):
+    """One cluster = one failure mode (§J.6 v1: cluster ≡ taxonomy mode).
+
+    `failure_mode` is the stable slug carried on every grade; `title`/`status`
+    are enriched from the workspace taxonomy when the mode is registered there
+    (`status="unknown"` for a mode seen on a grade but not yet in the taxonomy —
+    a candidate the analysis loop hasn't formalized). `examples` are capped
+    sample traces for drill-down, not the full membership."""
+
+    failure_mode: str
+    failure_mode_id: str | None = None
+    title: str | None = None
+    status: str = "unknown"
+    count: int
+    rate: float
+    examples: list[FailureClusterExample] = Field(default_factory=list)
+
+
+class FailureClustersResponse(BaseModel):
+    """Failing traces grouped by failure mode, ranked by frequency. Same window
+    envelope as the other metrics so the FE filters identically."""
+
+    workspace_id: str
+    window: MetricsWindow
+    experiment_id: str | None = None
+    total: int
+    items: list[FailureClusterRow] = Field(default_factory=list)
+
+
 class ToolMetricRow(BaseModel):
     tool_name: str
     status: str
