@@ -204,3 +204,49 @@ def test_operator_branches(op: str, value: float, agg: float, expected: Decision
     exp = _experiment(target_op=op, target_value=value)
     ev = evaluate_iteration(experiment=exp, aggregate=_agg(primary=agg), baseline=None)
     assert ev.outcome == expected
+
+
+# --- G1: critical tier (zero-tolerance) gates via the existing guardrail path --
+
+
+def test_critical_failure_count_gate_fails_when_nonzero() -> None:
+    # The readiness gate for autopilot: a guardrail `critical_failure_count == 0`
+    # must trip when a critical mode occurred — using the existing guardrail
+    # mechanism, no change to matrix.py.
+    exp = _experiment(
+        guardrails=[MetricTarget(name="critical_failure_count", operator="==", value=0)],
+        if_guardrail_fails="reject",
+    )
+    ev = evaluate_iteration(
+        experiment=exp,
+        aggregate=_agg(primary=0.95, guardrails={"critical_failure_count": 2.0}),
+        baseline=_agg(primary=0.9),
+    )
+    assert ev.outcome == DecisionOutcome.REJECT
+    assert ev.violated_guardrails
+
+
+def test_critical_failure_count_gate_passes_at_zero() -> None:
+    # High plain accuracy AND zero critical failures → the gate is satisfied.
+    exp = _experiment(
+        guardrails=[MetricTarget(name="critical_failure_count", operator="==", value=0)],
+    )
+    ev = evaluate_iteration(
+        experiment=exp,
+        aggregate=_agg(primary=0.95, guardrails={"critical_failure_count": 0.0}),
+        baseline=None,
+    )
+    assert ev.outcome == DecisionOutcome.KEEP_CANDIDATE
+
+
+def test_weighted_failure_per_case_guardrail() -> None:
+    exp = _experiment(
+        guardrails=[MetricTarget(name="weighted_failure_per_case", operator="<=", value=0.5)],
+        if_guardrail_fails="reject",
+    )
+    ev = evaluate_iteration(
+        experiment=exp,
+        aggregate=_agg(primary=0.95, guardrails={"weighted_failure_per_case": 1.2}),
+        baseline=_agg(primary=0.9),
+    )
+    assert ev.outcome == DecisionOutcome.REJECT

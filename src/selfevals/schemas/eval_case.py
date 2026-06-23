@@ -205,6 +205,18 @@ class EvalCase(BaseEntity):
     taxonomy: CaseTaxonomy
     graders: list[NonEmptyStr] = Field(default_factory=list)
     failure_weights: dict[str, int] = Field(default_factory=dict)
+    """Per-failure-mode business severity, keyed by mode identity. The aggregator
+    multiplies these by `failure_mode_counts` into `weighted_failure_total` /
+    `weighted_failure_per_case` (severity-weighted accuracy). The weight is the
+    *cost of the error to the business*, not compute cost. Domain lives in the
+    case; the engine only aggregates (same pattern as `expected`/`aliases`)."""
+    critical_failure_modes: list[NonEmptyStr] = Field(default_factory=list)
+    """Failure modes that are zero-tolerance for the readiness gate: their
+    aggregate count must be 0 to pass (e.g. "granted an unauthorized discount",
+    "marked a real sale as spam"). Separate from `failure_weights` on purpose —
+    severity (how much it costs, a continuous score) is orthogonal to go/no-go
+    (a hard gate). The aggregator sums these into `critical_failure_count`, which
+    a guardrail `== 0` reads. Domain lives in the case; the engine only counts."""
     metadata: CaseMetadata = Field(default_factory=CaseMetadata)
     blocking: Blocking = Field(default_factory=Blocking)
     holdout: bool = False
@@ -213,7 +225,7 @@ class EvalCase(BaseEntity):
 
     content_hash: str | None = None
 
-    @field_validator("modalities", "graders")
+    @field_validator("modalities", "graders", "critical_failure_modes")
     @classmethod
     def _unique(cls, value: list[str]) -> list[str]:
         if len(set(value)) != len(value):
