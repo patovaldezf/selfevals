@@ -15,11 +15,11 @@ measurement layer around it.
 - Grades outputs with deterministic rules, set matching, trajectory checks, guardrails, or LLM judges.
 - Sweeps `manual`, `grid`, `random`, or offline hypothesis proposals.
 - Captures traces, tokens, cost, tool calls, structured output, and failure modes.
-- Persists experiments to SQLite and renders Markdown or JSON reports.
+- Persists experiments to Postgres and renders Markdown or JSON reports.
 - Serves a FastAPI bridge and optional Svelte dashboard for live runs, cases, traces, and results.
 - Exports failed traces for external error analysis, then ingests taxonomy updates back into the workspace.
 
-Current version: `0.9.0`.
+Current version: `0.13.0`.
 
 ## Why This Exists
 
@@ -69,25 +69,26 @@ The web/API extra:
 pip install 'selfevals[web]'
 ```
 
-Scale/storage extras:
+Optional extras:
 
 ```bash
-pip install 'selfevals[postgres]'
-pip install 'selfevals[redis]'
+pip install 'selfevals[redis]'   # live events + run-job queue
 ```
 
-SQLite remains the default. For the local Postgres + Redis runtime profile,
-use the repository `.env` values:
+Storage is **Postgres-only** (`psycopg` ships in the core dependencies). Bring up
+the local Postgres + Redis runtime profile and point the tools at it:
 
 ```bash
 docker compose up -d postgres redis
+cp .env.example .env            # local defaults: PG :5433, Redis :6380
 set -a && source .env && set +a
 selfevals serve --no-web
 selfevals worker runs
 ```
 
-`SELFEVALS_STORAGE_URL` points at the local Postgres container. `SELFEVALS_REDIS_URL`
-points at the local Redis container on `localhost:6380`.
+`SELFEVALS_STORAGE_URL` (required) points at the Postgres container. `SELFEVALS_REDIS_URL`
+points at the local Redis container on `localhost:6380`. Migrating from a legacy
+SQLite database? Use `selfevals migrate-sqlite ./old.sqlite --to "$SELFEVALS_STORAGE_URL"`.
 
 > **Worker and API must share the same `SELFEVALS_REDIS_URL`, DB number
 > included.** Sourcing `.env` for both (as above) guarantees it — don't pass a
@@ -131,10 +132,10 @@ selfevals run evals/experiments/example_showcase.yaml --no-persist
 To persist runs and inspect them later:
 
 ```bash
-selfevals --db ./selfevals.sqlite run evals/experiments/example_pingpong.yaml
-selfevals --db ./selfevals.sqlite experiment list <workspace_id>
-selfevals --db ./selfevals.sqlite report <workspace_id> <experiment_id>
-selfevals --db ./selfevals.sqlite report <workspace_id> <experiment_id> --format json
+selfevals run evals/experiments/example_pingpong.yaml
+selfevals experiment list <workspace_id>
+selfevals report <workspace_id> <experiment_id>
+selfevals report <workspace_id> <experiment_id> --format json
 ```
 
 `--db` is global. Put it before the subcommand.
@@ -161,7 +162,7 @@ Rules:
 - Use deterministic graders wherever the expected behavior is objective.
 - Use set_match for extraction, classification, intent, entity, or multi-label work.
 - Use judge_panel only for genuinely open-ended quality calls.
-- Persist runs to ./selfevals.sqlite.
+- Persist runs to Postgres (SELFEVALS_STORAGE_URL).
 - Keep the YAML, datasets, and adapter small enough that a human can review them.
 - After each run, explain what failed, what changed, and what you recommend next.
 - Never auto-ship product changes. Propose them, show evidence, and ask the human.
@@ -173,10 +174,10 @@ Tasks:
 3. Create evals/datasets/<first_eval>.jsonl with real cases.
 4. Create evals/experiments/<first_eval>.yaml.
 5. Run:
-   selfevals --db ./selfevals.sqlite run evals/experiments/<first_eval>.yaml
+   selfevals run evals/experiments/<first_eval>.yaml
 6. Render:
-   selfevals --db ./selfevals.sqlite report <workspace_id> <experiment_id>
-   selfevals --db ./selfevals.sqlite report <workspace_id> <experiment_id> --format json
+   selfevals report <workspace_id> <experiment_id>
+   selfevals report <workspace_id> <experiment_id> --format json
 7. If cases fail, run:
    selfevals analyze pull <workspace_id> <experiment_id> > selfevals-analysis.json
    Then classify failures, propose candidate failure modes, and show the human
@@ -311,13 +312,13 @@ selfevals run evals/experiments/my_eval.yaml --format json --no-persist
 Run the API:
 
 ```bash
-python -m selfevals.api --host 127.0.0.1 --port 8000 --db ./selfevals.sqlite
+python -m selfevals.api --host 127.0.0.1 --port 8000  # reads SELFEVALS_STORAGE_URL
 ```
 
 Or through the CLI:
 
 ```bash
-selfevals --db ./selfevals.sqlite serve --host 127.0.0.1 --port 8000 --no-web
+selfevals serve --host 127.0.0.1 --port 8000 --no-web
 ```
 
 Launch an experiment over HTTP:
@@ -379,7 +380,7 @@ src/selfevals/
   optimization/   Proposers, aggregation, convergence, best-iteration selection.
   decision/       Decision matrix.
   trace/          Native recorder and OpenTelemetry import path.
-  storage/        SQLite persistence and filesystem object store.
+  storage/        Postgres persistence and filesystem object store.
   reporter/       Markdown and JSON reports.
   analysis/       Error-analysis pull/push handshake.
   api/            FastAPI bridge and live span streaming.
@@ -409,7 +410,7 @@ uv run selfevals run src/selfevals/examples/evals/experiments/example_pingpong.y
 
 Alpha, but real.
 
-The CLI run path, adapters, graders, SQLite persistence, reports, API run
+The CLI run path, adapters, graders, Postgres persistence, reports, API run
 endpoint, live span bridge, trace detail endpoints, set matching, and judge
 panel are implemented and tested.
 
