@@ -50,6 +50,12 @@ class StorageInterface(ABC):
     def close(self) -> None:
         """Release underlying resources (file handles, connections)."""
 
+    # NOTE: the cross-cutting query helpers (list_workspace_summaries,
+    # list_experiments_page, the metric rollups, etc.) and transaction() live on
+    # the concrete PostgresStorage. They are promoted to abstract methods here in
+    # the commit that drops the SQLite backend, once there is a single backend to
+    # satisfy them.
+
 
 class ObjectStoreInterface(ABC):
     """Content-addressed payload store, always scoped to a workspace."""

@@ -24,11 +24,17 @@ from selfevals.storage.errors import (
     WorkspaceMismatchError,
 )
 from selfevals.storage.interface import ListFilter, StorageInterface, WorkspaceScope
+from selfevals.storage.postgres import metrics as _metrics
+from selfevals.storage.postgres import queries as _queries
 from selfevals.storage.postgres.mappers import mapper_for
 from selfevals.storage.postgres.migrations import apply_migrations
 
 if TYPE_CHECKING:
+    from selfevals.api.schemas import WorkspaceSummary
     from selfevals.schemas._base import BaseEntity
+    from selfevals.schemas.eval_case import EvalCase
+    from selfevals.schemas.experiment import Experiment
+    from selfevals.schemas.trace import Trace
 
 
 class PostgresStorage(StorageInterface):
@@ -75,6 +81,73 @@ class PostgresStorage(StorageInterface):
             self._conn.commit()
         finally:
             self._conn.autocommit = True
+
+    # -- hot query helpers (part of the storage contract) -------------------
+
+    def list_workspace_summaries(self) -> list[WorkspaceSummary]:
+        return _queries.list_workspace_summaries(self._conn)
+
+    def workspace_by_slug_owner(self, *, slug: str, user_id: str) -> Any | None:
+        return _queries.workspace_by_slug_owner(self._conn, slug=slug, user_id=user_id)
+
+    def list_experiments_page(
+        self,
+        *,
+        workspace_id: str,
+        limit: int,
+        offset: int,
+        state: str | None,
+        feature: str | None,
+    ) -> tuple[list[Experiment], int, dict[str, int]]:
+        return _queries.list_experiments_page(
+            self._conn,
+            workspace_id=workspace_id,
+            limit=limit,
+            offset=offset,
+            state=state,
+            feature=feature,
+        )
+
+    def eval_cases_for_experiment(self, workspace_id: str, experiment_id: str) -> list[EvalCase]:
+        return _queries.eval_cases_for_experiment(self._conn, workspace_id, experiment_id)
+
+    def latest_trace_refs_by_case(
+        self, workspace_id: str, experiment_id: str
+    ) -> dict[str, tuple[str, str]]:
+        return _queries.latest_trace_refs_by_case(self._conn, workspace_id, experiment_id)
+
+    def traces_for_experiment_iteration(
+        self, workspace_id: str, experiment_id: str, iteration: int
+    ) -> list[Trace]:
+        return _queries.traces_for_experiment_iteration(
+            self._conn, workspace_id, experiment_id, iteration
+        )
+
+    def trace_by_id_or_run_id(self, workspace_id: str, trace_id: str) -> Trace | None:
+        return _queries.trace_by_id_or_run_id(self._conn, workspace_id, trace_id)
+
+    def traces_by_thread_id(self, workspace_id: str, thread_id: str) -> list[Trace]:
+        return _queries.traces_by_thread_id(self._conn, workspace_id, thread_id)
+
+    # -- metrics rollups ----------------------------------------------------
+
+    def pass_rate_metrics(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return _metrics.pass_rate_metrics(self._conn, **kwargs)
+
+    def failure_mode_metrics(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return _metrics.failure_mode_metrics(self._conn, **kwargs)
+
+    def tool_metrics(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return _metrics.tool_metrics(self._conn, **kwargs)
+
+    def cost_metrics(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return _metrics.cost_metrics(self._conn, **kwargs)
+
+    def token_metrics(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return _metrics.token_metrics(self._conn, **kwargs)
+
+    def latency_metrics(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return _metrics.latency_metrics(self._conn, **kwargs)
 
 
 class _PostgresScope(WorkspaceScope):
