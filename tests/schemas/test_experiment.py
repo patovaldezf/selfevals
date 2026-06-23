@@ -24,7 +24,9 @@ from selfevals.schemas.experiment import (
     MetricTarget,
     OutcomeMetricsSpec,
     ProposerSpec,
+    RateLimitSpec,
     ReliabilitySpec,
+    RetrySpec,
     RunSpec,
     TargetSpec,
 )
@@ -214,3 +216,37 @@ def test_frozen_requires_at_least_one_agent_and_dataset() -> None:
             agents=[EntityRef(id="ag_x")],
             datasets=[],
         )
+
+
+# --- F6: retry / rate-limit specs --------------------------------------------
+
+
+def test_retry_spec_defaults_retry_on() -> None:
+    run = RunSpec(sandbox=SandboxMode.DRY_RUN)
+    assert run.retry.max_retries == 2  # retry ON by default
+    assert run.retry.jitter == 0.5
+    assert run.rate_limit.requests_per_minute is None  # rate-limit OFF by default
+
+
+def test_retry_spec_max_retries_zero_allowed() -> None:
+    # 0 = disabled, a valid value (not rejected like a negative).
+    assert RetrySpec(max_retries=0).max_retries == 0
+
+
+def test_retry_spec_bounds() -> None:
+    with pytest.raises(ValidationError):
+        RetrySpec(max_retries=-1)
+    with pytest.raises(ValidationError):
+        RetrySpec(max_retries=11)  # le=10
+    with pytest.raises(ValidationError):
+        RetrySpec(jitter=1.5)  # le=1
+    with pytest.raises(ValidationError):
+        RetrySpec(base_delay_seconds=0.0)  # gt=0
+
+
+def test_rate_limit_spec_bounds() -> None:
+    assert RateLimitSpec(requests_per_minute=600).requests_per_minute == 600
+    with pytest.raises(ValidationError):
+        RateLimitSpec(requests_per_minute=0)  # ge=1
+    with pytest.raises(ValidationError):
+        RateLimitSpec(burst=0)  # ge=1

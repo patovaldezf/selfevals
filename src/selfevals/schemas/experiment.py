@@ -154,6 +154,42 @@ class DatasetUsage(SelfEvalsModel):
     """Datasets used as pass/fail gates (regression, golden, safety)."""
 
 
+class RetrySpec(SelfEvalsModel):
+    """How transient agent-call failures (429/5xx/timeout) are retried.
+
+    Adapter-level retry, distinct from the durable job retry (`RunJob.attempt`):
+    this handles per-call blips before the repetition completes; job retry covers
+    the whole run/worker dying. ON by default — transient blips are common and
+    cheap to absorb, and only `retryable` errors retry, so permanent failures
+    still fail fast. `max_retries=0` disables it."""
+
+    max_retries: int = Field(default=2, ge=0, le=10)
+    base_delay_seconds: float = Field(default=0.5, gt=0.0, le=60.0)
+    max_delay_seconds: float = Field(default=30.0, gt=0.0, le=300.0)
+    multiplier: float = Field(default=2.0, ge=1.0, le=10.0)
+    jitter: float = Field(default=0.5, ge=0.0, le=1.0)
+    """Full-jitter fraction [0,1]: the actual delay is sampled in
+    `[expo*(1-jitter), expo]`, so N cases that hit a 429 together wake at
+    independent times instead of re-storming the provider in lockstep."""
+
+
+class RateLimitSpec(SelfEvalsModel):
+    """Pre-emptive request throttle, shared across all concurrent cases.
+
+    OFF by default (`requests_per_minute=None`): we can't know the user's
+    provider tier, so a wrong default would either throttle needlessly or fail to
+    protect. Until the user opts in, the retry layer is the safety net. When set,
+    a token bucket caps requests/min before they're sent — the real limiter at
+    scale (`parallelism` is only the in-flight ceiling; the two compose, min
+    wins). Token-per-minute is reserved for a later version (output tokens are
+    unknown until the response, so TPM can't be pre-charged accurately)."""
+
+    requests_per_minute: int | None = Field(default=None, ge=1, le=100_000)
+    burst: int | None = Field(default=None, ge=1, le=100_000)
+    """Bucket capacity (max burst before throttling kicks in). None → ~1s of
+    `requests_per_minute` worth of burst."""
+
+
 class RunSpec(SelfEvalsModel):
     sandbox: SandboxMode
     runtime: RuntimeLocation = RuntimeLocation.OFFLINE
@@ -162,6 +198,8 @@ class RunSpec(SelfEvalsModel):
     repetitions_per_case: int = Field(default=1, ge=1, le=100)
     parallelism: int = Field(default=8, ge=1, le=64)
     convergence: ConvergenceSpec = Field(default_factory=ConvergenceSpec)
+    retry: RetrySpec = Field(default_factory=RetrySpec)
+    rate_limit: RateLimitSpec = Field(default_factory=RateLimitSpec)
     seed: int | None = None
     persist_traces: Literal["none", "all", "failed"] = "failed"
     """Which per-repetition traces the loop writes to storage:

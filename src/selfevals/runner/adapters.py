@@ -45,7 +45,75 @@ async (returns an awaitable of one)."""
 
 
 class AdapterError(RuntimeError):
-    """Generic adapter failure (transport, decoding, contract violation)."""
+    """Generic adapter failure (transport, decoding, contract violation).
+
+    Carries retry classification so a wrapping `RetryingAdapter` can decide
+    whether to re-attempt without string-sniffing the message. Defaults preserve
+    fail-fast behaviour: a bare `AdapterError("msg")` is non-retryable.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        retryable: bool = False,
+        status_code: int | None = None,
+        retry_after_seconds: float | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+        """True for transient failures (429, 5xx, timeouts, connection blips)
+        that a retry might resolve. False (default) = permanent, fail fast."""
+        self.status_code = status_code
+        """HTTP status when the failure came from an HTTP response, else None."""
+        self.retry_after_seconds = retry_after_seconds
+        """Provider-requested wait before retry (from a `Retry-After` header or
+        an SDK exception), in seconds. None when unspecified."""
+
+
+def _retry_after_from_headers(headers: httpx.Headers) -> float | None:
+    """Parse a `Retry-After` header into seconds.
+
+    Supports the integer-seconds form (`Retry-After: 7`). The HTTP-date form is
+    rarely used by LLM providers and is ignored (returns None) rather than
+    pulling in date parsing — the exponential backoff floor still applies.
+    """
+    raw = headers.get("retry-after")
+    if raw is None:
+        return None
+    try:
+        seconds = float(raw.strip())
+    except ValueError:
+        return None
+    return seconds if seconds >= 0 else None
+
+
+def classify_embedded_exc(exc: Exception) -> tuple[bool, int | None, float | None]:
+    """Best-effort transient classification for an embedded callable's exception.
+
+    Embedded agents are black boxes that may call provider SDKs (Anthropic/
+    OpenAI) directly. Those SDKs are optional extras, so we duck-type rather than
+    import them: a rate-limit/timeout is recognised by class name or a
+    `status_code` attribute. Returns `(retryable, status_code, retry_after)`.
+    """
+    status = getattr(exc, "status_code", None)
+    status_code = status if isinstance(status, int) else None
+    name = type(exc).__name__
+    transient_names = {
+        "RateLimitError",
+        "APITimeoutError",
+        "APIConnectionError",
+        "InternalServerError",
+        "ServiceUnavailableError",
+    }
+    retryable = name in transient_names or (
+        status_code is not None and (status_code == 429 or 500 <= status_code < 600)
+    )
+    if isinstance(exc, httpx.TimeoutException):
+        retryable = True
+    retry_after = getattr(exc, "retry_after", None)
+    retry_after_seconds = float(retry_after) if isinstance(retry_after, (int, float)) else None
+    return retryable, status_code, retry_after_seconds
 
 
 @dataclass(frozen=True)
@@ -147,7 +215,16 @@ class EmbeddedAdapter(AgentAdapter):
                     # lambda wrapping an async fn). Await it off the thread.
                     result = await result
         except Exception as exc:
-            raise AdapterError(f"embedded callable raised: {exc}") from exc
+            # Embedded agents may call provider SDKs directly; a rate-limit or
+            # timeout from inside the callable is transient → retryable. Detected
+            # by duck-typing (no SDK import; they're optional extras).
+            retryable, status_code, retry_after = classify_embedded_exc(exc)
+            raise AdapterError(
+                f"embedded callable raised: {exc}",
+                retryable=retryable,
+                status_code=status_code,
+                retry_after_seconds=retry_after,
+            ) from exc
         if not isinstance(result, AdapterResponse):
             hint = ""
             if inspect.isawaitable(result):
@@ -207,7 +284,9 @@ class CliCommandAdapter(AgentAdapter):
         except TimeoutError as exc:
             proc.kill()
             await proc.wait()
-            raise AdapterError(f"command timed out after {self._timeout}s") from exc
+            raise AdapterError(
+                f"command timed out after {self._timeout}s", retryable=True
+            ) from exc
         if proc.returncode != 0:
             raise AdapterError(
                 f"command exited with {proc.returncode}: "
@@ -257,20 +336,28 @@ class HttpEndpointAdapter(AgentAdapter):
                 resp = await client.post(self._url, json=payload, headers=self._headers)
                 resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            # 429 (rate limit) and 5xx are transient → retryable; honour
+            # Retry-After. Other 4xx (bad request, auth) are permanent.
+            retryable = status == 429 or 500 <= status < 600
             raise AdapterError(
-                f"HTTP adapter got {exc.response.status_code} "
-                f"{exc.response.reason_phrase} from {self._url}"
+                f"HTTP adapter got {status} {exc.response.reason_phrase} from {self._url}",
+                retryable=retryable,
+                status_code=status,
+                retry_after_seconds=_retry_after_from_headers(exc.response.headers),
             ) from exc
         except httpx.TimeoutException as exc:
             raise AdapterError(
-                f"HTTP adapter timed out after {self._timeout}s on {self._url}"
+                f"HTTP adapter timed out after {self._timeout}s on {self._url}",
+                retryable=True,
             ) from exc
         except httpx.HTTPError as exc:
             # Transport-level failure (connection refused, DNS, etc.). Include
-            # the URL so the message is actionable.
+            # the URL so the message is actionable. Transient → retryable.
             raise AdapterError(
                 f"HTTP adapter could not reach {self._url} ({exc}); "
-                f"check the endpoint is running and reachable from this host"
+                f"check the endpoint is running and reachable from this host",
+                retryable=True,
             ) from exc
         try:
             data = json.loads(resp.content.decode("utf-8"))
