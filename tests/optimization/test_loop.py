@@ -724,3 +724,68 @@ async def test_loop_grades_concurrently_and_preserves_order() -> None:
     assert len(grades_per_rep) == 2
     for grades in grades_per_rep:
         assert [g.grader for g in grades] == ["g0", "g1", "g2"]
+
+
+def test_loop_rejects_invalid_case_concurrency() -> None:
+    exp = _experiment()
+    executor = Executor(
+        adapter=_adapter_for("pong", level=1.0),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    with pytest.raises(ValueError):
+        OptimizationLoop(
+            experiment=exp,
+            executor=executor,
+            proposer=GridProposer(),
+            graders=[DeterministicGrader()],
+            cases=[_case()],
+            case_concurrency=0,
+        )
+
+
+@pytest.mark.asyncio
+async def test_loop_runs_cases_concurrently_and_preserves_order() -> None:
+    # Regression guard for the case fan-out fix: before it, the loop ran cases
+    # strictly in series (`for case in self._cases: await ...`), so N slow cases
+    # took N * latency regardless of `parallelism`. Now cases run concurrently
+    # under the case semaphore, while case order is preserved downstream.
+    from selfevals.optimization.proposers import ProposerContext
+
+    barrier = {"count": 0, "max": 0}
+
+    def _slow_fn(req: AdapterRequest) -> AdapterResponse:
+        # Adapter calls are sync; the executor runs them via to_thread, so the
+        # only way `max` exceeds 1 is if multiple cases are in flight at once.
+        import time
+
+        barrier["count"] += 1
+        barrier["max"] = max(barrier["max"], barrier["count"])
+        time.sleep(0.05)
+        barrier["count"] -= 1
+        return AdapterResponse(content="pong", tokens_input=4, tokens_output=2)
+
+    adapter = EmbeddedAdapter(_slow_fn, agent=_agent())
+    # 8 cases, each tagged with its index so we can assert the output order.
+    cases = [_case("pong") for _ in range(8)]
+    exp = _experiment(max_iterations=1, search_space={"level": [1.0]})
+    executor = Executor(
+        adapter=adapter,
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    loop = OptimizationLoop(
+        experiment=exp,
+        executor=executor,
+        proposer=GridProposer(),
+        graders=[DeterministicGrader()],
+        cases=cases,
+        case_concurrency=8,
+    )
+    proposal = loop._proposer.propose(exp, ProposerContext(iteration_index=0, history=()))
+    aggregate, case_runs, _per_case, _persisted = await loop._run_iteration(proposal, iteration=0)
+    # More than one case ran at the same time → inter-case concurrency is real.
+    assert barrier["max"] > 1
+    # gather preserves input order: case_runs line up with the input cases.
+    assert [cr.case_id for cr in case_runs] == [c.id for c in cases]
+    assert [o.case_id for o in aggregate.case_outcomes] == [c.id for c in cases]
