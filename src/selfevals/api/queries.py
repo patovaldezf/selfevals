@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
 from pydantic import BaseModel
 
@@ -76,50 +76,14 @@ class AnchorPoint(BaseModel):
     created_at: str
 
 
-class _ConnectionBacked(Protocol):
-    @property
-    def connection(self) -> Any: ...
-
-
-def _connection(storage: StorageInterface) -> Any:
-    return cast(_ConnectionBacked, storage).connection
-
-
 def list_workspaces(storage: StorageInterface) -> list[WorkspaceSummary]:
-    """Cross-workspace listing. Direct SQL because the typed interface is
-    intentionally scoped — no way to list without a workspace_id."""
-    hot = getattr(storage, "list_workspace_summaries", None)
-    if callable(hot):
-        return cast(list[WorkspaceSummary], hot())
-    conn = _connection(storage)
-    rows = conn.execute(
-        "SELECT payload FROM entities WHERE entity_type = 'Workspace' ORDER BY created_at DESC"
-    ).fetchall()
-    summaries: list[WorkspaceSummary] = []
-    for (payload,) in rows:
-        ws = Workspace.model_validate(json.loads(payload))
-        exp_count = conn.execute(
-            "SELECT COUNT(1) FROM entities WHERE entity_type = 'Experiment' AND workspace_id = ?",
-            (ws.id,),
-        ).fetchone()[0]
-        last_run = conn.execute(
-            "SELECT MAX(updated_at) FROM entities "
-            "WHERE entity_type = 'IterationRecord' AND workspace_id = ?",
-            (ws.id,),
-        ).fetchone()[0]
-        summaries.append(
-            WorkspaceSummary(
-                id=ws.id,
-                slug=ws.slug,
-                name=ws.name,
-                description=ws.description,
-                owner_id=ws.owner_id,
-                created_at=ws.created_at,
-                experiment_count=int(exp_count or 0),
-                last_run_at=last_run,
-            )
-        )
-    return summaries
+    """Cross-workspace listing. The storage backend exposes a dedicated
+    summary method because the typed scope interface is intentionally
+    scoped — no way to list without a workspace_id."""
+    return cast(
+        "list[WorkspaceSummary]",
+        storage.list_workspace_summaries(),  # type: ignore[attr-defined]
+    )
 
 
 def workspace_detail(storage: StorageInterface, *, workspace_id: str) -> WorkspaceResponse | None:
@@ -187,59 +151,22 @@ def list_experiments(
     in one place. If volumes grow, `state` is the field to promote to a real
     column (same note as m0001), and `target_features` to a join/`json_each`.
     """
-    hot = getattr(storage, "list_experiments_page", None)
-    if callable(hot):
-        experiments, total, hot_iteration_counts = hot(
-            workspace_id=workspace_id,
-            limit=limit,
-            offset=offset,
-            state=str(state) if state is not None else None,
-            feature=feature,
-        )
-        return ExperimentListPage(
-            items=[
-                ExperimentSummary(
-                    **_experiment_summary_dict(
-                        exp, iteration_count=hot_iteration_counts.get(exp.id, 0)
-                    )
-                )
-                for exp in experiments
-            ],
-            total=total,
-            limit=limit,
-            offset=offset,
-            has_more=(offset + limit) < total,
-        )
-    with storage.open(workspace_id) as scope:
-        all_experiments = [
-            e
-            for e in scope.list_entities(Experiment, ListFilter(order_by="updated_at"))
-            if isinstance(e, Experiment)
-        ]
-        if state is not None:
-            all_experiments = [e for e in all_experiments if e.state == state]
-        if feature is not None:
-            all_experiments = [
-                e for e in all_experiments if feature in e.taxonomy.target_features
-            ]
-        total = len(all_experiments)
-        page = all_experiments[offset : offset + limit]
-        all_iterations = [
-            it
-            for it in scope.list_entities(IterationRecord, ListFilter())
-            if isinstance(it, IterationRecord)
-        ]
-        iteration_counts: dict[str, int] = {}
-        for it in all_iterations:
-            iteration_counts[it.experiment_id] = iteration_counts.get(it.experiment_id, 0) + 1
-        items = [
-            ExperimentSummary(
-                **_experiment_summary_dict(exp, iteration_count=iteration_counts.get(exp.id, 0))
-            )
-            for exp in page
-        ]
+    experiments, total, iteration_counts = storage.list_experiments_page(  # type: ignore[attr-defined]
+        workspace_id=workspace_id,
+        limit=limit,
+        offset=offset,
+        state=str(state) if state is not None else None,
+        feature=feature,
+    )
     return ExperimentListPage(
-        items=items,
+        items=[
+            ExperimentSummary(
+                **_experiment_summary_dict(
+                    exp, iteration_count=iteration_counts.get(exp.id, 0)
+                )
+            )
+            for exp in experiments
+        ],
         total=total,
         limit=limit,
         offset=offset,
@@ -295,21 +222,8 @@ def experiment_cases(
     the set is reported honestly, not silently trimmed to the optimization
     cases. Ordered by name for a stable, scannable list.
     """
-    hot_cases = getattr(storage, "eval_cases_for_experiment", None)
-    hot_refs = getattr(storage, "latest_trace_refs_by_case", None)
-    if callable(hot_cases) and callable(hot_refs):
-        cases = hot_cases(workspace_id, experiment_id)
-        trace_refs = hot_refs(workspace_id, experiment_id)
-    else:
-        with storage.open(workspace_id) as scope:
-            cases = [
-                c
-                for c in scope.list_entities(
-                    EvalCase, ListFilter(where={"experiment_id": experiment_id})
-                )
-                if isinstance(c, EvalCase)
-            ]
-            trace_refs = _latest_trace_per_case(scope, experiment_id)
+    cases = storage.eval_cases_for_experiment(workspace_id, experiment_id)  # type: ignore[attr-defined]
+    trace_refs = storage.latest_trace_refs_by_case(workspace_id, experiment_id)  # type: ignore[attr-defined]
     cases.sort(key=lambda c: c.name)
     summaries = [_case_summary(c, trace_refs.get(c.id)) for c in cases]
     holdout_count = sum(1 for c in cases if c.holdout)
@@ -318,35 +232,6 @@ def experiment_cases(
         total=len(summaries),
         holdout_count=holdout_count,
     )
-
-
-def _latest_trace_per_case(scope: Any, experiment_id: str) -> dict[str, tuple[str, str]]:
-    """Map each eval_case_id → (run_id, trace_id) of its most recent persisted
-    trace in the experiment, so the cases list can link case → trace.
-
-    "Most recent" = highest `run.iteration`, then latest `environment.started_at`
-    as a tie-break across repetitions. Cases whose traces were never persisted
-    (e.g. they passed under `persist_traces="failed"`) simply don't appear in the
-    map → the summary's trace ids stay None (honest). One scan, same Trace filter
-    as `_load_case_runs`."""
-    traces = [
-        t
-        for t in scope.list_entities(
-            Trace, ListFilter(where={"run.experiment_id": experiment_id})
-        )
-        if isinstance(t, Trace)
-    ]
-    best: dict[str, tuple[int, datetime, str, str]] = {}
-    for t in traces:
-        case_id = t.run.eval_case_id
-        if case_id is None:
-            continue
-        iteration = t.run.iteration if t.run.iteration is not None else -1
-        key = (iteration, t.environment.started_at)
-        current = best.get(case_id)
-        if current is None or key > (current[0], current[1]):
-            best[case_id] = (iteration, t.environment.started_at, t.run.run_id, t.id)
-    return {case_id: (run_id, trace_id) for case_id, (_i, _s, run_id, trace_id) in best.items()}
 
 
 def _case_summary(case: EvalCase, trace_ref: tuple[str, str] | None = None) -> CaseSummary:
@@ -424,27 +309,16 @@ def experiment_results(
         best_iter = best.iteration
         # All best-iteration traces, grouped by case. The first per case is the
         # representative for the case-level row; the full list feeds `turns`.
-        # Use the storage hot-path methods when available (Postgres) to avoid a
-        # full scan, falling back to the generic scope listing (SQLite).
         traces_by_case: dict[str, list[Trace]] = {}
-        hot_traces = getattr(storage, "traces_for_experiment_iteration", None)
-        traces = (
-            hot_traces(workspace_id, experiment_id, best_iter)
-            if callable(hot_traces)
-            else scope.list_entities(
-                Trace,
-                ListFilter(where={"run.experiment_id": experiment_id, "run.iteration": best_iter}),
-            )
+        traces = storage.traces_for_experiment_iteration(  # type: ignore[attr-defined]
+            workspace_id, experiment_id, best_iter
         )
         for t in traces:
             if not isinstance(t, Trace) or t.run.eval_case_id is None:
                 continue
             traces_by_case.setdefault(t.run.eval_case_id, []).append(t)
-        hot_cases = getattr(storage, "eval_cases_for_experiment", None)
-        case_rows = (
-            hot_cases(workspace_id, experiment_id)
-            if callable(hot_cases)
-            else scope.list_entities(EvalCase, ListFilter(where={"experiment_id": experiment_id}))
+        case_rows = storage.eval_cases_for_experiment(  # type: ignore[attr-defined]
+            workspace_id, experiment_id
         )
         cases = {c.id: c for c in case_rows if isinstance(c, EvalCase)}
 
@@ -748,34 +622,15 @@ def load_trace(storage: StorageInterface, *, workspace_id: str, trace_id: str) -
     (`run_...`). Both are common navigation targets — IterationRecord
     persists `run_id`s while internal storage keys by entity id."""
     experiment_name: str | None = None
-    hot = getattr(storage, "trace_by_id_or_run_id", None)
-    with storage.open(workspace_id) as scope:
-        trace = hot(workspace_id, trace_id) if callable(hot) else None
-        if trace is None:
-            try:
-                trace = scope.get_entity(Trace, trace_id)
-            except Exception:
-                trace = None
-        if trace is None:
-            # Fall back to a run_id lookup. The generic entities table
-            # does not index json_extract, but the workspace-scoped
-            # table is small enough that a single scan is fine.
-            conn = _connection(storage)
-            row = conn.execute(
-                "SELECT payload FROM entities "
-                "WHERE workspace_id = ? AND entity_type = 'Trace' "
-                "AND json_extract(payload, '$.run.run_id') = ? LIMIT 1",
-                (workspace_id, trace_id),
-            ).fetchone()
-            if row is None:
-                return None
-            trace = Trace.model_validate(json.loads(row[0]))
-        assert isinstance(trace, Trace)
-        # Resolve the human name while the scope is still open so the
-        # trace viewer can title pages by experiment name (A5: identidad
-        # humana sobre ULID). A missing/orphan experiment is fine —
-        # standalone traces fall back to the run_id.
-        if trace.run.experiment_id is not None:
+    trace = storage.trace_by_id_or_run_id(workspace_id, trace_id)  # type: ignore[attr-defined]
+    if trace is None:
+        return None
+    assert isinstance(trace, Trace)
+    # Resolve the human name so the trace viewer can title pages by experiment
+    # name (A5: identidad humana sobre ULID). A missing/orphan experiment is
+    # fine — standalone traces fall back to the run_id.
+    if trace.run.experiment_id is not None:
+        with storage.open(workspace_id) as scope:
             try:
                 exp = scope.get_entity(Experiment, trace.run.experiment_id)
                 if isinstance(exp, Experiment):
@@ -811,18 +666,7 @@ def load_thread(
     thread view shows the per-turn expected-vs-detected diff, not just the grade.
     Returns None when no trace carries the thread_id.
     """
-    hot = getattr(storage, "traces_by_thread_id", None)
-    if callable(hot):
-        traces = hot(workspace_id, thread_id)
-    else:
-        conn = _connection(storage)
-        rows = conn.execute(
-            "SELECT payload FROM entities "
-            "WHERE workspace_id = ? AND entity_type = 'Trace' "
-            "AND json_extract(payload, '$.run.thread_id') = ?",
-            (workspace_id, thread_id),
-        ).fetchall()
-        traces = [Trace.model_validate(json.loads(payload)) for (payload,) in rows]
+    traces = storage.traces_by_thread_id(workspace_id, thread_id)  # type: ignore[attr-defined]
     if not traces:
         return None
 
@@ -839,14 +683,15 @@ def load_thread(
     # Cross-reference each turn's EvalCase so expected/detected can be derived.
     case_ids = {t.run.eval_case_id for t in traces if t.run.eval_case_id is not None}
     cases: dict[str, EvalCase] = {}
-    for cid in case_ids:
-        case_row = _connection(storage).execute(
-            "SELECT payload FROM entities "
-            "WHERE workspace_id = ? AND entity_type = 'EvalCase' AND id = ? LIMIT 1",
-            (workspace_id, cid),
-        ).fetchone()
-        if case_row is not None:
-            cases[cid] = EvalCase.model_validate(json.loads(case_row[0]))
+    if case_ids:
+        with storage.open(workspace_id) as scope:
+            for cid in case_ids:
+                try:
+                    entity = scope.get_entity(EvalCase, cid)
+                except Exception:
+                    continue
+                if isinstance(entity, EvalCase):
+                    cases[cid] = entity
 
     turns: list[ScenarioResult] = []
     for idx, trace in enumerate(traces):

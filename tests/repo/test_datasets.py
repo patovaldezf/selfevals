@@ -7,8 +7,6 @@ that writes cases + manifest to a scope without any experiment in sight.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from selfevals.repo.datasets import (
@@ -37,8 +35,8 @@ from selfevals.schemas.eval_case import (
 )
 from selfevals.schemas.workspace import Workspace
 from selfevals.storage.errors import WorkspaceMismatchError
-from selfevals.storage.interface import ListFilter
-from selfevals.storage.sqlite import SQLiteStorage
+from selfevals.storage.factory import open_storage
+from selfevals.storage.interface import ListFilter, StorageInterface
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
@@ -148,15 +146,15 @@ def test_build_dataset_respects_split_allocation() -> None:
 # --- persist_dataset (standalone, no experiment) ---------------------------
 
 
-def _storage(tmp_path: Path) -> SQLiteStorage:
-    storage = SQLiteStorage(str(tmp_path / "ds.sqlite"))
+def _storage(db_url: str) -> StorageInterface:
+    storage = open_storage(db_url)
     with storage.open(WS) as scope:
         scope.put_entity(Workspace(id=WS, workspace_id=WS, slug=WS.lower(), name=WS))
     return storage
 
 
-def test_persist_dataset_writes_cases_and_manifest(tmp_path: Path) -> None:
-    storage = _storage(tmp_path)
+def test_persist_dataset_writes_cases_and_manifest(db_url: str) -> None:
+    storage = _storage(db_url)
     cases = [_case(), _case()]
     try:
         with storage.open(WS) as scope:
@@ -181,8 +179,8 @@ def test_persist_dataset_writes_cases_and_manifest(tmp_path: Path) -> None:
     assert all(c.experiment_id is None for c in persisted_cases)
 
 
-def test_persist_dataset_idempotent_on_fixed_id(tmp_path: Path) -> None:
-    storage = _storage(tmp_path)
+def test_persist_dataset_idempotent_on_fixed_id(db_url: str) -> None:
+    storage = _storage(db_url)
     cases = [_case(), _case()]
     fixed = Dataset.make_id()
     try:
@@ -214,8 +212,8 @@ def test_persist_dataset_idempotent_on_fixed_id(tmp_path: Path) -> None:
     assert len(all_datasets) == 1
 
 
-def test_persist_dataset_rejects_cross_workspace_case(tmp_path: Path) -> None:
-    storage = _storage(tmp_path)
+def test_persist_dataset_rejects_cross_workspace_case(db_url: str) -> None:
+    storage = _storage(db_url)
     foreign = _case()
     foreign.workspace_id = "ws_other"
     try:

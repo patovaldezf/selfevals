@@ -95,6 +95,13 @@ class TraceMapper(EntityMapper[Trace]):
     queryable_columns = frozenset(
         {*SHARED_COLUMNS, "run_id", "run_experiment_id", "run_iteration", "run_eval_case_id"}
     )
+    # Accept the logical nested-path names callers used in the SQLite/JSON era.
+    column_aliases = {  # noqa: RUF012 - intentional per-mapper mapping
+        "run.experiment_id": "run_experiment_id",
+        "run.iteration": "run_iteration",
+        "run.run_id": "run_id",
+        "run.eval_case_id": "run_eval_case_id",
+    }
 
     def upsert(self, cur: Any, entity: Trace) -> None:
         t = entity
@@ -272,9 +279,10 @@ class TraceMapper(EntityMapper[Trace]):
             )
             for pos, req in enumerate(span.output.tool_use_requested):
                 cur.execute(
-                    "INSERT INTO trace_llm_tool_requests (span_id, position, tool, tool_use_id) "
-                    "VALUES (%s, %s, %s, %s)",
-                    (span.id, pos, req.tool, req.tool_use_id),
+                    "INSERT INTO trace_llm_tool_requests "
+                    "(trace_id, span_id, position, tool, tool_use_id) "
+                    "VALUES (%s, %s, %s, %s, %s)",
+                    (trace_id, span.id, pos, req.tool, req.tool_use_id),
                 )
         elif isinstance(span, ToolCallSpan):
             cur.execute(
@@ -307,11 +315,13 @@ class TraceMapper(EntityMapper[Trace]):
             cur.execute(
                 """
                 INSERT INTO trace_retrieval_spans
-                  (span_id, retriever, query_pointer, query_hash, query_embedding_model,
-                   top_k_requested, top_k_returned, reranker, grounding_used)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                  (trace_id, span_id, retriever, query_pointer, query_hash,
+                   query_embedding_model, top_k_requested, top_k_returned, reranker,
+                   grounding_used)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
+                    trace_id,
                     span.id,
                     span.retriever,
                     span.query_pointer,
@@ -327,10 +337,12 @@ class TraceMapper(EntityMapper[Trace]):
                 cur.execute(
                     """
                     INSERT INTO trace_retrieved_docs
-                      (span_id, position, doc_id, doc_version, chunk_id, raw_score, rerank_score)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                      (trace_id, span_id, position, doc_id, doc_version, chunk_id,
+                       raw_score, rerank_score)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
+                        trace_id,
                         span.id,
                         pos,
                         doc.doc_id,
@@ -344,10 +356,12 @@ class TraceMapper(EntityMapper[Trace]):
             cur.execute(
                 """
                 INSERT INTO trace_memory_read_spans
-                  (span_id, memory_store, keys_requested, keys_hit, keys_missed, values_pointer)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                  (trace_id, span_id, memory_store, keys_requested, keys_hit, keys_missed,
+                   values_pointer)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
+                    trace_id,
                     span.id,
                     span.memory_store,
                     list(span.keys_requested),
@@ -359,18 +373,20 @@ class TraceMapper(EntityMapper[Trace]):
         elif isinstance(span, MemoryWriteSpan):
             cur.execute(
                 "INSERT INTO trace_memory_write_spans "
-                "(span_id, memory_store, keys_written, values_pointer) VALUES (%s, %s, %s, %s)",
-                (span.id, span.memory_store, list(span.keys_written), span.values_pointer),
+                "(trace_id, span_id, memory_store, keys_written, values_pointer) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (trace_id, span.id, span.memory_store, list(span.keys_written), span.values_pointer),
             )
         elif isinstance(span, DecisionSpan):
             cur.execute(
                 """
                 INSERT INTO trace_decision_spans
-                  (span_id, decision_type, chosen, alternatives_considered, rationale_pointer,
-                   confidence)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                  (trace_id, span_id, decision_type, chosen, alternatives_considered,
+                   rationale_pointer, confidence)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
+                    trace_id,
                     span.id,
                     span.decision_type,
                     span.chosen,
@@ -381,32 +397,33 @@ class TraceMapper(EntityMapper[Trace]):
             )
         elif isinstance(span, HandoffSpan):
             cur.execute(
-                "INSERT INTO trace_handoff_spans (span_id, target, payload_pointer) "
-                "VALUES (%s, %s, %s)",
-                (span.id, span.target, span.payload_pointer),
+                "INSERT INTO trace_handoff_spans (trace_id, span_id, target, payload_pointer) "
+                "VALUES (%s, %s, %s, %s)",
+                (trace_id, span.id, span.target, span.payload_pointer),
             )
         elif isinstance(span, HumanInterventionSpan):
             cur.execute(
                 "INSERT INTO trace_human_intervention_spans "
-                "(span_id, actor, action, rationale_pointer) VALUES (%s, %s, %s, %s)",
-                (span.id, span.actor, span.action, span.rationale_pointer),
+                "(trace_id, span_id, actor, action, rationale_pointer) VALUES (%s, %s, %s, %s, %s)",
+                (trace_id, span.id, span.actor, span.action, span.rationale_pointer),
             )
         elif isinstance(span, GuardrailCheckSpan):
             cur.execute(
                 "INSERT INTO trace_guardrail_check_spans "
-                "(span_id, guardrail, passed, detail_pointer) VALUES (%s, %s, %s, %s)",
-                (span.id, span.guardrail, span.passed, span.detail_pointer),
+                "(trace_id, span_id, guardrail, passed, detail_pointer) VALUES (%s, %s, %s, %s, %s)",
+                (trace_id, span.id, span.guardrail, span.passed, span.detail_pointer),
             )
         elif isinstance(span, ErrorSpan):
             cur.execute(
-                "INSERT INTO trace_error_spans (span_id, error_type, message, recoverable) "
-                "VALUES (%s, %s, %s, %s)",
-                (span.id, span.error_type, span.message, span.recoverable),
+                "INSERT INTO trace_error_spans "
+                "(trace_id, span_id, error_type, message, recoverable) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (trace_id, span.id, span.error_type, span.message, span.recoverable),
             )
         elif isinstance(span, CustomSpan):
             cur.execute(
-                "INSERT INTO trace_custom_spans (span_id, payload) VALUES (%s, %s)",
-                (span.id, Jsonb(span.payload)),
+                "INSERT INTO trace_custom_spans (trace_id, span_id, payload) VALUES (%s, %s, %s)",
+                (trace_id, span.id, Jsonb(span.payload)),
             )
         # AgentTurnSpan: no detail table.
 
@@ -551,23 +568,23 @@ class TraceMapper(EntityMapper[Trace]):
                 "started_at": started_at,
                 "duration_ms": duration_ms,
             }
-            spans.append(self._build_span(cur, kind, span_id, base))
+            spans.append(self._build_span(cur, trace_id, kind, span_id, base))
         return spans
 
-    def _build_span(self, cur: Any, kind: str, span_id: str, base: dict[str, Any]) -> Span:
+    def _build_span(self, cur: Any, trace_id: str, kind: str, span_id: str, base: dict[str, Any]) -> Span:
         if kind == "agent_turn":
             return AgentTurnSpan(**base)
         if kind == "llm_call":
-            return self._build_llm_span(cur, span_id, base)
+            return self._build_llm_span(cur, trace_id, span_id, base)
         if kind == "tool_call":
-            return self._build_tool_span(cur, span_id, base)
+            return self._build_tool_span(cur, trace_id, span_id, base)
         if kind == "retrieval":
-            return self._build_retrieval_span(cur, span_id, base)
+            return self._build_retrieval_span(cur, trace_id, span_id, base)
         if kind == "memory_read":
             cur.execute(
                 "SELECT memory_store, keys_requested, keys_hit, keys_missed, values_pointer "
-                "FROM trace_memory_read_spans WHERE span_id = %s",
-                (span_id,),
+                "FROM trace_memory_read_spans WHERE trace_id = %s AND span_id = %s",
+                (trace_id, span_id),
             )
             store, req, hit, missed, vp = cur.fetchone()
             return MemoryReadSpan(
@@ -581,8 +598,8 @@ class TraceMapper(EntityMapper[Trace]):
         if kind == "memory_write":
             cur.execute(
                 "SELECT memory_store, keys_written, values_pointer "
-                "FROM trace_memory_write_spans WHERE span_id = %s",
-                (span_id,),
+                "FROM trace_memory_write_spans WHERE trace_id = %s AND span_id = %s",
+                (trace_id, span_id),
             )
             store, written, vp = cur.fetchone()
             return MemoryWriteSpan(
@@ -591,8 +608,8 @@ class TraceMapper(EntityMapper[Trace]):
         if kind == "decision":
             cur.execute(
                 "SELECT decision_type, chosen, alternatives_considered, rationale_pointer, "
-                "confidence FROM trace_decision_spans WHERE span_id = %s",
-                (span_id,),
+                "confidence FROM trace_decision_spans WHERE trace_id = %s AND span_id = %s",
+                (trace_id, span_id),
             )
             dt, chosen, alts, rp, conf = cur.fetchone()
             return DecisionSpan(
@@ -605,41 +622,44 @@ class TraceMapper(EntityMapper[Trace]):
             )
         if kind == "handoff":
             cur.execute(
-                "SELECT target, payload_pointer FROM trace_handoff_spans WHERE span_id = %s",
-                (span_id,),
+                "SELECT target, payload_pointer FROM trace_handoff_spans WHERE trace_id = %s AND span_id = %s",
+                (trace_id, span_id),
             )
             target, pp = cur.fetchone()
             return HandoffSpan(**base, target=target, payload_pointer=pp)
         if kind == "human_intervention":
             cur.execute(
                 "SELECT actor, action, rationale_pointer "
-                "FROM trace_human_intervention_spans WHERE span_id = %s",
-                (span_id,),
+                "FROM trace_human_intervention_spans WHERE trace_id = %s AND span_id = %s",
+                (trace_id, span_id),
             )
             actor, action, rp = cur.fetchone()
             return HumanInterventionSpan(**base, actor=actor, action=action, rationale_pointer=rp)
         if kind == "guardrail_check":
             cur.execute(
                 "SELECT guardrail, passed, detail_pointer "
-                "FROM trace_guardrail_check_spans WHERE span_id = %s",
-                (span_id,),
+                "FROM trace_guardrail_check_spans WHERE trace_id = %s AND span_id = %s",
+                (trace_id, span_id),
             )
             guardrail, passed, dp = cur.fetchone()
             return GuardrailCheckSpan(**base, guardrail=guardrail, passed=passed, detail_pointer=dp)
         if kind == "error":
             cur.execute(
-                "SELECT error_type, message, recoverable FROM trace_error_spans WHERE span_id = %s",
-                (span_id,),
+                "SELECT error_type, message, recoverable FROM trace_error_spans WHERE trace_id = %s AND span_id = %s",
+                (trace_id, span_id),
             )
             et, msg, rec = cur.fetchone()
             return ErrorSpan(**base, error_type=et, message=msg, recoverable=rec)
         if kind == "custom":
-            cur.execute("SELECT payload FROM trace_custom_spans WHERE span_id = %s", (span_id,))
+            cur.execute(
+                "SELECT payload FROM trace_custom_spans WHERE trace_id = %s AND span_id = %s",
+                (trace_id, span_id),
+            )
             (payload,) = cur.fetchone()
             return CustomSpan(**base, payload=payload)
         raise ValueError(f"unknown span kind {kind!r}")
 
-    def _build_llm_span(self, cur: Any, span_id: str, base: dict[str, Any]) -> LLMCallSpan:
+    def _build_llm_span(self, cur: Any, trace_id: str, span_id: str, base: dict[str, Any]) -> LLMCallSpan:
         cur.execute(
             """
             SELECT provider, model, model_version_pinned, system_prompt_pointer,
@@ -652,15 +672,15 @@ class TraceMapper(EntityMapper[Trace]):
                    tokens_input_cache_creation, tokens_output, tokens_reasoning, tokens_total,
                    cost_input, cost_cache_read, cost_cache_creation, cost_output, cost_total,
                    time_to_first_token_ms, tokens_per_second, retries, cache_hit, provider_metadata
-            FROM trace_llm_calls WHERE span_id = %s
+            FROM trace_llm_calls WHERE trace_id = %s AND span_id = %s
             """,
-            (span_id,),
+            (trace_id, span_id),
         )
         r = cur.fetchone()
         cur.execute(
             "SELECT tool, tool_use_id FROM trace_llm_tool_requests "
-            "WHERE span_id = %s ORDER BY position",
-            (span_id,),
+            "WHERE trace_id = %s AND span_id = %s ORDER BY position",
+            (trace_id, span_id),
         )
         tool_use_requested = [ToolUseRequest(tool=t, tool_use_id=tid) for t, tid in cur.fetchall()]
         return LLMCallSpan(
@@ -714,14 +734,14 @@ class TraceMapper(EntityMapper[Trace]):
             provider_metadata=r[37],
         )
 
-    def _build_tool_span(self, cur: Any, span_id: str, base: dict[str, Any]) -> ToolCallSpan:
+    def _build_tool_span(self, cur: Any, trace_id: str, span_id: str, base: dict[str, Any]) -> ToolCallSpan:
         cur.execute(
             """
             SELECT tool_name, tool_version, tool_use_id, args_pointer, args_hash,
                    result_pointer, result_hash, status, error, retry_chain, sandboxed, side_effects
-            FROM trace_tool_calls WHERE span_id = %s
+            FROM trace_tool_calls WHERE trace_id = %s AND span_id = %s
             """,
-            (span_id,),
+            (trace_id, span_id),
         )
         r = cur.fetchone()
         return ToolCallSpan(
@@ -740,20 +760,20 @@ class TraceMapper(EntityMapper[Trace]):
             side_effects=r[11],
         )
 
-    def _build_retrieval_span(self, cur: Any, span_id: str, base: dict[str, Any]) -> RetrievalSpan:
+    def _build_retrieval_span(self, cur: Any, trace_id: str, span_id: str, base: dict[str, Any]) -> RetrievalSpan:
         cur.execute(
             """
             SELECT retriever, query_pointer, query_hash, query_embedding_model,
                    top_k_requested, top_k_returned, reranker, grounding_used
-            FROM trace_retrieval_spans WHERE span_id = %s
+            FROM trace_retrieval_spans WHERE trace_id = %s AND span_id = %s
             """,
-            (span_id,),
+            (trace_id, span_id),
         )
         r = cur.fetchone()
         cur.execute(
             "SELECT doc_id, doc_version, chunk_id, raw_score, rerank_score "
-            "FROM trace_retrieved_docs WHERE span_id = %s ORDER BY position",
-            (span_id,),
+            "FROM trace_retrieved_docs WHERE trace_id = %s AND span_id = %s ORDER BY position",
+            (trace_id, span_id),
         )
         retrieved = [
             RetrievedDoc(

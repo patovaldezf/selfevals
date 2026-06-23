@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -20,8 +19,8 @@ from selfevals.schemas.trace import (
     RunInfo,
     Trace,
 )
+from selfevals.storage.factory import open_storage
 from selfevals.storage.seed import seed_workspace
-from selfevals.storage.sqlite import SQLiteStorage
 
 
 @pytest.fixture(autouse=True)
@@ -46,9 +45,9 @@ def _parse_events(body: str) -> list[tuple[str, str]]:
     return events
 
 
-def test_stream_emits_snapshot_and_complete(tmp_path):
+def test_stream_emits_snapshot_and_complete(db_url):
     """A subscriber to a closed run gets snapshot (empty) + complete."""
-    app = build_app(db_path=str(tmp_path / "db.sqlite"))
+    app = build_app(db_path=db_url)
     with TestClient(app) as client:
         # The lifespan handler should have bound the broker's loop.
         broker = get_broker()
@@ -79,7 +78,7 @@ def test_stream_emits_snapshot_and_complete(tmp_path):
     assert json.loads(complete)["final_state"] == "completed"
 
 
-def test_stream_emits_complete_when_snapshot_is_already_terminal(tmp_path: Path) -> None:
+def test_stream_emits_complete_when_snapshot_is_already_terminal(db_url: str) -> None:
     """Regression: a persisted trace whose `final_state` is already
     `completed` (or any non-`running` value) must trigger `complete`
     immediately from the snapshot, without anyone publishing a close
@@ -87,11 +86,11 @@ def test_stream_emits_complete_when_snapshot_is_already_terminal(tmp_path: Path)
     FE never sees `complete`, the "live" pill keeps pulsing on a
     finished trace, and the EventSource leaks across navigations.
     """
-    db_path = str(tmp_path / "db.sqlite")
+    db_path = db_url
     # Seed a finished trace directly into storage. No publisher.close()
     # is called — the only signal that the run is done is the persisted
     # `final_state`.
-    st = SQLiteStorage(db_path)
+    st = open_storage(db_path)
     ws = seed_workspace(st, slug="t", name="t", user_id="local").workspace
     started = datetime(2026, 5, 27, 12, 0, 0, tzinfo=UTC)
     trace = Trace(

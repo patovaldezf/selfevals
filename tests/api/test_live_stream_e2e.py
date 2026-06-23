@@ -96,11 +96,11 @@ def _poll_state(c: TestClient, exp_id: str, *, timeout: float = 15.0) -> str:
     return state
 
 
-def test_run_thread_feeds_the_broker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_thread_feeds_the_broker(db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
     _SpySink.instances.clear()
     monkeypatch.setattr(run_launcher, "BrokerSpanSink", _SpySink)
 
-    app = build_app(db_path=str(tmp_path / "db.sqlite"))
+    app = build_app(db_path=db_url)
     with TestClient(app) as client:
         res = client.post(
             f"/api/workspaces/{WS}/experiments/run", json={"spec_inline": _inline_spec()}
@@ -131,7 +131,7 @@ def test_run_thread_feeds_the_broker(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
 
 def test_live_stream_delivers_a_span_over_http(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    db_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The full browser path: subscribe to /stream for a run_id captured from
     the live sink, and confirm a `span` event arrives over the wire (not just
@@ -139,7 +139,7 @@ def test_live_stream_delivers_a_span_over_http(
     _SpySink.instances.clear()
     monkeypatch.setattr(run_launcher, "BrokerSpanSink", _SpySink)
 
-    app = build_app(db_path=str(tmp_path / "db.sqlite"))
+    app = build_app(db_path=db_url)
     with TestClient(app) as client:
         res = client.post(
             f"/api/workspaces/{WS}/experiments/run", json={"spec_inline": _inline_spec()}

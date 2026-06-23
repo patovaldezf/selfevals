@@ -23,8 +23,8 @@ from selfevals.runner.launch import ensure_workspace_by_id
 from selfevals.schemas.dataset import Dataset, SplitAllocation
 from selfevals.schemas.enums import DatasetStatus, DatasetType
 from selfevals.schemas.eval_case import EvalCase
+from selfevals.storage.factory import open_storage
 from selfevals.storage.interface import ListFilter
-from selfevals.storage.sqlite import SQLiteStorage
 
 
 class DatasetWriteError(ValueError):
@@ -68,7 +68,7 @@ def _persist(
 ) -> DatasetDetailResponse:
     from selfevals.api.queries import dataset_detail
 
-    storage = SQLiteStorage(db_path)
+    storage = open_storage(db_path)
     try:
         ensure_workspace_by_id(storage, workspace_id)
         with storage.open(workspace_id) as scope:
@@ -158,7 +158,7 @@ def freeze_dataset(
     """Recompute the manifest from current cases and set status=FROZEN."""
     from selfevals.api.queries import dataset_detail
 
-    storage = SQLiteStorage(db_path)
+    storage = open_storage(db_path)
     try:
         with storage.open(workspace_id) as scope:
             try:

@@ -81,33 +81,44 @@ class EntityMapper[E: BaseEntity](ABC):
         """Delete the main row by id. Child rows cascade via FK ON DELETE CASCADE."""
         cur.execute(f"DELETE FROM {self.table} WHERE id = %s", (entity_id,))
 
+    #: Logical field name -> real column. Lets callers keep nested-path names
+    #: (e.g. ``run.experiment_id``) that the SQLite JSON era accepted; the mapper
+    #: translates them to the flattened column (``run_experiment_id``).
+    column_aliases: dict[str, str] = {}  # noqa: RUF012 - per-subclass override
+
     # -- helpers shared by concrete mappers ---------------------------------
 
-    def _validate_order_by(self, order_by: str) -> None:
-        if order_by not in self.queryable_columns:
+    def _resolve_column(self, key: str) -> str:
+        return self.column_aliases.get(key, key)
+
+    def _validate_order_by(self, order_by: str) -> str:
+        col = self._resolve_column(order_by)
+        if col not in self.queryable_columns:
             raise ValueError(
                 f"unsupported order_by column {order_by!r} for {self.table}; "
                 f"queryable: {sorted(self.queryable_columns)}"
             )
+        return col
 
     def _scalar_where_sql(
         self, where: dict[str, Any]
     ) -> tuple[list[str], list[Any]]:
         """Translate a ListFilter ``where`` dict into SQL clauses.
 
-        Only keys in ``queryable_columns`` are accepted; anything else is a
-        programming error (the generic JSON-path fallback is gone now that every
-        queryable field is a real column).
+        Keys are resolved through ``column_aliases`` then must name a real
+        queryable column; anything else is a programming error (the generic
+        JSON-path fallback is gone now that every queryable field is a column).
         """
         clauses: list[str] = []
         params: list[Any] = []
         for key, value in where.items():
-            if key not in self.queryable_columns:
+            col = self._resolve_column(key)
+            if col not in self.queryable_columns:
                 raise ValueError(
                     f"cannot filter {self.table} on {key!r}; "
                     f"queryable: {sorted(self.queryable_columns)}"
                 )
-            clauses.append(f"{key} = %s")
+            clauses.append(f"{col} = %s")
             params.append(value)
         return clauses, params
 

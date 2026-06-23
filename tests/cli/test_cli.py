@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -49,7 +48,7 @@ from selfevals.schemas.experiment import (
     TargetSpec,
 )
 from selfevals.schemas.fleet import Agent, ModelRef
-from selfevals.storage.sqlite import SQLiteStorage
+from selfevals.storage.factory import open_storage
 
 
 def _capture(capsys: pytest.CaptureFixture[str], argv: list[str]) -> tuple[int, str, str]:
@@ -58,20 +57,17 @@ def _capture(capsys: pytest.CaptureFixture[str], argv: list[str]) -> tuple[int, 
     return rc, out.out, out.err
 
 
-def test_init_creates_workspace(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    db = tmp_path / "db.sqlite"
-    rc, stdout, _ = _capture(capsys, ["--db", str(db), "init", "my-team", "--name", "My Team"])
+def test_init_creates_workspace(db_url: str, capsys: pytest.CaptureFixture[str]) -> None:
+    rc, stdout, _ = _capture(capsys, ["--db", db_url, "init", "my-team", "--name", "My Team"])
     assert rc == 0
     assert "slug=my-team" in stdout
     assert "name=My Team" in stdout
-    assert db.exists()
 
 
-def test_init_is_idempotent(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    db = tmp_path / "db.sqlite"
-    _capture(capsys, ["--db", str(db), "init", "team"])
+def test_init_is_idempotent(db_url: str, capsys: pytest.CaptureFixture[str]) -> None:
+    _capture(capsys, ["--db", db_url, "init", "team"])
     first = capsys.readouterr()  # drain
-    rc, stdout, _ = _capture(capsys, ["--db", str(db), "init", "team"])
+    rc, stdout, _ = _capture(capsys, ["--db", db_url, "init", "team"])
     assert rc == 0
     assert "slug=team" in stdout
     # Same workspace id implies idempotency.
@@ -116,37 +112,35 @@ def test_estimate_rejects_invalid_args(capsys: pytest.CaptureFixture[str]) -> No
     assert "must all be >= 1" in stderr
 
 
-def test_experiment_list_empty(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    db = tmp_path / "db.sqlite"
+def test_experiment_list_empty(db_url: str, capsys: pytest.CaptureFixture[str]) -> None:
     # Need a real workspace first.
-    _capture(capsys, ["--db", str(db), "init", "team"])
+    _capture(capsys, ["--db", db_url, "init", "team"])
     init_out = capsys.readouterr().out  # drain after capsys reset
     # Extract id from "workspace id=<id> ..." line.
     ws_id = _ws_id_from(init_out)
     if ws_id is None:
         # init_out was already consumed by _capture above; re-init in isolation:
-        rc, init_out, _ = _capture(capsys, ["--db", str(db), "init", "team"])
+        rc, init_out, _ = _capture(capsys, ["--db", db_url, "init", "team"])
         ws_id = _ws_id_from(init_out)
     assert ws_id is not None
-    rc, stdout, _ = _capture(capsys, ["--db", str(db), "experiment", "list", ws_id])
+    rc, stdout, _ = _capture(capsys, ["--db", db_url, "experiment", "list", ws_id])
     assert rc == 0
     assert "(no experiments)" in stdout
 
 
 def test_report_renders_markdown_after_real_run(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    db_url: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    db = tmp_path / "db.sqlite"
-    rc, init_out, _ = _capture(capsys, ["--db", str(db), "init", "team"])
+    rc, init_out, _ = _capture(capsys, ["--db", db_url, "init", "team"])
     assert rc == 0
     ws_id = _ws_id_from(init_out)
     assert ws_id is not None
 
     # Run a real optimization against the same db so iterations land in storage.
-    exp = _seed_experiment_into_db(db, ws_id)
+    exp = _seed_experiment_into_db(db_url, ws_id)
 
     rc, stdout, _ = _capture(
-        capsys, ["--db", str(db), "report", ws_id, exp.id, "--format", "markdown"]
+        capsys, ["--db", db_url, "report", ws_id, exp.id, "--format", "markdown"]
     )
     assert rc == 0
     assert "# Experiment:" in stdout
@@ -156,15 +150,14 @@ def test_report_renders_markdown_after_real_run(
     assert "\n| 1 |" in stdout
 
 
-def test_report_json_round_trips(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    db = tmp_path / "db.sqlite"
-    rc, init_out, _ = _capture(capsys, ["--db", str(db), "init", "team"])
+def test_report_json_round_trips(db_url: str, capsys: pytest.CaptureFixture[str]) -> None:
+    rc, init_out, _ = _capture(capsys, ["--db", db_url, "init", "team"])
     assert rc == 0
     ws_id = _ws_id_from(init_out)
     assert ws_id is not None
-    exp = _seed_experiment_into_db(db, ws_id)
+    exp = _seed_experiment_into_db(db_url, ws_id)
 
-    rc, stdout, _ = _capture(capsys, ["--db", str(db), "report", ws_id, exp.id, "--format", "json"])
+    rc, stdout, _ = _capture(capsys, ["--db", db_url, "report", ws_id, exp.id, "--format", "json"])
     assert rc == 0
     payload = json.loads(stdout)
     assert payload["schema_version"] == "1"
@@ -173,16 +166,15 @@ def test_report_json_round_trips(tmp_path: Path, capsys: pytest.CaptureFixture[s
     assert payload["termination"]["reason"] == "loaded_from_storage"
 
 
-def test_compare_two_iterations(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    db = tmp_path / "db.sqlite"
-    rc, init_out, _ = _capture(capsys, ["--db", str(db), "init", "team"])
+def test_compare_two_iterations(db_url: str, capsys: pytest.CaptureFixture[str]) -> None:
+    rc, init_out, _ = _capture(capsys, ["--db", db_url, "init", "team"])
     assert rc == 0
     ws_id = _ws_id_from(init_out)
     assert ws_id is not None
-    _seed_experiment_into_db(db, ws_id)
+    _seed_experiment_into_db(db_url, ws_id)
 
     # Pull iteration IDs out of storage to feed into compare.
-    storage = SQLiteStorage(db)
+    storage = open_storage(db_url)
     try:
         with storage.open(ws_id) as scope:
             from selfevals.schemas.iteration import IterationRecord
@@ -197,7 +189,7 @@ def test_compare_two_iterations(tmp_path: Path, capsys: pytest.CaptureFixture[st
 
     rc, stdout, _ = _capture(
         capsys,
-        ["--db", str(db), "compare", ws_id, iterations[0].id, iterations[1].id],
+        ["--db", db_url, "compare", ws_id, iterations[0].id, iterations[1].id],
     )
     assert rc == 0
     # New compare layout: header, proposal+metrics diff tables, recommendation.
@@ -209,11 +201,10 @@ def test_compare_two_iterations(tmp_path: Path, capsys: pytest.CaptureFixture[st
 
 
 def test_workspace_show_missing_id_reports_error(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    db_url: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    db = tmp_path / "db.sqlite"
     rc, _, stderr = _capture(
-        capsys, ["--db", str(db), "workspace", "show", "ws_01XXXXXXXXXXXXXXXXXXXXXXXX"]
+        capsys, ["--db", db_url, "workspace", "show", "ws_01XXXXXXXXXXXXXXXXXXXXXXXX"]
     )
     assert rc == 2
     assert "not found" in stderr
@@ -298,28 +289,28 @@ def _adapter_for(ws_id: str, target: str) -> EmbeddedAdapter:
     return EmbeddedAdapter(fn, agent=_agent(ws_id))
 
 
-def _seed_experiment_into_db(db_path: Path, ws_id: str) -> Experiment:
-    """Run a real OptimizationLoop persisting iterations into `db_path`."""
+def _seed_experiment_into_db(db_url: str, ws_id: str) -> Experiment:
+    """Run a real OptimizationLoop persisting iterations into `db_url`."""
     exp = _experiment(ws_id)
-    storage = SQLiteStorage(db_path)
+    storage = open_storage(db_url)
     try:
-        scope = storage.open(ws_id)
-        scope.put_entity(exp)
-        executor = Executor(
-            adapter=_adapter_for(ws_id, "pong"),
-            sandbox=SandboxPolicy(SandboxMode.MOCK),
-            workspace_id=ws_id,
-        )
-        loop = OptimizationLoop(
-            experiment=exp,
-            executor=executor,
-            proposer=GridProposer(),
-            graders=[DeterministicGrader()],
-            cases=[_case(ws_id, "pong")],
-            scope=scope,
-            decision_evaluator=DecisionMatrixEvaluator(),
-        )
-        asyncio.run(loop.run())
+        with storage.open(ws_id) as scope:
+            scope.put_entity(exp)
+            executor = Executor(
+                adapter=_adapter_for(ws_id, "pong"),
+                sandbox=SandboxPolicy(SandboxMode.MOCK),
+                workspace_id=ws_id,
+            )
+            loop = OptimizationLoop(
+                experiment=exp,
+                executor=executor,
+                proposer=GridProposer(),
+                graders=[DeterministicGrader()],
+                cases=[_case(ws_id, "pong")],
+                scope=scope,
+                decision_evaluator=DecisionMatrixEvaluator(),
+            )
+            asyncio.run(loop.run())
     finally:
         storage.close()
     return exp

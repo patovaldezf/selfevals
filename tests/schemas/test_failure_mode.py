@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from collections.abc import Iterator
 
 import pytest
 from pydantic import ValidationError
 
 from selfevals.schemas.enums import FailureModeStatus
 from selfevals.schemas.failure_mode import FailureMode, FailureModeExample
+from selfevals.storage.factory import open_storage
+from selfevals.storage.interface import StorageInterface
 from selfevals.storage.seed import (
     CANONICAL_FAILURE_MODES,
     seed_failure_taxonomy,
     seed_workspace,
 )
-from selfevals.storage.sqlite import SQLiteStorage
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
@@ -55,21 +56,19 @@ def test_examples_round_trip() -> None:
 
 
 @pytest.fixture
-def storage(tmp_path: Path) -> SQLiteStorage:
-    st = SQLiteStorage(str(tmp_path / "b.sqlite"))
-    seed_workspace(st, slug="w", name="w", user_id="local")
-    return st
+def seeded(db_url: str) -> Iterator[tuple[StorageInterface, str]]:
+    st = open_storage(db_url)
+    ws = seed_workspace(st, slug="w", name="w", user_id="local").workspace
+    try:
+        yield st, ws.id
+    finally:
+        st.close()
 
 
-def _ws_id(st: SQLiteStorage) -> str:
-    row = st.connection.execute(
-        "SELECT workspace_id FROM entities WHERE entity_type = 'Workspace' LIMIT 1"
-    ).fetchone()
-    return str(row[0])
-
-
-def test_seed_failure_taxonomy_creates_canonical_official_modes(storage: SQLiteStorage) -> None:
-    ws_id = _ws_id(storage)
+def test_seed_failure_taxonomy_creates_canonical_official_modes(
+    seeded: tuple[StorageInterface, str],
+) -> None:
+    storage, ws_id = seeded
     modes = seed_failure_taxonomy(storage, workspace_id=ws_id)
     assert len(modes) == len(CANONICAL_FAILURE_MODES)
     assert all(m.status == FailureModeStatus.OFFICIAL for m in modes)
@@ -78,8 +77,8 @@ def test_seed_failure_taxonomy_creates_canonical_official_modes(storage: SQLiteS
     assert "tool_call_wrong_tool" in slugs
 
 
-def test_seed_failure_taxonomy_is_idempotent(storage: SQLiteStorage) -> None:
-    ws_id = _ws_id(storage)
+def test_seed_failure_taxonomy_is_idempotent(seeded: tuple[StorageInterface, str]) -> None:
+    storage, ws_id = seeded
     first = seed_failure_taxonomy(storage, workspace_id=ws_id)
     second = seed_failure_taxonomy(storage, workspace_id=ws_id)
     # Same ids returned — nothing duplicated on re-seed.

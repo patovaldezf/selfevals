@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from selfevals.cli.main import app
@@ -21,7 +19,7 @@ from selfevals.schemas.iteration import (
     MetricObservation,
     ProposerInputs,
 )
-from selfevals.storage.sqlite import SQLiteStorage
+from selfevals.storage.factory import open_storage
 from tests.cli.test_cli import _seed_experiment_into_db, _ws_id_from
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
@@ -33,9 +31,9 @@ def _capture(capsys: pytest.CaptureFixture[str], argv: list[str]) -> tuple[int, 
     return rc, out.out, out.err
 
 
-def _load_iterations(db: Path, ws_id: str) -> list[IterationRecord]:
+def _load_iterations(db_url: str, ws_id: str) -> list[IterationRecord]:
     """Load every IterationRecord in `ws_id` sorted by iteration index."""
-    storage = SQLiteStorage(db)
+    storage = open_storage(db_url)
     try:
         with storage.open(ws_id) as scope:
             entities = scope.list_entities(IterationRecord)
@@ -148,20 +146,19 @@ def test_render_compare_different_primary_metrics_warns() -> None:
     assert "different primary metrics" in out
 
 
-def test_cli_compare_shows_diff_tables(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    db = tmp_path / "db.sqlite"
-    rc, init_out, _ = _capture(capsys, ["--db", str(db), "init", "team"])
+def test_cli_compare_shows_diff_tables(db_url: str, capsys: pytest.CaptureFixture[str]) -> None:
+    rc, init_out, _ = _capture(capsys, ["--db", db_url, "init", "team"])
     assert rc == 0
     ws_id = _ws_id_from(init_out)
     assert ws_id is not None
-    _seed_experiment_into_db(db, ws_id)
+    _seed_experiment_into_db(db_url, ws_id)
 
-    iterations = _load_iterations(db, ws_id)
+    iterations = _load_iterations(db_url, ws_id)
     assert len(iterations) == 2
 
     rc, stdout, _ = _capture(
         capsys,
-        ["--db", str(db), "compare", ws_id, iterations[0].id, iterations[1].id],
+        ["--db", db_url, "compare", ws_id, iterations[0].id, iterations[1].id],
     )
     assert rc == 0
     # Header
@@ -177,34 +174,32 @@ def test_cli_compare_shows_diff_tables(tmp_path: Path, capsys: pytest.CaptureFix
 
 
 def test_cli_compare_rejects_iterations_from_different_experiments(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    db_url: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    db = tmp_path / "db.sqlite"
-    rc, init_out, _ = _capture(capsys, ["--db", str(db), "init", "team"])
+    rc, init_out, _ = _capture(capsys, ["--db", db_url, "init", "team"])
     assert rc == 0
     ws_id = _ws_id_from(init_out)
     assert ws_id is not None
-    _seed_experiment_into_db(db, ws_id)
-    all_iters = _load_iterations(db, ws_id)
-    _seed_experiment_into_db(db, ws_id)
-    all_after = _load_iterations(db, ws_id)
+    _seed_experiment_into_db(db_url, ws_id)
+    all_iters = _load_iterations(db_url, ws_id)
+    _seed_experiment_into_db(db_url, ws_id)
+    all_after = _load_iterations(db_url, ws_id)
     # Pick one from experiment A and one from experiment B.
     exp_a_id = all_iters[0].experiment_id
     other = next(it for it in all_after if it.experiment_id != exp_a_id)
 
     rc, _, stderr = _capture(
         capsys,
-        ["--db", str(db), "compare", ws_id, all_iters[0].id, other.id],
+        ["--db", db_url, "compare", ws_id, all_iters[0].id, other.id],
     )
     assert rc == 2
     assert "different experiments" in stderr
 
 
 def test_cli_compare_unknown_iteration_id_reports_error(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    db_url: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    db = tmp_path / "db.sqlite"
-    rc, init_out, _ = _capture(capsys, ["--db", str(db), "init", "team"])
+    rc, init_out, _ = _capture(capsys, ["--db", db_url, "init", "team"])
     assert rc == 0
     ws_id = _ws_id_from(init_out)
     assert ws_id is not None
@@ -212,7 +207,7 @@ def test_cli_compare_unknown_iteration_id_reports_error(
         capsys,
         [
             "--db",
-            str(db),
+            db_url,
             "compare",
             ws_id,
             "itr_01XXXXXXXXXXXXXXXXXXXXXXXX",

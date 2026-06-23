@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import pytest
 
@@ -19,7 +18,7 @@ from selfevals.schemas.trace import (
     RunInfo,
     Trace,
 )
-from selfevals.storage.sqlite import SQLiteStorage
+from selfevals.storage.factory import open_storage
 
 EXP = "exp_cli"
 
@@ -39,8 +38,8 @@ def _capture(capsys: pytest.CaptureFixture[str], argv: list[str], stdin: str = "
     return rc, capsys.readouterr().out
 
 
-def _seed_failed_trace(db: Path, ws: str) -> str:
-    st = SQLiteStorage(str(db))
+def _seed_failed_trace(db_url: str, ws: str) -> str:
+    st = open_storage(db_url)
     trace = Trace(
         id=Trace.make_id(),
         workspace_id=ws,
@@ -62,19 +61,17 @@ def _seed_failed_trace(db: Path, ws: str) -> str:
     return trace.id
 
 
-def test_full_analyze_cycle(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    db = tmp_path / "b.sqlite"
-
+def test_full_analyze_cycle(db_url: str, capsys: pytest.CaptureFixture[str]) -> None:
     # init seeds the canonical taxonomy.
-    rc, out = _capture(capsys, ["--db", str(db), "init", "w", "--name", "W"])
+    rc, out = _capture(capsys, ["--db", db_url, "init", "w", "--name", "W"])
     assert rc == 0
     assert "canonical mode(s) seeded" in out
     ws = out.split("workspace id=")[1].split()[0]
 
-    trace_id = _seed_failed_trace(db, ws)
+    trace_id = _seed_failed_trace(db_url, ws)
 
     # pull emits a bundle with the failed trace and the seeded taxonomy.
-    rc, out = _capture(capsys, ["--db", str(db), "analyze", "pull", ws, EXP])
+    rc, out = _capture(capsys, ["--db", db_url, "analyze", "pull", ws, EXP])
     assert rc == 0
     bundle = json.loads(out)
     assert len(bundle["traces"]) == 1
@@ -93,13 +90,13 @@ def test_full_analyze_cycle(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
         }
     )
     rc, out = _capture(
-        capsys, ["--db", str(db), "analyze", "push", ws, EXP, "--by", "agent:test"], stdin=result
+        capsys, ["--db", db_url, "analyze", "push", ws, EXP, "--by", "agent:test"], stdin=result
     )
     assert rc == 0
     assert "candidates created  : 1" in out
 
     # the candidate shows up and can be promoted.
-    rc, out = _capture(capsys, ["--db", str(db), "failuremode", "list", ws, "--status", "candidate"])
+    rc, out = _capture(capsys, ["--db", db_url, "failuremode", "list", ws, "--status", "candidate"])
     assert rc == 0
     assert "invented_price" in out
     fm_id = next(
@@ -107,17 +104,16 @@ def test_full_analyze_cycle(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
         for tok in line.split() if tok.startswith("fm_")
     )
 
-    rc, out = _capture(capsys, ["--db", str(db), "failuremode", "promote", ws, fm_id])
+    rc, out = _capture(capsys, ["--db", db_url, "failuremode", "promote", ws, fm_id])
     assert rc == 0
     assert "→ official" in out
 
-    rc, out = _capture(capsys, ["--db", str(db), "failuremode", "list", ws, "--status", "official"])
+    rc, out = _capture(capsys, ["--db", db_url, "failuremode", "list", ws, "--status", "official"])
     assert "invented_price" in out
 
 
-def test_push_rejects_empty_stdin(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    db = tmp_path / "b.sqlite"
-    rc, out = _capture(capsys, ["--db", str(db), "init", "w", "--name", "W"])
+def test_push_rejects_empty_stdin(db_url: str, capsys: pytest.CaptureFixture[str]) -> None:
+    rc, out = _capture(capsys, ["--db", db_url, "init", "w", "--name", "W"])
     ws = out.split("workspace id=")[1].split()[0]
-    rc, _ = _capture(capsys, ["--db", str(db), "analyze", "push", ws, EXP], stdin="   ")
+    rc, _ = _capture(capsys, ["--db", db_url, "analyze", "push", ws, EXP], stdin="   ")
     assert rc == 2  # SelfEvalsUserError → exit 2

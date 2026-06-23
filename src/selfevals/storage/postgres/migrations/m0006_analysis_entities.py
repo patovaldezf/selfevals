@@ -17,9 +17,11 @@ CREATE TABLE IF NOT EXISTS hypothesis_records (
     updated_at    TIMESTAMPTZ NOT NULL,
     deleted_at    TIMESTAMPTZ,
 
-    experiment_id        TEXT NOT NULL
-        REFERENCES experiments (id) ON DELETE CASCADE
-        DEFERRABLE INITIALLY DEFERRED,
+    -- experiment_id is a loose reference (no FK): analysis artifacts can be
+    -- ingested for an experiment whose row isn't present in the same store
+    -- (e.g. classifying traces pushed from another run), mirroring how
+    -- traces.run_experiment_id stays unconstrained.
+    experiment_id        TEXT NOT NULL,
     targets_mode_slug    TEXT NOT NULL,
     statement            TEXT NOT NULL,
     suggested_parameters JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -36,9 +38,7 @@ CREATE TABLE IF NOT EXISTS analysis_staging_records (
     updated_at    TIMESTAMPTZ NOT NULL,
     deleted_at    TIMESTAMPTZ,
 
-    experiment_id TEXT NOT NULL
-        REFERENCES experiments (id) ON DELETE CASCADE
-        DEFERRABLE INITIALLY DEFERRED,
+    experiment_id TEXT NOT NULL,  -- loose reference, see hypothesis_records above
     iteration     INTEGER NOT NULL CHECK (iteration >= 0),
     fail_rate     DOUBLE PRECISION NOT NULL,
     threshold     DOUBLE PRECISION NOT NULL,

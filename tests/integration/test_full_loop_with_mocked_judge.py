@@ -77,7 +77,7 @@ from selfevals.schemas.experiment import (
 from selfevals.schemas.fleet import Agent, ModelRef
 from selfevals.schemas.iteration import DecisionRecord, IterationRecord
 from selfevals.schemas.workspace import Workspace
-from selfevals.storage.sqlite import SQLiteStorage
+from selfevals.storage.factory import open_storage
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
@@ -178,12 +178,12 @@ def _mock_judge_adapter() -> EmbeddedAdapter:
 
 
 @pytest.mark.asyncio
-async def test_full_loop_with_deterministic_and_llm_judge(tmp_path: Path) -> None:
+async def test_full_loop_with_deterministic_and_llm_judge(db_url: str) -> None:
     """Run two iterations end-to-end with both graders, then re-read."""
     cases = [_case("c1", "pong"), _case("c2", "pong")]
     experiment = _experiment(max_iterations=2)
 
-    storage = SQLiteStorage(tmp_path / "smoke.sqlite")
+    storage = open_storage(db_url)
     ws = Workspace(id=WS, workspace_id=WS, slug="ws", name="smoke")
     with storage.open(WS) as scope:
         scope.put_entity(ws)

@@ -26,8 +26,8 @@ WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> TestClient:
-    return TestClient(build_app(db_path=str(tmp_path / "selfevals.sqlite")))
+def client(db_url: str) -> TestClient:
+    return TestClient(build_app(db_path=db_url))
 
 
 def _case() -> dict:
@@ -139,7 +139,7 @@ def test_freeze_unknown_dataset_404(client: TestClient) -> None:
     assert resp.status_code == 404
 
 
-def test_workspace_isolation(client: TestClient, tmp_path: Path) -> None:
+def test_workspace_isolation(client: TestClient) -> None:
     _create_inline(client)
     other = client.get("/api/workspaces/ws_other/datasets")
     assert other.status_code == 200

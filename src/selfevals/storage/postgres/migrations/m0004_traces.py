@@ -94,7 +94,7 @@ CREATE INDEX IF NOT EXISTS idx_traces_workspace_case_started
 
 -- Polymorphic span base row.
 CREATE TABLE IF NOT EXISTS trace_spans (
-    span_id    TEXT PRIMARY KEY,
+    span_id    TEXT NOT NULL,
     trace_id   TEXT NOT NULL REFERENCES traces (id) ON DELETE CASCADE,
     workspace_id TEXT NOT NULL,
     span_index INTEGER NOT NULL,
@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS trace_spans (
     name        TEXT NOT NULL,
     started_at  TIMESTAMPTZ NOT NULL,
     duration_ms INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (trace_id, span_id),
     CONSTRAINT trace_spans_index_unique UNIQUE (trace_id, span_index)
 );
 CREATE INDEX IF NOT EXISTS idx_trace_spans_trace ON trace_spans (trace_id, span_index);
@@ -114,8 +115,10 @@ CREATE INDEX IF NOT EXISTS idx_trace_spans_kind ON trace_spans (workspace_id, ki
 
 -- LLM call detail (1:1 with an llm_call span). Tokens/cost/output flattened.
 CREATE TABLE IF NOT EXISTS trace_llm_calls (
-    span_id  TEXT PRIMARY KEY REFERENCES trace_spans (span_id) ON DELETE CASCADE,
+    span_id  TEXT NOT NULL,
     trace_id TEXT NOT NULL,
+    PRIMARY KEY (trace_id, span_id),
+    FOREIGN KEY (trace_id, span_id) REFERENCES trace_spans (trace_id, span_id) ON DELETE CASCADE,
     workspace_id TEXT NOT NULL,
     provider TEXT NOT NULL,
     model    TEXT NOT NULL,
@@ -165,16 +168,20 @@ CREATE INDEX IF NOT EXISTS idx_trace_llm_calls_model
 
 -- LLMOutput.tool_use_requested (ordered list of {tool, tool_use_id}).
 CREATE TABLE IF NOT EXISTS trace_llm_tool_requests (
-    span_id     TEXT NOT NULL REFERENCES trace_llm_calls (span_id) ON DELETE CASCADE,
+    trace_id    TEXT NOT NULL,
+    span_id     TEXT NOT NULL,
     position    INTEGER NOT NULL,
     tool        TEXT NOT NULL,
     tool_use_id TEXT NOT NULL,
-    PRIMARY KEY (span_id, position)
+    PRIMARY KEY (trace_id, span_id, position),
+    FOREIGN KEY (trace_id, span_id) REFERENCES trace_llm_calls (trace_id, span_id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS trace_tool_calls (
-    span_id  TEXT PRIMARY KEY REFERENCES trace_spans (span_id) ON DELETE CASCADE,
+    span_id  TEXT NOT NULL,
     trace_id TEXT NOT NULL,
+    PRIMARY KEY (trace_id, span_id),
+    FOREIGN KEY (trace_id, span_id) REFERENCES trace_spans (trace_id, span_id) ON DELETE CASCADE,
     workspace_id TEXT NOT NULL,
     tool_name    TEXT NOT NULL,
     tool_version TEXT,
@@ -193,7 +200,10 @@ CREATE INDEX IF NOT EXISTS idx_trace_tool_calls_tool
     ON trace_tool_calls (workspace_id, tool_name, status);
 
 CREATE TABLE IF NOT EXISTS trace_retrieval_spans (
-    span_id  TEXT PRIMARY KEY REFERENCES trace_spans (span_id) ON DELETE CASCADE,
+    trace_id TEXT NOT NULL,
+    span_id  TEXT NOT NULL,
+    PRIMARY KEY (trace_id, span_id),
+    FOREIGN KEY (trace_id, span_id) REFERENCES trace_spans (trace_id, span_id) ON DELETE CASCADE,
     retriever TEXT NOT NULL,
     query_pointer TEXT,
     query_hash    TEXT,
@@ -205,18 +215,23 @@ CREATE TABLE IF NOT EXISTS trace_retrieval_spans (
 );
 
 CREATE TABLE IF NOT EXISTS trace_retrieved_docs (
-    span_id   TEXT NOT NULL REFERENCES trace_retrieval_spans (span_id) ON DELETE CASCADE,
+    trace_id  TEXT NOT NULL,
+    span_id   TEXT NOT NULL,
     position  INTEGER NOT NULL,
     doc_id    TEXT NOT NULL,
     doc_version TEXT,
     chunk_id  TEXT,
     raw_score DOUBLE PRECISION,
     rerank_score DOUBLE PRECISION,
-    PRIMARY KEY (span_id, position)
+    PRIMARY KEY (trace_id, span_id, position),
+    FOREIGN KEY (trace_id, span_id) REFERENCES trace_retrieval_spans (trace_id, span_id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS trace_memory_read_spans (
-    span_id      TEXT PRIMARY KEY REFERENCES trace_spans (span_id) ON DELETE CASCADE,
+    trace_id TEXT NOT NULL,
+    span_id  TEXT NOT NULL,
+    PRIMARY KEY (trace_id, span_id),
+    FOREIGN KEY (trace_id, span_id) REFERENCES trace_spans (trace_id, span_id) ON DELETE CASCADE,
     memory_store TEXT NOT NULL,
     keys_requested TEXT[] NOT NULL DEFAULT '{}',
     keys_hit       TEXT[] NOT NULL DEFAULT '{}',
@@ -225,14 +240,20 @@ CREATE TABLE IF NOT EXISTS trace_memory_read_spans (
 );
 
 CREATE TABLE IF NOT EXISTS trace_memory_write_spans (
-    span_id      TEXT PRIMARY KEY REFERENCES trace_spans (span_id) ON DELETE CASCADE,
+    trace_id TEXT NOT NULL,
+    span_id  TEXT NOT NULL,
+    PRIMARY KEY (trace_id, span_id),
+    FOREIGN KEY (trace_id, span_id) REFERENCES trace_spans (trace_id, span_id) ON DELETE CASCADE,
     memory_store TEXT NOT NULL,
     keys_written TEXT[] NOT NULL DEFAULT '{}',
     values_pointer TEXT
 );
 
 CREATE TABLE IF NOT EXISTS trace_decision_spans (
-    span_id       TEXT PRIMARY KEY REFERENCES trace_spans (span_id) ON DELETE CASCADE,
+    trace_id      TEXT NOT NULL,
+    span_id       TEXT NOT NULL,
+    PRIMARY KEY (trace_id, span_id),
+    FOREIGN KEY (trace_id, span_id) REFERENCES trace_spans (trace_id, span_id) ON DELETE CASCADE,
     decision_type TEXT NOT NULL,
     chosen        TEXT NOT NULL,
     alternatives_considered TEXT[] NOT NULL DEFAULT '{}',
@@ -241,34 +262,49 @@ CREATE TABLE IF NOT EXISTS trace_decision_spans (
 );
 
 CREATE TABLE IF NOT EXISTS trace_handoff_spans (
-    span_id TEXT PRIMARY KEY REFERENCES trace_spans (span_id) ON DELETE CASCADE,
+    trace_id TEXT NOT NULL,
+    span_id  TEXT NOT NULL,
+    PRIMARY KEY (trace_id, span_id),
+    FOREIGN KEY (trace_id, span_id) REFERENCES trace_spans (trace_id, span_id) ON DELETE CASCADE,
     target  TEXT NOT NULL,
     payload_pointer TEXT
 );
 
 CREATE TABLE IF NOT EXISTS trace_human_intervention_spans (
-    span_id TEXT PRIMARY KEY REFERENCES trace_spans (span_id) ON DELETE CASCADE,
+    trace_id TEXT NOT NULL,
+    span_id  TEXT NOT NULL,
+    PRIMARY KEY (trace_id, span_id),
+    FOREIGN KEY (trace_id, span_id) REFERENCES trace_spans (trace_id, span_id) ON DELETE CASCADE,
     actor   TEXT NOT NULL,
     action  TEXT NOT NULL,
     rationale_pointer TEXT
 );
 
 CREATE TABLE IF NOT EXISTS trace_guardrail_check_spans (
-    span_id   TEXT PRIMARY KEY REFERENCES trace_spans (span_id) ON DELETE CASCADE,
+    trace_id TEXT NOT NULL,
+    span_id  TEXT NOT NULL,
+    PRIMARY KEY (trace_id, span_id),
+    FOREIGN KEY (trace_id, span_id) REFERENCES trace_spans (trace_id, span_id) ON DELETE CASCADE,
     guardrail TEXT NOT NULL,
     passed    BOOLEAN NOT NULL,
     detail_pointer TEXT
 );
 
 CREATE TABLE IF NOT EXISTS trace_error_spans (
-    span_id     TEXT PRIMARY KEY REFERENCES trace_spans (span_id) ON DELETE CASCADE,
+    trace_id TEXT NOT NULL,
+    span_id  TEXT NOT NULL,
+    PRIMARY KEY (trace_id, span_id),
+    FOREIGN KEY (trace_id, span_id) REFERENCES trace_spans (trace_id, span_id) ON DELETE CASCADE,
     error_type  TEXT NOT NULL,
     message     TEXT NOT NULL,
     recoverable BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS trace_custom_spans (
-    span_id TEXT PRIMARY KEY REFERENCES trace_spans (span_id) ON DELETE CASCADE,
+    trace_id TEXT NOT NULL,
+    span_id  TEXT NOT NULL,
+    PRIMARY KEY (trace_id, span_id),
+    FOREIGN KEY (trace_id, span_id) REFERENCES trace_spans (trace_id, span_id) ON DELETE CASCADE,
     payload JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 

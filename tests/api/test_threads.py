@@ -3,8 +3,8 @@ ordered conversation, each turn carrying its grader results."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import pytest
 
@@ -18,8 +18,8 @@ from selfevals.schemas.trace import (
     RunInfo,
     Trace,
 )
+from selfevals.storage.factory import open_storage
 from selfevals.storage.seed import seed_workspace
-from selfevals.storage.sqlite import SQLiteStorage
 
 T0 = datetime(2026, 5, 25, 12, 0, 0, tzinfo=UTC)
 
@@ -59,8 +59,8 @@ def _trace(
 
 
 @pytest.fixture
-def storage(tmp_path: Path) -> SQLiteStorage:
-    st = SQLiteStorage(str(tmp_path / "selfevals.sqlite"))
+def seeded_storage(db_url: str) -> Iterator[object]:
+    st = open_storage(db_url)
     seeded = seed_workspace(st, slug="t", name="t", user_id="local")
     ws = seeded.workspace
     # Three turns of one thread, inserted out of order, plus a decoy trace
@@ -71,12 +71,15 @@ def storage(tmp_path: Path) -> SQLiteStorage:
         scope.put_entity(_trace(ws.id, thread_id="th_1", position=1, started_offset_s=20, grade="fail"))
         scope.put_entity(_trace(ws.id, thread_id="th_other", position=0, started_offset_s=5))
     st._test_workspace_id = ws.id  # type: ignore[attr-defined]
-    return st
+    try:
+        yield st
+    finally:
+        st.close()
 
 
-def test_load_thread_orders_by_position_and_projects_grades(storage: SQLiteStorage) -> None:
-    ws_id = storage._test_workspace_id  # type: ignore[attr-defined]
-    thread = load_thread(storage, workspace_id=ws_id, thread_id="th_1")
+def test_load_thread_orders_by_position_and_projects_grades(seeded_storage: object) -> None:
+    ws_id = seeded_storage._test_workspace_id  # type: ignore[attr-defined]
+    thread = load_thread(seeded_storage, workspace_id=ws_id, thread_id="th_1")
     assert thread is not None
     assert thread.thread_id == "th_1"
     assert thread.turn_count == 3
@@ -89,8 +92,8 @@ def test_load_thread_orders_by_position_and_projects_grades(storage: SQLiteStora
     assert thread.turns[1].grader_results[0]["label"] == "fail"
 
 
-def test_load_thread_falls_back_to_started_at_without_positions(tmp_path: Path) -> None:
-    st = SQLiteStorage(str(tmp_path / "b.sqlite"))
+def test_load_thread_falls_back_to_started_at_without_positions(db_url: str) -> None:
+    st = open_storage(db_url)
     ws = seed_workspace(st, slug="t2", name="t2", user_id="local").workspace
     with st.open(ws.id) as scope:
         scope.put_entity(_trace(ws.id, thread_id="th_x", position=None, started_offset_s=30))
@@ -101,11 +104,12 @@ def test_load_thread_falls_back_to_started_at_without_positions(tmp_path: Path) 
     # No explicit positions → chronological by started_at; positions become 0,1,2.
     assert [t.run_id for t in thread.turns] == ["run_10", "run_20", "run_30"]
     assert [t.position for t in thread.turns] == [0, 1, 2]
+    st.close()
 
 
-def test_load_thread_unknown_returns_none(storage: SQLiteStorage) -> None:
-    ws_id = storage._test_workspace_id  # type: ignore[attr-defined]
-    assert load_thread(storage, workspace_id=ws_id, thread_id="nope") is None
+def test_load_thread_unknown_returns_none(seeded_storage: object) -> None:
+    ws_id = seeded_storage._test_workspace_id  # type: ignore[attr-defined]
+    assert load_thread(seeded_storage, workspace_id=ws_id, thread_id="nope") is None
 
 
 def _conversation_case(workspace_id: str) -> object:
@@ -171,13 +175,18 @@ def _turn_trace(workspace_id: str, *, case_id: str, position: int, structured: d
     )
 
 
-def test_load_thread_turns_carry_expected_detected_per_turn(tmp_path: Path) -> None:
+def test_load_thread_turns_carry_expected_detected_per_turn(db_url: str) -> None:
     """Each turn is a ScenarioResult with its own expected/detected derived from
     the turn's EvalCase — the fix for 'detected vs expected pendiente por turno'."""
-    st = SQLiteStorage(str(tmp_path / "conv.sqlite"))
+    from tests.api._experiment_factory import make_experiment
+
+    st = open_storage(db_url)
     ws = seed_workspace(st, slug="c", name="c", user_id="local").workspace
     case = _conversation_case(ws.id)
     with st.open(ws.id) as scope:
+        # `_conversation_case` stamps experiment_id="exp_1"; Postgres enforces the
+        # eval_cases→experiments FK, so the parent experiment must exist first.
+        scope.put_entity(make_experiment(workspace_id=ws.id, id="exp_1", name="conv exp"))
         scope.put_entity(case)
         scope.put_entity(_turn_trace(ws.id, case_id=case.id, position=0, structured={"intent": "greet"}))
         scope.put_entity(_turn_trace(ws.id, case_id=case.id, position=1, structured={"intent": "other"}))
