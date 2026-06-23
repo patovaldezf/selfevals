@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -60,15 +59,15 @@ from selfevals.schemas.experiment import (
 from selfevals.schemas.fleet import Agent, ModelRef
 from selfevals.schemas.trace import Trace
 from selfevals.schemas.workspace import Workspace
-from selfevals.storage.sqlite import SQLiteStorage
+from selfevals.storage.factory import open_storage
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
 
-def _case() -> EvalCase:
+def _case(workspace_id: str = WS) -> EvalCase:
     return EvalCase(
         id=EvalCase.make_id(),
-        workspace_id=WS,
+        workspace_id=workspace_id,
         name="t",
         task_type="x",
         input={"messages": [{"role": "user", "content": "hi"}]},
@@ -99,10 +98,11 @@ def _experiment(
     search_space: dict[str, Any],
     error_analysis: ErrorAnalysisSpec | None = None,
     persist_traces: str = "failed",
+    workspace_id: str = WS,
 ) -> Experiment:
     return Experiment(
         id=Experiment.make_id(),
-        workspace_id=WS,
+        workspace_id=workspace_id,
         name="exp",
         goal="exp",
         mode=Mode.HANDOFF,
@@ -149,21 +149,26 @@ def _passing_adapter() -> EmbeddedAdapter:
 
 
 def _scoped_loop(
-    exp: Experiment, adapter: EmbeddedAdapter, tmp_path: Path, *, db_name: str = "db.sqlite"
-) -> tuple[OptimizationLoop, SQLiteStorage]:
-    storage = SQLiteStorage(tmp_path / db_name)
-    with storage.open(WS) as scope:
-        scope.put_entity(Workspace(id=WS, workspace_id=WS, slug="t", name="t"))
+    exp: Experiment, adapter: EmbeddedAdapter, db_url: str, *, workspace_id: str = WS
+) -> tuple[OptimizationLoop, object]:
+    storage = open_storage(db_url)
+    with storage.open(workspace_id) as scope:
+        # Derive a unique slug from the workspace id: two loops in one test share
+        # the same per-test Postgres DB, and workspace slug is globally unique.
+        slug = workspace_id.replace("_", "-").lower()[:63]
+        scope.put_entity(
+            Workspace(id=workspace_id, workspace_id=workspace_id, slug=slug, name="t")
+        )
     executor = Executor(
-        adapter=adapter, sandbox=SandboxPolicy(SandboxMode.MOCK), workspace_id=WS
+        adapter=adapter, sandbox=SandboxPolicy(SandboxMode.MOCK), workspace_id=workspace_id
     )
     loop = OptimizationLoop(
         experiment=exp,
         executor=executor,
         proposer=GridProposer(),
         graders=[DeterministicGrader()],
-        cases=[_case()],
-        scope=storage.open(WS),
+        cases=[_case(workspace_id=workspace_id)],
+        scope=storage.open(workspace_id),
     )
     return loop, storage
 
@@ -174,7 +179,7 @@ def test_dominant_modes_orders_by_count_then_id() -> None:
 
 
 @pytest.mark.asyncio
-async def test_stages_analysis_when_fail_rate_clears_threshold(tmp_path: Path) -> None:
+async def test_stages_analysis_when_fail_rate_clears_threshold(db_url: str) -> None:
     exp = _experiment(
         max_iterations=1,
         search_space={"level": [0.0]},
@@ -182,7 +187,7 @@ async def test_stages_analysis_when_fail_rate_clears_threshold(tmp_path: Path) -
             enabled=True, trigger=AnalysisTriggerSpec(threshold=0.10)
         ),
     )
-    loop, storage = _scoped_loop(exp, _failing_adapter(), tmp_path)
+    loop, storage = _scoped_loop(exp, _failing_adapter(), db_url)
     await loop.run()
     with storage.open(WS) as s:
         staged = [e for e in s.list_entities(AnalysisStagingRecord)]
@@ -196,9 +201,9 @@ async def test_stages_analysis_when_fail_rate_clears_threshold(tmp_path: Path) -
 
 
 @pytest.mark.asyncio
-async def test_does_not_stage_when_disabled(tmp_path: Path) -> None:
+async def test_does_not_stage_when_disabled(db_url: str) -> None:
     exp = _experiment(max_iterations=1, search_space={"level": [0.0]})  # disabled default
-    loop, storage = _scoped_loop(exp, _failing_adapter(), tmp_path)
+    loop, storage = _scoped_loop(exp, _failing_adapter(), db_url)
     await loop.run()
     with storage.open(WS) as s:
         staged = list(s.list_entities(AnalysisStagingRecord))
@@ -207,7 +212,7 @@ async def test_does_not_stage_when_disabled(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_does_not_stage_when_run_is_healthy(tmp_path: Path) -> None:
+async def test_does_not_stage_when_run_is_healthy(db_url: str) -> None:
     exp = _experiment(
         max_iterations=1,
         search_space={"level": [1.0]},
@@ -215,7 +220,7 @@ async def test_does_not_stage_when_run_is_healthy(tmp_path: Path) -> None:
             enabled=True, trigger=AnalysisTriggerSpec(threshold=0.10)
         ),
     )
-    loop, storage = _scoped_loop(exp, _passing_adapter(), tmp_path)
+    loop, storage = _scoped_loop(exp, _passing_adapter(), db_url)
     await loop.run()
     with storage.open(WS) as s:
         staged = list(s.list_entities(AnalysisStagingRecord))
@@ -224,10 +229,10 @@ async def test_does_not_stage_when_run_is_healthy(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_failure_modes_consulted_carries_prior_iteration(tmp_path: Path) -> None:
+async def test_failure_modes_consulted_carries_prior_iteration(db_url: str) -> None:
     # Two failing iterations: iteration 1 should be shown iteration 0's modes.
     exp = _experiment(max_iterations=2, search_space={"level": [0.0, 0.0]})
-    loop, storage = _scoped_loop(exp, _failing_adapter(), tmp_path)
+    loop, storage = _scoped_loop(exp, _failing_adapter(), db_url)
     result = await loop.run()
     storage.close()
     assert len(result.iterations) == 2
@@ -240,15 +245,15 @@ async def test_failure_modes_consulted_carries_prior_iteration(tmp_path: Path) -
     ]
 
 
-def _persisted_traces(storage: SQLiteStorage) -> list[Trace]:
-    with storage.open(WS) as s:
+def _persisted_traces(storage: object, workspace_id: str = WS) -> list[Trace]:
+    with storage.open(workspace_id) as s:  # type: ignore[attr-defined]
         return [t for t in s.list_entities(Trace) if isinstance(t, Trace)]
 
 
 @pytest.mark.asyncio
-async def test_persist_traces_none_writes_no_traces(tmp_path: Path) -> None:
+async def test_persist_traces_none_writes_no_traces(db_url: str) -> None:
     exp = _experiment(max_iterations=1, search_space={"level": [0.0]}, persist_traces="none")
-    loop, storage = _scoped_loop(exp, _failing_adapter(), tmp_path)
+    loop, storage = _scoped_loop(exp, _failing_adapter(), db_url)
     await loop.run()
     traces = _persisted_traces(storage)
     storage.close()
@@ -256,10 +261,10 @@ async def test_persist_traces_none_writes_no_traces(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_persist_traces_all_writes_every_trace(tmp_path: Path) -> None:
+async def test_persist_traces_all_writes_every_trace(db_url: str) -> None:
     # One passing iteration → its trace is still persisted under `all`.
     exp = _experiment(max_iterations=1, search_space={"level": [1.0]}, persist_traces="all")
-    loop, storage = _scoped_loop(exp, _passing_adapter(), tmp_path)
+    loop, storage = _scoped_loop(exp, _passing_adapter(), db_url)
     await loop.run()
     traces = _persisted_traces(storage)
     storage.close()
@@ -271,27 +276,32 @@ async def test_persist_traces_all_writes_every_trace(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_persist_traces_failed_keeps_only_failures(tmp_path: Path) -> None:
+async def test_persist_traces_failed_keeps_only_failures(db_url: str) -> None:
     # A failing run → the trace IS persisted (it failed) with its mode tag.
     failing = _experiment(max_iterations=1, search_space={"level": [0.0]})  # default "failed"
-    loop, storage = _scoped_loop(failing, _failing_adapter(), tmp_path)
+    loop, storage = _scoped_loop(failing, _failing_adapter(), db_url)
     await loop.run()
     traces = _persisted_traces(storage)
     assert len(traces) == 1
     assert "missing_required_substring" in traces[0].grader_results[0].failure_modes
     storage.close()
 
-    # A passing run under the same default → nothing persisted.
-    passing = _experiment(max_iterations=1, search_space={"level": [1.0]})
-    loop2, storage2 = _scoped_loop(passing, _passing_adapter(), tmp_path, db_name="pass.sqlite")
+    # A passing run under the same default → nothing persisted. Both storages
+    # share the per-test Postgres DB, so isolate the passing run in its own
+    # workspace to keep the failing run's trace out of this assertion.
+    ws_pass = "ws_01HZZZZZZZZZZZZZZZZZZZZZZY"
+    passing = _experiment(max_iterations=1, search_space={"level": [1.0]}, workspace_id=ws_pass)
+    loop2, storage2 = _scoped_loop(
+        passing, _passing_adapter(), db_url, workspace_id=ws_pass
+    )
     await loop2.run()
-    traces2 = _persisted_traces(storage2)
+    traces2 = _persisted_traces(storage2, ws_pass)
     storage2.close()
     assert traces2 == []
 
 
 @pytest.mark.asyncio
-async def test_llm_proposer_offline_consumes_seeded_hypotheses(tmp_path: Path) -> None:
+async def test_llm_proposer_offline_consumes_seeded_hypotheses(db_url: str) -> None:
     # The loop reads HypothesisRecord seeds from storage, the offline
     # LLMProposer applies them in order, and the loop persists each as
     # consumed so it isn't replayed. After the single seed is consumed the
@@ -299,9 +309,12 @@ async def test_llm_proposer_offline_consumes_seeded_hypotheses(tmp_path: Path) -
     exp = _experiment(max_iterations=5, search_space={"level": [0.0]})
     exp.proposer = ProposerSpec(strategy=ProposerStrategy.LLM_PROPOSER)
 
-    storage = SQLiteStorage(tmp_path / "llm.sqlite")
+    storage = open_storage(db_url)
     with storage.open(WS) as scope:
         scope.put_entity(Workspace(id=WS, workspace_id=WS, slug="t", name="t"))
+        # The experiment must exist before a HypothesisRecord can reference it
+        # (FK hypothesis_records.experiment_id → experiments.id).
+        scope.put_entity(exp)
         scope.put_entity(
             HypothesisRecord(
                 id=HypothesisRecord.make_id(),

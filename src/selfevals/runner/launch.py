@@ -785,9 +785,12 @@ def build_loop(
                 unregister_grader(name)
 
     if scope is not None:
+        # Persist the experiment FIRST: eval_cases carry an experiment_id FK to
+        # it, so the parent row must exist before the children. (SQLite tolerated
+        # the reverse order silently; Postgres enforces the FK.)
+        scope.put_entity(spec.experiment)
         _persist_cases(scope, spec)
         _materialize_inline_dataset(scope, spec)
-        scope.put_entity(spec.experiment)
 
     # Start an embedded OTLP receiver only for out-of-process agents (cli/http):
     # those run in a separate process and can export their own spans (LLM calls,

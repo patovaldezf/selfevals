@@ -55,7 +55,7 @@ def test_build_adapter_embedded_bad_entrypoint_is_user_error() -> None:
         build_adapter(EmbeddedAgentSpec(entrypoint=ep))
 
 
-def test_build_loop_persists_cases_stamped_with_experiment_id(tmp_path: object) -> None:
+def test_build_loop_persists_cases_stamped_with_experiment_id(db_url: str) -> None:
     """build_loop must write the run's eval cases, stamped with experiment_id,
     so `GET .../experiments/{id}/cases` has something to list. Authoring leaves
     experiment_id None; persistence is where the link gets made."""
@@ -67,8 +67,8 @@ def test_build_loop_persists_cases_stamped_with_experiment_id(tmp_path: object) 
     from selfevals.repo.loader import build_spec_from_mapping
     from selfevals.runner.launch import build_loop, ensure_workspace
     from selfevals.schemas.eval_case import EvalCase
+    from selfevals.storage.factory import open_storage
     from selfevals.storage.interface import ListFilter
-    from selfevals.storage.sqlite import SQLiteStorage
 
     repo_root = Path(__file__).resolve().parents[2]
     raw = yaml.safe_load((repo_root / "evals/experiments/example_pingpong.yaml").read_text())
@@ -84,8 +84,7 @@ def test_build_loop_persists_cases_stamped_with_experiment_id(tmp_path: object) 
     # Authoring: cases carry no experiment link yet.
     assert all(c.experiment_id is None for c in spec.cases)
 
-    db = Path(str(tmp_path)) / "cases.sqlite"
-    storage = SQLiteStorage(str(db))
+    storage = open_storage(db_url)
     try:
         ensure_workspace(storage, spec)
         with storage.open(ws) as scope:
@@ -219,20 +218,17 @@ def _inline_spec(ws: str) -> object:
     return build_spec_from_mapping(raw, workspace_id=ws)
 
 
-def test_build_loop_materializes_inline_dataset(tmp_path: object) -> None:
+def test_build_loop_materializes_inline_dataset(db_url: str) -> None:
     """An inline run materializes a real Dataset over its cases and rewrites the
     experiment's dataset refs to point at it — no more dangling placeholder."""
-    from pathlib import Path
-
     from selfevals.runner.launch import build_loop, ensure_workspace
     from selfevals.schemas.dataset import Dataset, DatasetStatus
+    from selfevals.storage.factory import open_storage
     from selfevals.storage.interface import ListFilter
-    from selfevals.storage.sqlite import SQLiteStorage
 
     ws = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
     spec = _inline_spec(ws)
-    db = Path(str(tmp_path)) / "ds.sqlite"
-    storage = SQLiteStorage(str(db))
+    storage = open_storage(db_url)
     try:
         ensure_workspace(storage, spec)  # type: ignore[arg-type]
         with storage.open(ws) as scope:
@@ -256,20 +252,17 @@ def test_build_loop_materializes_inline_dataset(tmp_path: object) -> None:
     assert [r.id for r in spec.experiment.frozen.datasets] == [ds.id]  # type: ignore[attr-defined]
 
 
-def test_inline_dataset_materialization_is_idempotent(tmp_path: object) -> None:
+def test_inline_dataset_materialization_is_idempotent(db_url: str) -> None:
     """Relaunching the same experiment updates the same Dataset row in place
     (id derived from the experiment id) rather than spawning a duplicate."""
-    from pathlib import Path
-
     from selfevals.runner.launch import build_loop, ensure_workspace
     from selfevals.schemas.dataset import Dataset
+    from selfevals.storage.factory import open_storage
     from selfevals.storage.interface import ListFilter
-    from selfevals.storage.sqlite import SQLiteStorage
 
     ws = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
     spec = _inline_spec(ws)
-    db = Path(str(tmp_path)) / "ds.sqlite"
-    storage = SQLiteStorage(str(db))
+    storage = open_storage(db_url)
     try:
         ensure_workspace(storage, spec)  # type: ignore[arg-type]
         for _ in range(2):
@@ -285,7 +278,7 @@ def test_inline_dataset_materialization_is_idempotent(tmp_path: object) -> None:
     assert len(datasets) == 1
 
 
-def test_ref_dataset_resolution_hydrates_cases_and_split(tmp_path: object) -> None:
+def test_ref_dataset_resolution_hydrates_cases_and_split(db_url: str) -> None:
     """A `dataset: {ref: ds_x}` spec resolves the persisted dataset at launch:
     its cases hydrate `spec.cases` and its split allocation reaches the loop."""
     from pathlib import Path
@@ -297,12 +290,11 @@ def test_ref_dataset_resolution_hydrates_cases_and_split(tmp_path: object) -> No
     from selfevals.runner.launch import _resolve_dataset_source, ensure_workspace_by_id
     from selfevals.schemas.dataset import SplitAllocation
     from selfevals.schemas.enums import DatasetType
-    from selfevals.storage.sqlite import SQLiteStorage
+    from selfevals.storage.factory import open_storage
 
     ws = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
     repo_root = Path(__file__).resolve().parents[2]
-    db = Path(str(tmp_path)) / "ref.sqlite"
-    storage = SQLiteStorage(str(db))
+    storage = open_storage(db_url)
     try:
         ensure_workspace_by_id(storage, ws)
         cases = load_cases_from_jsonl(
@@ -357,7 +349,7 @@ def test_ref_dataset_without_scope_is_user_error() -> None:
         build_loop(spec, scope=None, repetitions_per_case=1)
 
 
-def test_ref_dataset_missing_is_user_error(tmp_path: object) -> None:
+def test_ref_dataset_missing_is_user_error(db_url: str) -> None:
     """A ref to a dataset that isn't in storage fails with a clear message."""
     from pathlib import Path
 
@@ -365,7 +357,7 @@ def test_ref_dataset_missing_is_user_error(tmp_path: object) -> None:
 
     from selfevals.repo.loader import build_spec_from_mapping
     from selfevals.runner.launch import build_loop, ensure_workspace_by_id
-    from selfevals.storage.sqlite import SQLiteStorage
+    from selfevals.storage.factory import open_storage
 
     ws = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
     repo_root = Path(__file__).resolve().parents[2]
@@ -374,8 +366,7 @@ def test_ref_dataset_missing_is_user_error(tmp_path: object) -> None:
     )
     raw["dataset"] = {"ref": "ds_01HZZZZZZZZZZZZZZZZZZZZZZZ"}
     spec = build_spec_from_mapping(raw, workspace_id=ws)
-    db = Path(str(tmp_path)) / "missing.sqlite"
-    storage = SQLiteStorage(str(db))
+    storage = open_storage(db_url)
     try:
         ensure_workspace_by_id(storage, ws)
         with storage.open(ws) as scope, pytest.raises(SelfEvalsUserError, match="not found"):

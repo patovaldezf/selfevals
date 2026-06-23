@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -50,7 +49,7 @@ from selfevals.schemas.experiment import (
 from selfevals.schemas.fleet import Agent, ModelRef
 from selfevals.schemas.iteration import DecisionRecord, IterationRecord
 from selfevals.schemas.workspace import Workspace
-from selfevals.storage.sqlite import SQLiteStorage
+from selfevals.storage.factory import open_storage
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
@@ -135,13 +134,13 @@ def _adapter_for(target: str, *, level: float) -> EmbeddedAdapter:
 
 
 @pytest.mark.asyncio
-async def test_loop_runs_max_iterations_when_no_convergence(tmp_path: Path) -> None:
+async def test_loop_runs_max_iterations_when_no_convergence(db_url: str) -> None:
     cases = [_case("pong")]
     exp = _experiment(
         max_iterations=3,
         search_space={"level": [0.0, 0.5, 1.0]},
     )
-    storage = SQLiteStorage(tmp_path / "db.sqlite")
+    storage = open_storage(db_url)
     ws_id = WS
     ws = Workspace(id=ws_id, workspace_id=ws_id, slug="t", name="t")
     with storage.open(ws_id) as scope:
@@ -173,7 +172,7 @@ async def test_loop_runs_max_iterations_when_no_convergence(tmp_path: Path) -> N
 
 
 @pytest.mark.asyncio
-async def test_loop_persists_experiment_terminal_state(tmp_path: Path) -> None:
+async def test_loop_persists_experiment_terminal_state(db_url: str) -> None:
     # The experiment row in storage must reflect the run's outcome, not the
     # pre-run state. Before the fix the loop transitioned the in-memory object
     # to COMPLETED but never flushed it, so a reader (e.g. a polling HTTP
@@ -181,7 +180,7 @@ async def test_loop_persists_experiment_terminal_state(tmp_path: Path) -> None:
     cases = [_case("pong")]
     exp = _experiment(max_iterations=1, search_space={"level": [1.0]})
     assert exp.state == ExperimentState.DRAFT
-    storage = SQLiteStorage(tmp_path / "db.sqlite")
+    storage = open_storage(db_url)
     ws = Workspace(id=WS, workspace_id=WS, slug="t", name="t")
     with storage.open(WS) as scope:
         scope.put_entity(ws)
@@ -209,14 +208,14 @@ async def test_loop_persists_experiment_terminal_state(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_loop_persists_and_carries_grader_reason(tmp_path: Path) -> None:
+async def test_loop_persists_and_carries_grader_reason(db_url: str) -> None:
     from selfevals.schemas.trace import Trace
 
     # level 0.0 → adapter emits "miss", so the must_include=["pong"] rule fails
     # and the DeterministicGrader produces a non-empty failure reason.
     cases = [_case("pong")]
     exp = _experiment(max_iterations=1, search_space={"level": [0.0]})
-    storage = SQLiteStorage(tmp_path / "db.sqlite")
+    storage = open_storage(db_url)
     ws = Workspace(id=WS, workspace_id=WS, slug="t", name="t")
     with storage.open(WS) as scope:
         scope.put_entity(ws)
@@ -257,7 +256,7 @@ async def test_loop_persists_and_carries_grader_reason(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_trace_run_ids_only_lists_persisted_traces(tmp_path: Path) -> None:
+async def test_trace_run_ids_only_lists_persisted_traces(db_url: str) -> None:
     """`trace_run_ids` must announce only traces actually written to storage.
 
     With `persist_traces="failed"` (default), a passing case's trace is never
@@ -272,7 +271,7 @@ async def test_trace_run_ids_only_lists_persisted_traces(tmp_path: Path) -> None
     # (fails, persisted).
     cases = [_case("pong"), _case("zzz")]
     exp = _experiment(max_iterations=1, search_space={"level": [1.0]})
-    storage = SQLiteStorage(tmp_path / "db.sqlite")
+    storage = open_storage(db_url)
     ws = Workspace(id=WS, workspace_id=WS, slug="t", name="t")
     with storage.open(WS) as scope:
         scope.put_entity(ws)
@@ -306,7 +305,7 @@ async def test_trace_run_ids_only_lists_persisted_traces(tmp_path: Path) -> None
 
 
 @pytest.mark.asyncio
-async def test_trace_run_ids_lists_all_when_persist_all(tmp_path: Path) -> None:
+async def test_trace_run_ids_lists_all_when_persist_all(db_url: str) -> None:
     """With `persist_traces="all"`, every rep's trace is stored and announced."""
     from selfevals.schemas.trace import Trace
 
@@ -314,7 +313,7 @@ async def test_trace_run_ids_lists_all_when_persist_all(tmp_path: Path) -> None:
     exp = _experiment(
         max_iterations=1, search_space={"level": [1.0]}, persist_traces="all"
     )
-    storage = SQLiteStorage(tmp_path / "db.sqlite")
+    storage = open_storage(db_url)
     ws = Workspace(id=WS, workspace_id=WS, slug="t", name="t")
     with storage.open(WS) as scope:
         scope.put_entity(ws)
