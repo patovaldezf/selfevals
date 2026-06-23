@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,16 +20,15 @@ from selfevals.schemas.trace import (
     Trace,
     TraceMetrics,
 )
+from selfevals.storage.factory import open_storage
 from selfevals.storage.seed import seed_workspace
-from selfevals.storage.sqlite import SQLiteStorage
 
 T0 = datetime(2026, 6, 10, 12, 0, 0, tzinfo=UTC)
 
 
 @pytest.fixture
-def metrics_client(tmp_path: Path) -> tuple[TestClient, str]:
-    db = tmp_path / "metrics.sqlite"
-    storage = SQLiteStorage(str(db))
+def metrics_client(db_url: str) -> tuple[TestClient, str]:
+    storage = open_storage(db_url)
     workspace = seed_workspace(storage, slug="metrics", name="metrics", user_id="local").workspace
     with storage.open(workspace.id) as scope:
         scope.put_entity(
@@ -70,7 +68,7 @@ def metrics_client(tmp_path: Path) -> tuple[TestClient, str]:
             )
         )
     storage.close()
-    return TestClient(build_app(db_path=str(db))), workspace.id
+    return TestClient(build_app(db_path=db_url)), workspace.id
 
 
 def test_metrics_pass_rate_and_failure_modes(metrics_client: tuple[TestClient, str]) -> None:

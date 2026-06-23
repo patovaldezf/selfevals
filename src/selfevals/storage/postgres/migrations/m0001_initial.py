@@ -63,7 +63,10 @@ CREATE TABLE IF NOT EXISTS members (
         role IN ('viewer', 'evaluator', 'experimenter', 'maintainer', 'admin', 'auditor')
     ),
     invited_by   TEXT,
-    CONSTRAINT members_user_unique UNIQUE (workspace_id, user_id)
+    -- A user may hold several roles in a workspace, each as its own Member row
+    -- (seed_workspace assigns one Member per role). Uniqueness is therefore on
+    -- (workspace_id, user_id, role), not (workspace_id, user_id).
+    CONSTRAINT members_user_role_unique UNIQUE (workspace_id, user_id, role)
 );
 CREATE INDEX IF NOT EXISTS idx_members_workspace ON members (workspace_id);
 """

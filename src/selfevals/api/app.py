@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -178,8 +178,16 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
-    def _storage() -> StorageInterface:
-        return open_storage(resolved)
+    def _storage() -> Iterator[StorageInterface]:
+        # `yield` dependency: FastAPI closes the connection after the response,
+        # so a handler (or a query helper it calls) can never leak a psycopg
+        # connection even if it forgets an explicit close. Handlers may still
+        # call ``storage.close()`` early — psycopg's close() is idempotent.
+        store = open_storage(resolved)
+        try:
+            yield store
+        finally:
+            store.close()
 
     def _storage_factory() -> StorageInterface:
         return open_storage(resolved)
