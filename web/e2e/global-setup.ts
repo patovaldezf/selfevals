@@ -22,18 +22,20 @@ async function globalSetup(_config: FullConfig) {
     throw new Error(`global-setup: seed script not found at ${script}`);
   }
 
-  const db = resolve(__dirname, '.fixtures/e2e.sqlite');
-  console.log(`\n[e2e] seeding fixture db → ${db}`);
+  const dbUrl =
+    process.env.E2E_DB_URL ?? 'postgresql://selfevals:selfevals@localhost:5433/selfevals';
+  console.log(`\n[e2e] seeding Postgres fixture db → ${dbUrl}`);
 
   try {
     execFileSync('bash', [script], {
       stdio: 'inherit',
-      env: { ...process.env, E2E_DB: db }
+      env: { ...process.env, E2E_DB_URL: dbUrl }
     });
   } catch (err) {
     throw new Error(
       `global-setup: seeding failed. Ensure the selfevals Python venv exists ` +
-        `(repo ../.venv) or set SELFEVALS_PYTHON. Original error: ${
+        `(repo ../.venv) or set SELFEVALS_PYTHON, and that Postgres is reachable ` +
+        `at E2E_DB_URL. Original error: ${
           err instanceof Error ? err.message : String(err)
         }`
     );

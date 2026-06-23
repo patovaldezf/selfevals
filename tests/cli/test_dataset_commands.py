@@ -45,14 +45,14 @@ def _jsonl(tmp_path: Path, n: int = 2) -> Path:
 
 
 def _create(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], *, db: Path, ttype: str = "capability"
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], *, db: str, ttype: str = "capability"
 ) -> str:
     jsonl = _jsonl(tmp_path)
     rc, out, _ = _capture(
         capsys,
         [
             "--db",
-            str(db),
+            db,
             "dataset",
             "create",
             WS,
@@ -72,12 +72,11 @@ def _create(
 
 
 def test_dataset_create_persists_without_experiment(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], db_url: str
 ) -> None:
-    db = tmp_path / "db.sqlite"
-    dataset_id = _create(tmp_path, capsys, db=db)
+    dataset_id = _create(tmp_path, capsys, db=db_url)
 
-    rc, out, _ = _capture(capsys, ["--db", str(db), "dataset", "list", WS])
+    rc, out, _ = _capture(capsys, ["--db", db_url, "dataset", "list", WS])
     assert rc == 0
     assert dataset_id in out
     assert "status=active" in out
@@ -85,12 +84,11 @@ def test_dataset_create_persists_without_experiment(
 
 
 def test_dataset_show_reports_statistics(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], db_url: str
 ) -> None:
-    db = tmp_path / "db.sqlite"
-    dataset_id = _create(tmp_path, capsys, db=db)
+    dataset_id = _create(tmp_path, capsys, db=db_url)
 
-    rc, out, _ = _capture(capsys, ["--db", str(db), "dataset", "show", WS, dataset_id])
+    rc, out, _ = _capture(capsys, ["--db", db_url, "dataset", "show", WS, dataset_id])
     assert rc == 0
     assert "manifest_hash: sha256:" in out
     assert "total_cases:   2" in out
@@ -98,40 +96,37 @@ def test_dataset_show_reports_statistics(
 
 
 def test_dataset_freeze_sets_status(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], db_url: str
 ) -> None:
-    db = tmp_path / "db.sqlite"
-    dataset_id = _create(tmp_path, capsys, db=db)
+    dataset_id = _create(tmp_path, capsys, db=db_url)
 
-    rc, out, _ = _capture(capsys, ["--db", str(db), "dataset", "freeze", WS, dataset_id])
+    rc, out, _ = _capture(capsys, ["--db", db_url, "dataset", "freeze", WS, dataset_id])
     assert rc == 0
     assert "status=frozen" in out
 
-    rc, out, _ = _capture(capsys, ["--db", str(db), "dataset", "list", WS])
+    rc, out, _ = _capture(capsys, ["--db", db_url, "dataset", "list", WS])
     assert "status=frozen" in out
 
 
 def test_dataset_list_status_filter(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], db_url: str
 ) -> None:
-    db = tmp_path / "db.sqlite"
-    dataset_id = _create(tmp_path, capsys, db=db)
+    dataset_id = _create(tmp_path, capsys, db=db_url)
 
-    rc, out, _ = _capture(capsys, ["--db", str(db), "dataset", "list", WS, "--status", "frozen"])
+    rc, out, _ = _capture(capsys, ["--db", db_url, "dataset", "list", WS, "--status", "frozen"])
     assert rc == 0
     assert dataset_id not in out
     assert "(no datasets)" in out
 
 
 def test_dataset_create_missing_file_is_user_error(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], db_url: str
 ) -> None:
-    db = tmp_path / "db.sqlite"
     rc, _out, err = _capture(
         capsys,
         [
             "--db",
-            str(db),
+            db_url,
             "dataset",
             "create",
             WS,
@@ -146,12 +141,11 @@ def test_dataset_create_missing_file_is_user_error(
 
 
 def test_dataset_show_unknown_id_is_user_error(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], db_url: str
 ) -> None:
-    db = tmp_path / "db.sqlite"
-    _create(tmp_path, capsys, db=db)
+    _create(tmp_path, capsys, db=db_url)
     rc, _out, err = _capture(
-        capsys, ["--db", str(db), "dataset", "show", WS, "ds_does_not_exist"]
+        capsys, ["--db", db_url, "dataset", "show", WS, "ds_does_not_exist"]
     )
     assert rc == 2
     assert "not found" in err.lower()

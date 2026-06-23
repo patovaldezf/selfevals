@@ -44,7 +44,7 @@ def test_worker_logs_boot_line(
     with caplog.at_level(logging.INFO, logger="selfevals.worker.runs"):
         run_worker(
             RunWorkerConfig(
-                storage_url="sqlite:///tmp/x.sqlite",
+                storage_url="postgresql://x/y",
                 redis_url="redis://localhost:6380/15",
                 consumer="host:1",
                 once=True,
@@ -65,7 +65,7 @@ def test_worker_boot_line_redacts_credentials(
     with caplog.at_level(logging.INFO, logger="selfevals.worker.runs"):
         run_worker(
             RunWorkerConfig(
-                storage_url="sqlite:///tmp/x.sqlite",
+                storage_url="postgresql://x/y",
                 redis_url="redis://user:supersecret@localhost:6380/15",
                 consumer="host:1",
                 once=True,
@@ -98,7 +98,7 @@ def test_n_workers_get_distinct_consumer_names(
             caplog.clear()
             run_worker(
                 RunWorkerConfig(
-                    storage_url="sqlite:///tmp/x.sqlite",
+                    storage_url="postgresql://x/y",
                     redis_url="redis://localhost:6380/0",
                     once=True,
                 )

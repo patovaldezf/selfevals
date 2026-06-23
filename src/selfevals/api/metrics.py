@@ -36,7 +36,7 @@ def pass_rate_metrics(
     experiment_id: str | None = None,
     grader: str | None = None,
 ) -> PassRateMetricsResponse:
-    rows = storage.pass_rate_metrics(  # type: ignore[attr-defined]
+    rows = storage.pass_rate_metrics(
         workspace_id=workspace_id,
         start=start,
         end=end,
@@ -70,7 +70,7 @@ def failure_mode_metrics(
     experiment_id: str | None = None,
     grader: str | None = None,
 ) -> FailureModeMetricsResponse:
-    rows = storage.failure_mode_metrics(  # type: ignore[attr-defined]
+    rows = storage.failure_mode_metrics(
         workspace_id=workspace_id,
         start=start,
         end=end,
@@ -103,7 +103,7 @@ def tool_metrics(
     experiment_id: str | None = None,
     tool_name: str | None = None,
 ) -> ToolMetricsResponse:
-    rows = storage.tool_metrics(  # type: ignore[attr-defined]
+    rows = storage.tool_metrics(
         workspace_id=workspace_id,
         start=start,
         end=end,
@@ -141,7 +141,7 @@ def cost_metrics(
     experiment_id: str | None = None,
     model: str | None = None,
 ) -> CostMetricsResponse:
-    rows = storage.cost_metrics(  # type: ignore[attr-defined]
+    rows = storage.cost_metrics(
         workspace_id=workspace_id,
         start=start,
         end=end,
@@ -176,7 +176,7 @@ def token_metrics(
     experiment_id: str | None = None,
     model: str | None = None,
 ) -> TokenMetricsResponse:
-    rows = storage.token_metrics(  # type: ignore[attr-defined]
+    rows = storage.token_metrics(
         workspace_id=workspace_id,
         start=start,
         end=end,
@@ -212,7 +212,7 @@ def latency_metrics(
     end: datetime | None = None,
     experiment_id: str | None = None,
 ) -> LatencyMetricsResponse:
-    rows = storage.latency_metrics(  # type: ignore[attr-defined]
+    rows = storage.latency_metrics(
         workspace_id=workspace_id,
         start=start,
         end=end,

@@ -38,10 +38,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--db",
         default=None,
-        help=(
-            "SQLite path or storage URL. Defaults to SELFEVALS_STORAGE_URL, "
-            "then SELFEVALS_DB, then ./selfevals.sqlite."
-        ),
+        help="Postgres storage URL. Defaults to SELFEVALS_STORAGE_URL.",
     )
 
     sub = parser.add_subparsers(dest="command", required=True, metavar="<command>")

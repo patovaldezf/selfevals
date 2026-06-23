@@ -2,7 +2,7 @@
 
 Covers the query params the Playground needs (`state`, `feature`) and the
 endpoints that were previously raw `dict` and are now typed (`/runs/active`,
-`/decisions`). Experiments are seeded directly via SQLiteStorage so we can
+`/decisions`). Experiments are seeded directly via the storage backend so we can
 vary `state` and `taxonomy.target_features` independently of a real run.
 """
 

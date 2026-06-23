@@ -1,4 +1,4 @@
-"""Read queries over the SQLite store, shaped for the web UI.
+"""Read queries over the Postgres store, shaped for the web UI.
 
 We don't add an ORM. We open a `WorkspaceScope` per request, list
 entities, and project them into the view models in
@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Any, cast
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -80,10 +80,7 @@ def list_workspaces(storage: StorageInterface) -> list[WorkspaceSummary]:
     """Cross-workspace listing. The storage backend exposes a dedicated
     summary method because the typed scope interface is intentionally
     scoped — no way to list without a workspace_id."""
-    return cast(
-        "list[WorkspaceSummary]",
-        storage.list_workspace_summaries(),  # type: ignore[attr-defined]
-    )
+    return storage.list_workspace_summaries()
 
 
 def workspace_detail(storage: StorageInterface, *, workspace_id: str) -> WorkspaceResponse | None:
@@ -151,7 +148,7 @@ def list_experiments(
     in one place. If volumes grow, `state` is the field to promote to a real
     column (same note as m0001), and `target_features` to a join/`json_each`.
     """
-    experiments, total, iteration_counts = storage.list_experiments_page(  # type: ignore[attr-defined]
+    experiments, total, iteration_counts = storage.list_experiments_page(
         workspace_id=workspace_id,
         limit=limit,
         offset=offset,
@@ -222,8 +219,8 @@ def experiment_cases(
     the set is reported honestly, not silently trimmed to the optimization
     cases. Ordered by name for a stable, scannable list.
     """
-    cases = storage.eval_cases_for_experiment(workspace_id, experiment_id)  # type: ignore[attr-defined]
-    trace_refs = storage.latest_trace_refs_by_case(workspace_id, experiment_id)  # type: ignore[attr-defined]
+    cases = storage.eval_cases_for_experiment(workspace_id, experiment_id)
+    trace_refs = storage.latest_trace_refs_by_case(workspace_id, experiment_id)
     cases.sort(key=lambda c: c.name)
     summaries = [_case_summary(c, trace_refs.get(c.id)) for c in cases]
     holdout_count = sum(1 for c in cases if c.holdout)
@@ -310,14 +307,14 @@ def experiment_results(
         # All best-iteration traces, grouped by case. The first per case is the
         # representative for the case-level row; the full list feeds `turns`.
         traces_by_case: dict[str, list[Trace]] = {}
-        traces = storage.traces_for_experiment_iteration(  # type: ignore[attr-defined]
+        traces = storage.traces_for_experiment_iteration(
             workspace_id, experiment_id, best_iter
         )
         for t in traces:
             if not isinstance(t, Trace) or t.run.eval_case_id is None:
                 continue
             traces_by_case.setdefault(t.run.eval_case_id, []).append(t)
-        case_rows = storage.eval_cases_for_experiment(  # type: ignore[attr-defined]
+        case_rows = storage.eval_cases_for_experiment(
             workspace_id, experiment_id
         )
         cases = {c.id: c for c in case_rows if isinstance(c, EvalCase)}
@@ -622,7 +619,7 @@ def load_trace(storage: StorageInterface, *, workspace_id: str, trace_id: str) -
     (`run_...`). Both are common navigation targets — IterationRecord
     persists `run_id`s while internal storage keys by entity id."""
     experiment_name: str | None = None
-    trace = storage.trace_by_id_or_run_id(workspace_id, trace_id)  # type: ignore[attr-defined]
+    trace = storage.trace_by_id_or_run_id(workspace_id, trace_id)
     if trace is None:
         return None
     assert isinstance(trace, Trace)
@@ -666,7 +663,7 @@ def load_thread(
     thread view shows the per-turn expected-vs-detected diff, not just the grade.
     Returns None when no trace carries the thread_id.
     """
-    traces = storage.traces_by_thread_id(workspace_id, thread_id)  # type: ignore[attr-defined]
+    traces = storage.traces_by_thread_id(workspace_id, thread_id)
     if not traces:
         return None
 

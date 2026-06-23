@@ -16,7 +16,6 @@ import os
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import datetime
-from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import (
@@ -102,11 +101,9 @@ from selfevals.api.sse import stream_trace
 from selfevals.schemas.enums import DatasetStatus, ExperimentState
 from selfevals.storage.errors import ObjectNotFoundError, PointerHashMismatchError
 from selfevals.storage.factory import (
-    DEFAULT_SQLITE_PATH,
     object_store_base_for_storage_url,
     open_storage,
     resolve_storage_url,
-    sqlite_path_from_url,
     storage_url_label,
 )
 from selfevals.storage.filesystem import FilesystemObjectStore, parse_pointer
@@ -139,18 +136,12 @@ UserHeader = Annotated[
 ]
 
 
-DEFAULT_DB_PATH = DEFAULT_SQLITE_PATH
-
-
 def build_app(*, db_path: str | None = None) -> FastAPI:
-    """Construct the FastAPI app, parameterized on the storage URL/path."""
+    """Construct the FastAPI app, parameterized on the storage URL."""
     resolved = resolve_storage_url(db_path)
-    if not resolved.startswith(("postgresql://", "postgres://")):
-        Path(sqlite_path_from_url(resolved)).parent.mkdir(parents=True, exist_ok=True)
-    # Object store lives next to the SQLite file (same layout as
-    # `selfevals analyze` — see cli/analyze_commands.py:29). The store
-    # is process-local and cheap to construct, so we build one app-wide
-    # instance rather than per-request.
+    # Filesystem object store (SELFEVALS_OBJECTS_DIR, default ./objects) for
+    # large trace payloads. The store is process-local and cheap to construct,
+    # so we build one app-wide instance rather than per-request.
     object_store = FilesystemObjectStore(object_store_base_for_storage_url(resolved))
 
     @asynccontextmanager
@@ -194,12 +185,11 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
 
     @app.get("/api/health", response_model=HealthResponse, tags=["meta"])
     def health() -> HealthResponse:
-        backend = "postgres" if resolved.startswith(("postgresql://", "postgres://")) else "sqlite"
         return HealthResponse(
             status="ok",
             db_path=storage_url_label(resolved),
             storage_url=storage_url_label(resolved),
-            storage_backend=backend,
+            storage_backend="postgres",
         )
 
     @app.get(

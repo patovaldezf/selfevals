@@ -1,8 +1,8 @@
 """GET .../compare — structured diff over the HTTP bridge (B3).
 
 The endpoint is a thin wrapper over the reporter's `compute_compare`
-(the same math the CLI uses). We seed two IterationRecords directly via
-SQLiteStorage, then assert the projected `CompareResponse`: a winner
+(the same math the CLI uses). We seed two IterationRecords directly via the
+storage backend, then assert the projected `CompareResponse`: a winner
 recommendation, correct metric deltas, the honest holdout caveat, and
 the 400/404 error paths.
 """

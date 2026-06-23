@@ -139,7 +139,7 @@ def cmd_migrate_sqlite(args: argparse.Namespace) -> int:
     written = 0
     try:
         for ws_id, entities in by_ws.items():
-            with storage.transaction(), storage.open(ws_id) as scope:  # type: ignore[attr-defined]
+            with storage.transaction(), storage.open(ws_id) as scope:
                 for e in entities:
                     scope.put_entity(e)
                     written += 1

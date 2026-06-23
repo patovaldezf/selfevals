@@ -18,7 +18,6 @@ the translation table here is the whole point.
 from __future__ import annotations
 
 import difflib
-import sqlite3
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 
@@ -125,22 +124,6 @@ def wrap_adapter_error(exc: Exception, *, url: str | None = None) -> SelfEvalsUs
     return SelfEvalsUserError(f"adapter error{target}: {exc}")
 
 
-def wrap_sqlite_error(exc: sqlite3.Error, *, db_path: Path | str) -> SelfEvalsUserError:
-    """Turn a raw `sqlite3.OperationalError` into something a human can act on."""
-    msg = str(exc).lower()
-    if "locked" in msg or "busy" in msg:
-        return SelfEvalsUserError(
-            f"sqlite database {db_path} is locked",
-            hint="another selfevals process is using it; try `--db <new-path>` or wait",
-        )
-    if "malformed" in msg or "corrupt" in msg or "not a database" in msg:
-        return SelfEvalsUserError(
-            f"sqlite database {db_path} is corrupted or not a valid selfevals db",
-            hint="back up the file and re-run with `--db <new-path>` to start clean",
-        )
-    return SelfEvalsUserError(f"sqlite error at {db_path}: {exc}")
-
-
 def _missing_dataset_path(exc: LoaderError) -> Path | None:
     """If the LoaderError comes from `_read_jsonl`'s 'dataset file not found',
     return the missing path so the caller can add a fuzzy hint."""
@@ -176,5 +159,4 @@ __all__ = [
     "load_spec",
     "unknown_grader",
     "wrap_adapter_error",
-    "wrap_sqlite_error",
 ]

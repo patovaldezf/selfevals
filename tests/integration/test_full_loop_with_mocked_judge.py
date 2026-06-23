@@ -23,7 +23,6 @@ and *no* Python traceback. The friendly message is the contract.
 from __future__ import annotations
 
 import json
-import sqlite3
 import textwrap
 from pathlib import Path
 
@@ -422,31 +421,3 @@ async def test_error_http_adapter_unreachable_endpoint(
     user_err = wrap_adapter_error(excinfo.value, url=url)
     user_msg = str(user_err)
     assert url in user_msg or "could not reach" in user_msg
-
-
-def test_error_sqlite_corrupted_db(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    # Write garbage to the db path so SQLite refuses to open it.
-    db = tmp_path / "corrupt.sqlite"
-    db.write_bytes(b"this is definitely not a valid sqlite database")
-    rc, _, stderr = _run_cli(["--db", str(db), "workspace", "show", WS], capsys)
-    assert rc == 2
-    # Either the corruption or 'not a database' path triggers depending on libsqlite,
-    # but the friendly layer should still produce a clean message.
-    assert "Traceback" not in stderr
-    assert str(db) in stderr or "sqlite" in stderr.lower()
-
-
-def test_error_sqlite_locked_message_shape() -> None:
-    """Directly exercise the sqlite friendly wrapper.
-
-    Acquiring a real BEGIN EXCLUSIVE on Mac+SQLite WAL is racy in CI;
-    instead we feed the wrapper a synthetic OperationalError whose
-    message contains the word `locked`, the same shape libsqlite emits.
-    """
-    from selfevals.cli._friendly import wrap_sqlite_error
-
-    err = wrap_sqlite_error(sqlite3.OperationalError("database is locked"), db_path="/x.db")
-    msg = str(err)
-    assert "locked" in msg
-    assert "/x.db" in msg
-    assert "another selfevals process" in msg
