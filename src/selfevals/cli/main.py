@@ -12,7 +12,13 @@ import sys
 from collections.abc import Sequence
 
 from selfevals._errors import SelfEvalsUserError
-from selfevals.cli import analyze_commands, baseline_commands, commands, dataset_commands
+from selfevals.cli import (
+    analyze_commands,
+    baseline_commands,
+    commands,
+    dataset_commands,
+    migrate_commands,
+)
 from selfevals.cli._help import make_subparser
 from selfevals.version import __version__
 
@@ -56,6 +62,30 @@ def _build_parser() -> argparse.ArgumentParser:
     p_init.add_argument("--name", help="Display name (default: slug).")
     p_init.add_argument("--user", default="local", help="Owner user id.")
     p_init.set_defaults(func=commands.cmd_init)
+
+    p_migrate = make_subparser(
+        sub,
+        "migrate-sqlite",
+        help_text="One-shot import of a legacy SQLite database into Postgres.",
+        examples=[
+            "selfevals migrate-sqlite ./selfevals.sqlite --to "
+            "postgresql://selfevals:selfevals@localhost:5433/selfevals",
+            "selfevals migrate-sqlite ./selfevals.sqlite --to $SELFEVALS_STORAGE_URL --dry-run",
+        ],
+    )
+    p_migrate.add_argument("source", help="Path to the legacy SQLite file to read (read-only).")
+    p_migrate.add_argument(
+        "--to",
+        required=True,
+        help="Target Postgres storage URL (postgresql://...).",
+    )
+    p_migrate.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate and report counts without writing anything.",
+    )
+    p_migrate.set_defaults(func=migrate_commands.cmd_migrate_sqlite)
+
     p_ws = make_subparser(
         sub,
         "workspace",
