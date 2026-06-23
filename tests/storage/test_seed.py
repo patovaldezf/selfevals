@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from selfevals.schemas.enums import Role
 from selfevals.storage.seed import seed_workspace
-from selfevals.storage.sqlite import SQLiteStorage
+
+if TYPE_CHECKING:
+    from selfevals.storage.interface import StorageInterface
 
 
-def test_seed_creates_workspace_and_all_roles(tmp_path: Path) -> None:
-    storage = SQLiteStorage(tmp_path / "test.db")
+def test_seed_creates_workspace_and_all_roles(storage: StorageInterface) -> None:
     result = seed_workspace(
         storage,
         slug="pato",
@@ -19,11 +20,9 @@ def test_seed_creates_workspace_and_all_roles(tmp_path: Path) -> None:
     assert ws.slug == "pato"
     assert ws.owner_id == "patovaldezflores@gmail.com"
     assert {m.role for m in result.members} == set(Role)
-    storage.close()
 
 
-def test_seed_is_idempotent(tmp_path: Path) -> None:
-    storage = SQLiteStorage(tmp_path / "test.db")
+def test_seed_is_idempotent(storage: StorageInterface) -> None:
     first = seed_workspace(
         storage,
         slug="pato",
@@ -38,11 +37,9 @@ def test_seed_is_idempotent(tmp_path: Path) -> None:
     )
     assert first.workspace.id == second.workspace.id
     assert {m.role for m in second.members} == set(Role)
-    storage.close()
 
 
-def test_seed_admin_only(tmp_path: Path) -> None:
-    storage = SQLiteStorage(tmp_path / "test.db")
+def test_seed_admin_only(storage: StorageInterface) -> None:
     result = seed_workspace(
         storage,
         slug="lean",
@@ -51,11 +48,9 @@ def test_seed_admin_only(tmp_path: Path) -> None:
         assign_all_roles=False,
     )
     assert [m.role for m in result.members] == [Role.ADMIN]
-    storage.close()
 
 
-def test_seed_writes_through_workspace_scope(tmp_path: Path) -> None:
-    storage = SQLiteStorage(tmp_path / "test.db")
+def test_seed_writes_through_workspace_scope(storage: StorageInterface) -> None:
     result = seed_workspace(storage, slug="pato", name="x", user_id="p@example.com")
     # Re-open scope and verify we can list members.
     with storage.open(result.workspace.id) as scope:
@@ -65,4 +60,3 @@ def test_seed_writes_through_workspace_scope(tmp_path: Path) -> None:
         assert isinstance(ws, Workspace)
         members = scope.list_entities(Member)
         assert len(members) == 6  # all roles
-    storage.close()
