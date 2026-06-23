@@ -14,6 +14,7 @@ entity class name (the same tag the old generic table used).
 from __future__ import annotations
 
 # Importing the entity modules registers their mappers as a side effect.
+from selfevals.storage.postgres.mappers import experiment as _experiment  # noqa: F401
 from selfevals.storage.postgres.mappers import workspace as _workspace  # noqa: F401
 from selfevals.storage.postgres.mappers.base import EntityMapper, register_mapper
 from selfevals.storage.postgres.mappers.registry import MAPPERS, mapper_for, mapper_for_name
