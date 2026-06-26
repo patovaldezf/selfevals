@@ -35,9 +35,7 @@ async function globalSetup(_config: FullConfig) {
     throw new Error(
       `global-setup: seeding failed. Ensure the selfevals Python venv exists ` +
         `(repo ../.venv) or set SELFEVALS_PYTHON, and that Postgres is reachable ` +
-        `at E2E_DB_URL. Original error: ${
-          err instanceof Error ? err.message : String(err)
-        }`
+        `at E2E_DB_URL. Original error: ${err instanceof Error ? err.message : String(err)}`
     );
   }
 }

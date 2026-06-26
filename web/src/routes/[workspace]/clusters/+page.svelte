@@ -65,7 +65,11 @@
     <div class="space-y-2">
       {#each clusters.value.items as c (c.failure_mode)}
         <div class="cluster">
-          <button class="row" on:click={() => toggle(c.failure_mode)} aria-expanded={open[c.failure_mode] ?? false}>
+          <button
+            class="row"
+            on:click={() => toggle(c.failure_mode)}
+            aria-expanded={open[c.failure_mode] ?? false}
+          >
             <span class="caret" aria-hidden="true">{open[c.failure_mode] ? '▾' : '▸'}</span>
             <span class="min-w-0 flex-1">
               <span class="name">{c.title ?? c.failure_mode}</span>

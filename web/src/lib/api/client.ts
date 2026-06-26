@@ -957,7 +957,13 @@ export const api = {
    */
   clusters: (
     workspaceId: string,
-    opts: { from?: string; to?: string; experiment_id?: string; grader?: string; limit?: number } = {},
+    opts: {
+      from?: string;
+      to?: string;
+      experiment_id?: string;
+      grader?: string;
+      limit?: number;
+    } = {},
     fetch?: typeof globalThis.fetch
   ) =>
     request<FailureClusters>(`/api/workspaces/${workspaceId}/clusters${qs(opts)}`, {
