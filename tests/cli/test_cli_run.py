@@ -52,19 +52,18 @@ def test_run_example_no_persist_json(tmp_path: Path, capsys: pytest.CaptureFixtu
 
 
 def test_run_persists_iterations_to_storage(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    db_url: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    db = tmp_path / "db.sqlite"
     rc, _, _ = _capture(
         capsys,
-        ["--db", str(db), "run", str(REPO_EXAMPLE), "--max-iterations", "2"],
+        ["--db", db_url, "run", str(REPO_EXAMPLE), "--max-iterations", "2"],
     )
     assert rc == 0
     # IterationRecords + DecisionRecords should be in the db.
     from selfevals.schemas.iteration import DecisionRecord, IterationRecord
-    from selfevals.storage.sqlite import SQLiteStorage
+    from selfevals.storage.factory import open_storage
 
-    storage = SQLiteStorage(db)
+    storage = open_storage(db_url)
     try:
         with storage.open("ws_01HZZZZZZZZZZZZZZZZZZZZZZZ") as scope:
             iters = scope.list_entities(IterationRecord)
@@ -210,7 +209,7 @@ agent:
 
 
 def test_report_rehydrates_failure_reasons_from_storage(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, db_url: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The agent returns "pong" but the case requires "WONTMATCH" → the
     # deterministic grader FAILs with a reason. With persist_traces=failed
@@ -219,11 +218,10 @@ def test_report_rehydrates_failure_reasons_from_storage(
     # failure_reasons matches an inline `run --format json`, not come back [].
     yaml_path = tmp_path / "exp.yaml"
     yaml_path.write_text(_FAILING_SPEC)
-    db = tmp_path / "db.sqlite"
 
     # 1. Inline run (same process) — baseline for what failure_reasons should be.
     rc, inline_out, err = _capture(
-        capsys, ["--db", str(db), "run", str(yaml_path), "--format", "json"]
+        capsys, ["--db", db_url, "run", str(yaml_path), "--format", "json"]
     )
     assert rc == 0, err
     inline = json.loads(inline_out)
@@ -234,7 +232,7 @@ def test_report_rehydrates_failure_reasons_from_storage(
     # 2. Separate report from storage — must rehydrate the same reasons.
     rc, report_out, err = _capture(
         capsys,
-        ["--db", str(db), "report", "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ", exp_id, "--format", "json"],
+        ["--db", db_url, "report", "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ", exp_id, "--format", "json"],
     )
     assert rc == 0, err
     report = json.loads(report_out)

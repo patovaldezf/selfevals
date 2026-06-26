@@ -1,8 +1,8 @@
 """Smoke tests for the HTTP bridge.
 
 We pin against the real pingpong example so the test exercises the
-same path the web UI will: `selfevals run` populates the SQLite db,
-then the API reads back what's there.
+same path the web UI will: `selfevals run` populates the db, then the
+API reads back what's there.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from selfevals.api.app import build_app
 from selfevals.cli.main import app as cli_app
+from selfevals.storage.factory import object_store_base_for_storage_url
 
 # Starlette ships a deprecation warning we don't control; harmless for the API.
 warnings.filterwarnings(
@@ -30,16 +31,15 @@ REPO_EXAMPLE = (
 
 
 @pytest.fixture
-def seeded_db(tmp_path: Path) -> Path:
-    db = tmp_path / "selfevals.sqlite"
-    rc = cli_app(["--db", str(db), "run", str(REPO_EXAMPLE), "--max-iterations", "2"])
+def seeded_db(db_url: str) -> str:
+    rc = cli_app(["--db", db_url, "run", str(REPO_EXAMPLE), "--max-iterations", "2"])
     assert rc == 0
-    return db
+    return db_url
 
 
 @pytest.fixture
-def client(seeded_db: Path) -> TestClient:
-    return TestClient(build_app(db_path=str(seeded_db)))
+def client(seeded_db: str) -> TestClient:
+    return TestClient(build_app(db_path=seeded_db))
 
 
 def test_health_endpoint(client: TestClient) -> None:
@@ -47,7 +47,7 @@ def test_health_endpoint(client: TestClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
-    assert body["db_path"].endswith("selfevals.sqlite")
+    assert body["db_path"]
 
 
 def test_list_workspaces_returns_seeded(client: TestClient) -> None:
@@ -189,7 +189,7 @@ def test_trace_response_exposes_experiment_name(client: TestClient) -> None:
     assert trace["experiment_name"] == exp["name"]
 
 
-def test_resolve_payload_roundtrip(client: TestClient, seeded_db: Path) -> None:
+def test_resolve_payload_roundtrip(client: TestClient, seeded_db: str) -> None:
     """Put bytes into the object store and resolve them via the API.
 
     The trace viewer needs this to lazy-load prompts/args/results that live
@@ -199,7 +199,7 @@ def test_resolve_payload_roundtrip(client: TestClient, seeded_db: Path) -> None:
     from selfevals.storage.filesystem import FilesystemObjectStore
 
     ws = client.get("/api/workspaces").json()["workspaces"][0]
-    store = FilesystemObjectStore(seeded_db.parent / "objects")
+    store = FilesystemObjectStore(object_store_base_for_storage_url(seeded_db))
     payload = b'{"role": "user", "content": "ping"}'
     pointer = store.put(ws["id"], "messages", payload)
 
@@ -215,12 +215,12 @@ def test_resolve_payload_roundtrip(client: TestClient, seeded_db: Path) -> None:
 
 
 def test_resolve_payload_serves_plaintext_when_not_jsonish(
-    client: TestClient, seeded_db: Path
+    client: TestClient, seeded_db: str
 ) -> None:
     from selfevals.storage.filesystem import FilesystemObjectStore
 
     ws = client.get("/api/workspaces").json()["workspaces"][0]
-    store = FilesystemObjectStore(seeded_db.parent / "objects")
+    store = FilesystemObjectStore(object_store_base_for_storage_url(seeded_db))
     payload = b"You are a helpful assistant."
     pointer = store.put(ws["id"], "system_prompt", payload)
 
@@ -234,7 +234,7 @@ def test_resolve_payload_serves_plaintext_when_not_jsonish(
 
 
 def test_resolve_payload_rejects_cross_workspace_pointer(
-    client: TestClient, seeded_db: Path
+    client: TestClient, seeded_db: str
 ) -> None:
     """A pointer from workspace A served via workspace B's URL must 400,
     not silently leak the bytes. The pointer encodes its workspace, so the
@@ -243,7 +243,7 @@ def test_resolve_payload_rejects_cross_workspace_pointer(
     from selfevals.storage.filesystem import FilesystemObjectStore
 
     ws = client.get("/api/workspaces").json()["workspaces"][0]
-    store = FilesystemObjectStore(seeded_db.parent / "objects")
+    store = FilesystemObjectStore(object_store_base_for_storage_url(seeded_db))
     pointer_in_ws = store.put(ws["id"], "x", b"secret")
 
     response = client.get(

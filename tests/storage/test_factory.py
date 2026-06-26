@@ -1,41 +1,36 @@
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from selfevals.storage.factory import (
-    DEFAULT_SQLITE_PATH,
     object_store_base_for_storage_url,
     open_storage,
     resolve_storage_url,
-    sqlite_path_from_url,
     storage_url_label,
 )
-from selfevals.storage.sqlite import SQLiteStorage
+from selfevals.storage.postgres import PostgresStorage
 
 
-def test_resolve_storage_url_defaults_to_sqlite(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("SELFEVALS_STORAGE_URL", raising=False)
-    monkeypatch.delenv("SELFEVALS_DB", raising=False)
-    assert resolve_storage_url() == DEFAULT_SQLITE_PATH
+def test_resolve_storage_url_arg_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SELFEVALS_STORAGE_URL", "postgresql://env/selfevals")
+    assert resolve_storage_url("postgresql://arg/selfevals") == "postgresql://arg/selfevals"
 
 
-def test_storage_url_env_wins_over_sqlite_db(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SELFEVALS_DB", "/tmp/local.sqlite")
+def test_resolve_storage_url_falls_back_to_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SELFEVALS_STORAGE_URL", "postgresql://localhost/selfevals")
     assert resolve_storage_url() == "postgresql://localhost/selfevals"
 
 
-def test_sqlite_url_to_path() -> None:
-    assert sqlite_path_from_url("sqlite:////tmp/selfevals.sqlite") == "/tmp/selfevals.sqlite"
-    assert sqlite_path_from_url(":memory:") == ":memory:"
+def test_resolve_storage_url_unset_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SELFEVALS_STORAGE_URL", raising=False)
+    with pytest.raises((RuntimeError, ValueError), match="SELFEVALS_STORAGE_URL"):
+        resolve_storage_url()
 
 
-def test_open_storage_plain_path_is_sqlite(tmp_path: object) -> None:
-    storage = open_storage(":memory:")
+def test_open_storage_returns_postgres(db_url: str) -> None:
+    storage = open_storage(db_url)
     try:
-        assert isinstance(storage, SQLiteStorage)
+        assert isinstance(storage, PostgresStorage)
     finally:
         storage.close()
 
@@ -53,21 +48,26 @@ def test_object_store_base_override(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-@pytest.mark.skipif(
-    not os.environ.get("SELFEVALS_TEST_POSTGRES_URL"),
-    reason="requires a running Postgres database",
-)
-def test_postgres_storage_contract_smoke() -> None:
+def test_object_store_base_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pathlib import Path
+
+    monkeypatch.delenv("SELFEVALS_OBJECTS_DIR", raising=False)
+    assert object_store_base_for_storage_url("postgresql://localhost/selfevals") == Path("./objects")
+
+
+def test_postgres_storage_contract_smoke(storage: object) -> None:
+    """Round-trip a Workspace through the real Postgres backend.
+
+    Uses the per-test ``storage`` fixture (an isolated Postgres database), so it
+    runs whenever the test Postgres is reachable and never collides with other
+    tests on unique constraints.
+    """
     from selfevals.schemas.workspace import Workspace
 
-    storage = open_storage(os.environ["SELFEVALS_TEST_POSTGRES_URL"])
-    try:
-        ws = Workspace(id=Workspace.make_id(), workspace_id=Workspace.make_id(), slug="pg", name="pg")
-        ws = ws.model_copy(update={"workspace_id": ws.id})
-        with storage.open(ws.id) as scope:
-            scope.put_entity(ws)
-            got = scope.get_entity(Workspace, ws.id)
-            assert isinstance(got, Workspace)
-            assert got.slug == "pg"
-    finally:
-        storage.close()
+    ws_id = Workspace.make_id()
+    ws = Workspace(id=ws_id, workspace_id=ws_id, slug="pg", name="pg")
+    with storage.open(ws.id) as scope:  # type: ignore[attr-defined]
+        scope.put_entity(ws)
+        got = scope.get_entity(Workspace, ws.id)
+        assert isinstance(got, Workspace)
+        assert got.slug == "pg"

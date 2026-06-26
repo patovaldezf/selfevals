@@ -42,7 +42,8 @@
   "dependencies": {
     "@fontsource/inter": "^5.0.18",
     "@fontsource/jetbrains-mono": "^5.0.20",
-    "@tanstack/svelte-query": "^5.51.21"
+    "@tanstack/svelte-query": "^5.51.21",
+    "yaml": "^2.9.0"
   },
   "overrides": {
     "cookie": "0.7.2"

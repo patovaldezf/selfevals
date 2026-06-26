@@ -6,8 +6,8 @@ stability property that is the whole point of the design.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -31,8 +31,9 @@ from selfevals.schemas.trace import (
     RunInfo,
     Trace,
 )
+from selfevals.storage.factory import open_storage
+from selfevals.storage.interface import StorageInterface
 from selfevals.storage.seed import seed_workspace
-from selfevals.storage.sqlite import SQLiteStorage
 
 T0 = datetime(2026, 5, 25, 12, 0, 0, tzinfo=UTC)
 EXP = "exp_1"
@@ -73,20 +74,21 @@ def _failed_trace(ws: str, *, run_id: str, with_message: bool = True) -> Trace:
 
 
 @pytest.fixture
-def storage(tmp_path: Path) -> SQLiteStorage:
-    st = SQLiteStorage(str(tmp_path / "b.sqlite"))
+def storage(db_url: str) -> Iterator[StorageInterface]:
+    st = open_storage(db_url)
     seed_workspace(st, slug="w", name="w", user_id="local")
-    return st
+    try:
+        yield st
+    finally:
+        st.close()
 
 
-def _ws(st: SQLiteStorage) -> str:
-    row = st.connection.execute(
-        "SELECT workspace_id FROM entities WHERE entity_type = 'Workspace' LIMIT 1"
-    ).fetchone()
-    return str(row[0])
+def _ws(st: StorageInterface) -> str:
+    # Idempotent: seed_workspace returns the existing workspace seeded by the fixture.
+    return seed_workspace(st, slug="w", name="w", user_id="local").workspace.id
 
 
-def test_bundle_includes_failed_traces_with_transcript(storage: SQLiteStorage) -> None:
+def test_bundle_includes_failed_traces_with_transcript(storage: StorageInterface) -> None:
     ws = _ws(storage)
     with storage.open(ws) as scope:
         scope.put_entity(_failed_trace(ws, run_id="run_1"))
@@ -97,7 +99,7 @@ def test_bundle_includes_failed_traces_with_transcript(storage: SQLiteStorage) -
     assert [m.content for m in bt.transcript] == ["what is X?", "X costs $499"]
 
 
-def test_bundle_excludes_passed_traces(storage: SQLiteStorage) -> None:
+def test_bundle_excludes_passed_traces(storage: StorageInterface) -> None:
     ws = _ws(storage)
     passed = _failed_trace(ws, run_id="run_ok")
     passed.grader_results = [GraderResult(grader="judge", label="pass", score=1.0)]
@@ -114,7 +116,7 @@ def test_assignment_xor_enforced_on_wire_model() -> None:
         Assignment(trace_id="tr_1")  # neither
 
 
-def test_ingest_rejects_unknown_mode_id(storage: SQLiteStorage) -> None:
+def test_ingest_rejects_unknown_mode_id(storage: StorageInterface) -> None:
     ws = _ws(storage)
     with storage.open(ws) as scope:
         scope.put_entity(_failed_trace(ws, run_id="run_1"))
@@ -125,7 +127,7 @@ def test_ingest_rejects_unknown_mode_id(storage: SQLiteStorage) -> None:
         ingest_result(storage, workspace_id=ws, experiment_id=EXP, result=result)
 
 
-def test_ingest_creates_candidate_and_stamps_trace(storage: SQLiteStorage) -> None:
+def test_ingest_creates_candidate_and_stamps_trace(storage: StorageInterface) -> None:
     ws = _ws(storage)
     trace = _failed_trace(ws, run_id="run_1")
     with storage.open(ws) as scope:
@@ -172,7 +174,7 @@ def test_ingest_creates_candidate_and_stamps_trace(storage: SQLiteStorage) -> No
         assert candidate.id in ea.failure_modes
 
 
-def test_second_round_classifies_against_existing_no_duplicate(storage: SQLiteStorage) -> None:
+def test_second_round_classifies_against_existing_no_duplicate(storage: StorageInterface) -> None:
     # The whole point: discover-once, classify-thereafter. Round 1 proposes a
     # mode; round 2 classifies a new trace against it by id — no second candidate.
     ws = _ws(storage)
@@ -208,7 +210,7 @@ def test_second_round_classifies_against_existing_no_duplicate(storage: SQLiteSt
         assert len(modes[0].examples) == 2
 
 
-def test_reproposing_existing_slug_does_not_duplicate(storage: SQLiteStorage) -> None:
+def test_reproposing_existing_slug_does_not_duplicate(storage: StorageInterface) -> None:
     ws = _ws(storage)
     t1 = _failed_trace(ws, run_id="run_1")
     with storage.open(ws) as scope:

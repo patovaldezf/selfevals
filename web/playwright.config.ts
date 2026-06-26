@@ -25,7 +25,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const API_PORT = Number(process.env.E2E_API_PORT ?? 8000);
 const WEB_PORT = Number(process.env.E2E_WEB_PORT ?? 4173);
-const FIXTURE_DB = resolve(__dirname, 'e2e/.fixtures/e2e.sqlite');
+// Postgres-only: the backend reads from a Postgres database seeded by
+// global-setup (e2e/fixtures/seed.sh). Defaults to the docker-compose instance
+// on :5433 locally; CI overrides E2E_DB_URL to its service.
+const FIXTURE_DB_URL =
+  process.env.E2E_DB_URL ?? 'postgresql://selfevals:selfevals@localhost:5433/selfevals';
 
 // The repo-local uv venv, used to launch the API. Overridable for CI.
 const SELFEVALS_PYTHON = process.env.SELFEVALS_PYTHON ?? resolve(__dirname, '../.venv/bin/python');
@@ -59,8 +63,8 @@ export default defineConfig({
 
   webServer: [
     {
-      // FastAPI backend, pointed at the seeded fixture db.
-      command: `${SELFEVALS_PYTHON} -m selfevals.api --host 127.0.0.1 --port ${API_PORT} --db ${FIXTURE_DB}`,
+      // FastAPI backend, pointed at the seeded Postgres fixture database.
+      command: `${SELFEVALS_PYTHON} -m selfevals.api --host 127.0.0.1 --port ${API_PORT} --db ${FIXTURE_DB_URL}`,
       cwd: resolve(__dirname, '..'),
       port: API_PORT,
       reuseExistingServer: !process.env.CI,

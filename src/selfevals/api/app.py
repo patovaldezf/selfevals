@@ -13,10 +13,9 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import datetime
-from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import (
@@ -32,21 +31,49 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 
+from selfevals.api.baseline_ops import (
+    BaselineNotFoundError,
+    BaselineOpError,
+    get_baseline,
+    run_regression_check,
+    set_dataset_baseline,
+)
 from selfevals.api.broker import get_broker
 from selfevals.api.dataset_writer import (
     DatasetNotFoundError,
     DatasetWriteError,
+    TracePromotionError,
+    append_case_to_dataset,
     create_dataset_from_jsonl_bytes,
     create_dataset_from_request,
+    draft_regression_case_from_trace,
     freeze_dataset,
+)
+from selfevals.api.failure_mode_ops import (
+    FailureModeNotFoundError,
+    FailureModeOpError,
+    edit_failure_mode,
+    list_failure_modes,
+    merge_failure_modes,
+    promote_failure_mode,
+    retire_failure_mode,
 )
 from selfevals.api.metrics import (
     cost_metrics,
+    failure_clusters,
     failure_mode_metrics,
     latency_metrics,
     pass_rate_metrics,
     token_metrics,
     tool_metrics,
+)
+from selfevals.api.pairwise_ops import (
+    PairwiseApiError,
+    get_pairwise_calibration,
+    ingest_pairwise_verdicts,
+    list_pairwise_tournaments,
+    list_pairwise_verdicts,
+    run_pairwise_tournament,
 )
 from selfevals.api.queries import (
     AnchorPoint,
@@ -72,6 +99,10 @@ from selfevals.api.run_launcher import launch_experiment_run
 from selfevals.api.schemas import (
     ActiveRun,
     ActiveRunsResponse,
+    AnalysisIngestSummaryResponse,
+    AppendDatasetCaseRequest,
+    AppendDatasetCaseResponse,
+    BaselineResponse,
     CaseListResponse,
     CompareResponse,
     CostMetricsResponse,
@@ -80,20 +111,36 @@ from selfevals.api.schemas import (
     DatasetDetailResponse,
     DatasetListPage,
     DecisionRecordResponse,
+    EditFailureModeRequest,
     ExperimentDetailResponse,
     ExperimentListPage,
     ExperimentResultsResponse,
+    FailureClustersResponse,
+    FailureModeListResponse,
     FailureModeMetricsResponse,
+    FailureModeResponse,
     FunnelResponse,
     HealthResponse,
+    IngestPairwiseRequest,
     IterationListResponse,
     LatencyMetricsResponse,
+    MergeFailureModeRequest,
+    PairwiseCalibrationResponse,
+    PairwiseIngestSummaryResponse,
+    PairwiseVerdictResponse,
     PassRateMetricsResponse,
+    PromoteCaseDraftRequest,
+    PromoteCaseDraftResponse,
+    RegressionCheckRequest,
+    RegressionResultResponse,
     RunExperimentRequest,
     RunExperimentResponse,
+    RunTournamentRequest,
+    SetBaselineRequest,
     ThreadResponse,
     TokenMetricsResponse,
     ToolMetricsResponse,
+    TournamentResponse,
     TraceResponse,
     WorkspaceListResponse,
     WorkspaceResponse,
@@ -102,11 +149,9 @@ from selfevals.api.sse import stream_trace
 from selfevals.schemas.enums import DatasetStatus, ExperimentState
 from selfevals.storage.errors import ObjectNotFoundError, PointerHashMismatchError
 from selfevals.storage.factory import (
-    DEFAULT_SQLITE_PATH,
     object_store_base_for_storage_url,
     open_storage,
     resolve_storage_url,
-    sqlite_path_from_url,
     storage_url_label,
 )
 from selfevals.storage.filesystem import FilesystemObjectStore, parse_pointer
@@ -139,18 +184,12 @@ UserHeader = Annotated[
 ]
 
 
-DEFAULT_DB_PATH = DEFAULT_SQLITE_PATH
-
-
 def build_app(*, db_path: str | None = None) -> FastAPI:
-    """Construct the FastAPI app, parameterized on the storage URL/path."""
+    """Construct the FastAPI app, parameterized on the storage URL."""
     resolved = resolve_storage_url(db_path)
-    if not resolved.startswith(("postgresql://", "postgres://")):
-        Path(sqlite_path_from_url(resolved)).parent.mkdir(parents=True, exist_ok=True)
-    # Object store lives next to the SQLite file (same layout as
-    # `selfevals analyze` — see cli/analyze_commands.py:29). The store
-    # is process-local and cheap to construct, so we build one app-wide
-    # instance rather than per-request.
+    # Filesystem object store (SELFEVALS_OBJECTS_DIR, default ./objects) for
+    # large trace payloads. The store is process-local and cheap to construct,
+    # so we build one app-wide instance rather than per-request.
     object_store = FilesystemObjectStore(object_store_base_for_storage_url(resolved))
 
     @asynccontextmanager
@@ -174,24 +213,31 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=_cors_origins(),
         allow_credentials=False,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "PATCH", "PUT", "OPTIONS"],
         allow_headers=["*"],
     )
 
-    def _storage() -> StorageInterface:
-        return open_storage(resolved)
+    def _storage() -> Iterator[StorageInterface]:
+        # `yield` dependency: FastAPI closes the connection after the response,
+        # so a handler (or a query helper it calls) can never leak a psycopg
+        # connection even if it forgets an explicit close. Handlers may still
+        # call ``storage.close()`` early — psycopg's close() is idempotent.
+        store = open_storage(resolved)
+        try:
+            yield store
+        finally:
+            store.close()
 
     def _storage_factory() -> StorageInterface:
         return open_storage(resolved)
 
     @app.get("/api/health", response_model=HealthResponse, tags=["meta"])
     def health() -> HealthResponse:
-        backend = "postgres" if resolved.startswith(("postgresql://", "postgres://")) else "sqlite"
         return HealthResponse(
             status="ok",
             db_path=storage_url_label(resolved),
             storage_url=storage_url_label(resolved),
-            storage_backend=backend,
+            storage_backend="postgres",
         )
 
     @app.get(
@@ -381,6 +427,409 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=f"dataset {dataset_id} not found") from exc
         except DatasetWriteError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/datasets/{dataset_id}/cases",
+        response_model=AppendDatasetCaseResponse,
+        tags=["datasets"],
+    )
+    def datasets_append_case(
+        workspace_id: str,
+        dataset_id: str,
+        body: AppendDatasetCaseRequest,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> AppendDatasetCaseResponse:
+        try:
+            return append_case_to_dataset(
+                storage,
+                workspace_id=workspace_id,
+                dataset_id=dataset_id,
+                case_data=body.case,
+                create_version_if_frozen=body.create_version_if_frozen,
+            )
+        except DatasetNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"dataset {dataset_id} not found") from exc
+        except DatasetWriteError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            storage.close()
+
+    # --- pairwise verdicts (LLM + human, RLHF / judge calibration) ------
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/experiments/{experiment_id}/verdicts/ingest",
+        response_model=PairwiseIngestSummaryResponse,
+        tags=["pairwise"],
+    )
+    def verdicts_ingest(
+        workspace_id: str,
+        experiment_id: str,
+        body: IngestPairwiseRequest,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> PairwiseIngestSummaryResponse:
+        try:
+            return ingest_pairwise_verdicts(
+                storage,
+                workspace_id=workspace_id,
+                experiment_id=experiment_id,
+                verdicts=body.verdicts,
+            )
+        except PairwiseApiError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            storage.close()
+
+    # --- pairwise verdicts (LLM + human, RLHF / judge calibration) ------
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/experiments/{experiment_id}/verdicts",
+        response_model=list[PairwiseVerdictResponse],
+        tags=["pairwise"],
+    )
+    def verdicts_list(
+        workspace_id: str,
+        experiment_id: str,
+        storage: StorageInterface = Depends(_storage),
+        case_id: str | None = None,
+        judge_kind: Annotated[str | None, Query(pattern="^(llm|human)$")] = None,
+        _user: UserHeader = None,
+    ) -> list[PairwiseVerdictResponse]:
+        try:
+            return list_pairwise_verdicts(
+                storage,
+                workspace_id=workspace_id,
+                experiment_id=experiment_id,
+                case_id=case_id,
+                judge_kind=judge_kind,
+            )
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/experiments/{experiment_id}/verdicts/calibration",
+        response_model=PairwiseCalibrationResponse,
+        tags=["pairwise"],
+    )
+    def verdicts_calibration(
+        workspace_id: str,
+        experiment_id: str,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> PairwiseCalibrationResponse:
+        try:
+            return get_pairwise_calibration(
+                storage, workspace_id=workspace_id, experiment_id=experiment_id
+            )
+        finally:
+            storage.close()
+
+    # --- pairwise tournaments (rank N candidates via Elo / Bradley-Terry) -
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/experiments/{experiment_id}/tournaments",
+        response_model=TournamentResponse,
+        tags=["pairwise"],
+    )
+    def tournament_run(
+        workspace_id: str,
+        experiment_id: str,
+        body: RunTournamentRequest,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> TournamentResponse:
+        try:
+            return run_pairwise_tournament(
+                storage,
+                workspace_id=workspace_id,
+                experiment_id=experiment_id,
+                request=body,
+            )
+        except PairwiseApiError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            storage.close()
+
+    # --- failure-mode taxonomy (loop-closer) ----------------------------
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/failure-modes",
+        response_model=FailureModeListResponse,
+        tags=["failure-modes"],
+    )
+    def failure_modes_index(
+        workspace_id: str,
+        storage: StorageInterface = Depends(_storage),
+        status: Annotated[
+            str | None,
+            Query(description="Filter by status (candidate/official/retired)."),
+        ] = None,
+        _user: UserHeader = None,
+    ) -> FailureModeListResponse:
+        try:
+            items = list_failure_modes(storage, workspace_id=workspace_id, status=status)
+            return FailureModeListResponse(items=items)
+        finally:
+            storage.close()
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/failure-modes/{failure_mode_id}/promote",
+        response_model=FailureModeResponse,
+        tags=["failure-modes"],
+    )
+    def failure_modes_promote(
+        workspace_id: str,
+        failure_mode_id: str,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> FailureModeResponse:
+        try:
+            return promote_failure_mode(
+                storage, workspace_id=workspace_id, fm_id=failure_mode_id
+            )
+        except FailureModeNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        finally:
+            storage.close()
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/failure-modes/{failure_mode_id}/retire",
+        response_model=FailureModeResponse,
+        tags=["failure-modes"],
+    )
+    def failure_modes_retire(
+        workspace_id: str,
+        failure_mode_id: str,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> FailureModeResponse:
+        try:
+            return retire_failure_mode(
+                storage, workspace_id=workspace_id, fm_id=failure_mode_id
+            )
+        except FailureModeNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        finally:
+            storage.close()
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/failure-modes/{failure_mode_id}/merge",
+        response_model=FailureModeResponse,
+        tags=["failure-modes"],
+    )
+    def failure_modes_merge(
+        workspace_id: str,
+        failure_mode_id: str,
+        body: MergeFailureModeRequest,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> FailureModeResponse:
+        try:
+            return merge_failure_modes(
+                storage,
+                workspace_id=workspace_id,
+                fm_id=failure_mode_id,
+                into_id=body.into_id,
+            )
+        except FailureModeNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except FailureModeOpError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/experiments/{experiment_id}/tournaments",
+        response_model=list[TournamentResponse],
+        tags=["pairwise"],
+    )
+    def tournaments_list(
+        workspace_id: str,
+        experiment_id: str,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> list[TournamentResponse]:
+        try:
+            return list_pairwise_tournaments(
+                storage, workspace_id=workspace_id, experiment_id=experiment_id
+            )
+        finally:
+            storage.close()
+
+    @app.patch(
+        "/api/workspaces/{workspace_id}/failure-modes/{failure_mode_id}",
+        response_model=FailureModeResponse,
+        tags=["failure-modes"],
+    )
+    def failure_modes_edit(
+        workspace_id: str,
+        failure_mode_id: str,
+        body: EditFailureModeRequest,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> FailureModeResponse:
+        try:
+            return edit_failure_mode(
+                storage,
+                workspace_id=workspace_id,
+                fm_id=failure_mode_id,
+                title=body.title,
+                definition=body.definition,
+            )
+        except FailureModeNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        finally:
+            storage.close()
+
+    # --- baseline & regression (loop-closer 2B) -------------------------
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/datasets/{dataset_id}/baseline",
+        response_model=BaselineResponse,
+        tags=["baseline"],
+    )
+    def dataset_baseline_show(
+        workspace_id: str,
+        dataset_id: str,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> BaselineResponse:
+        try:
+            return get_baseline(storage, workspace_id=workspace_id, dataset_id=dataset_id)
+        except BaselineNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except BaselineOpError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        finally:
+            storage.close()
+
+    @app.put(
+        "/api/workspaces/{workspace_id}/datasets/{dataset_id}/baseline",
+        response_model=BaselineResponse,
+        tags=["baseline"],
+    )
+    def dataset_baseline_set(
+        workspace_id: str,
+        dataset_id: str,
+        body: SetBaselineRequest,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> BaselineResponse:
+        try:
+            return set_dataset_baseline(
+                storage,
+                workspace_id=workspace_id,
+                dataset_id=dataset_id,
+                iteration_id=body.iteration_id,
+            )
+        except BaselineOpError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            storage.close()
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/datasets/{dataset_id}/regression-check",
+        response_model=RegressionResultResponse,
+        tags=["baseline"],
+    )
+    def dataset_regression_check(
+        workspace_id: str,
+        dataset_id: str,
+        body: RegressionCheckRequest,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> RegressionResultResponse:
+        try:
+            return run_regression_check(
+                storage,
+                workspace_id=workspace_id,
+                dataset_id=dataset_id,
+                iteration_id=body.iteration_id,
+                primary_drop=body.primary_drop,
+                per_class_f1_drop=body.per_class_f1_drop,
+                error_rate_rise=body.error_rate_rise,
+            )
+        except BaselineNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except BaselineOpError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            storage.close()
+
+    # --- error-analysis bundle / ingest (loop-closer 2C) ----------------
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/experiments/{experiment_id}/analysis/bundle",
+        tags=["analysis"],
+    )
+    def analysis_bundle(
+        workspace_id: str,
+        experiment_id: str,
+        storage: StorageInterface = Depends(_storage),
+        iteration: Annotated[int | None, Query(ge=0)] = None,
+        all: Annotated[
+            bool, Query(description="Include passing traces, not just failures.")
+        ] = False,
+        _user: UserHeader = None,
+    ) -> dict[str, Any]:
+        # The bundle is the analysis/schemas.py AnalysisBundle, passed through
+        # as JSON so the contract lives in one place.
+        from selfevals.analysis import build_bundle
+
+        try:
+            bundle = build_bundle(
+                storage,
+                workspace_id=workspace_id,
+                experiment_id=experiment_id,
+                iteration=iteration,
+                only_failed=not all,
+            )
+            return bundle.model_dump(mode="json")
+        finally:
+            storage.close()
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/experiments/{experiment_id}/analysis/ingest",
+        response_model=AnalysisIngestSummaryResponse,
+        tags=["analysis"],
+    )
+    def analysis_ingest(
+        workspace_id: str,
+        experiment_id: str,
+        body: dict[str, Any],
+        storage: StorageInterface = Depends(_storage),
+        user: UserHeader = None,
+    ) -> AnalysisIngestSummaryResponse:
+        # The body is an analysis/schemas.py AnalysisResult; validate it here so
+        # the contract stays defined in the domain model, not duplicated.
+        from selfevals.analysis import ingest_result
+        from selfevals.analysis.ingest import AnalysisIngestError
+        from selfevals.analysis.schemas import AnalysisResult
+
+        try:
+            result = AnalysisResult.model_validate(body)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"invalid AnalysisResult: {exc}") from exc
+        try:
+            summary = ingest_result(
+                storage,
+                workspace_id=workspace_id,
+                experiment_id=experiment_id,
+                result=result,
+                proposed_by=f"human:{user or 'local'}",
+                object_store=object_store,
+            )
+            return AnalysisIngestSummaryResponse(
+                assignments_applied=summary.assignments_applied,
+                created_candidates=summary.created_candidates,
+                updated_candidates=summary.updated_candidates,
+                hypotheses_recorded=summary.hypotheses_recorded,
+            )
+        except AnalysisIngestError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            storage.close()
 
     @app.get(
         "/api/workspaces/{workspace_id}/metrics/pass-rate",
@@ -896,6 +1345,32 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
         finally:
             storage.close()
 
+    @app.post(
+        "/api/workspaces/{workspace_id}/traces/{trace_id}/case-draft",
+        response_model=PromoteCaseDraftResponse,
+        tags=["traces"],
+    )
+    def traces_case_draft(
+        workspace_id: str,
+        trace_id: str,
+        body: PromoteCaseDraftRequest | None = None,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> PromoteCaseDraftResponse:
+        try:
+            return draft_regression_case_from_trace(
+                storage,
+                workspace_id=workspace_id,
+                trace_id=trace_id,
+                body=body,
+            )
+        except TracePromotionError as exc:
+            message = str(exc)
+            status = 404 if "not found" in message else 422
+            raise HTTPException(status_code=status, detail=message) from exc
+        finally:
+            storage.close()
+
     @app.get(
         "/api/workspaces/{workspace_id}/threads/{thread_id}",
         response_model=ThreadResponse,
@@ -962,6 +1437,41 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     ) -> list[AnchorPoint]:
         try:
             return anchor_set_history(storage, workspace_id=workspace_id)
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/clusters",
+        response_model=FailureClustersResponse,
+        tags=["clusters"],
+        summary="Failing traces grouped by failure mode (§J.6)",
+        description=(
+            "Groups failing traces by their stable failure-mode slug, ranked by "
+            "frequency, with capped example `run_id`s for drill-down and "
+            "title/status enriched from the workspace taxonomy. v1 clusters by the "
+            "existing taxonomy (cluster ≡ mode); semantic clustering is future work."
+        ),
+    )
+    def clusters(
+        workspace_id: str,
+        storage: StorageInterface = Depends(_storage),
+        start: Annotated[datetime | None, Query(alias="from")] = None,
+        end: Annotated[datetime | None, Query(alias="to")] = None,
+        experiment_id: str | None = None,
+        grader: str | None = None,
+        limit: Annotated[int | None, Query(ge=1, le=200)] = None,
+        _user: UserHeader = None,
+    ) -> FailureClustersResponse:
+        try:
+            return failure_clusters(
+                storage,
+                workspace_id=workspace_id,
+                start=start,
+                end=end,
+                experiment_id=experiment_id,
+                grader=grader,
+                limit=limit,
+            )
         finally:
             storage.close()
 

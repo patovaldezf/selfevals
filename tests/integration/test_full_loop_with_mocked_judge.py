@@ -23,7 +23,6 @@ and *no* Python traceback. The friendly message is the contract.
 from __future__ import annotations
 
 import json
-import sqlite3
 import textwrap
 from pathlib import Path
 
@@ -77,7 +76,7 @@ from selfevals.schemas.experiment import (
 from selfevals.schemas.fleet import Agent, ModelRef
 from selfevals.schemas.iteration import DecisionRecord, IterationRecord
 from selfevals.schemas.workspace import Workspace
-from selfevals.storage.sqlite import SQLiteStorage
+from selfevals.storage.factory import open_storage
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
@@ -178,12 +177,12 @@ def _mock_judge_adapter() -> EmbeddedAdapter:
 
 
 @pytest.mark.asyncio
-async def test_full_loop_with_deterministic_and_llm_judge(tmp_path: Path) -> None:
+async def test_full_loop_with_deterministic_and_llm_judge(db_url: str) -> None:
     """Run two iterations end-to-end with both graders, then re-read."""
     cases = [_case("c1", "pong"), _case("c2", "pong")]
     experiment = _experiment(max_iterations=2)
 
-    storage = SQLiteStorage(tmp_path / "smoke.sqlite")
+    storage = open_storage(db_url)
     ws = Workspace(id=WS, workspace_id=WS, slug="ws", name="smoke")
     with storage.open(WS) as scope:
         scope.put_entity(ws)
@@ -422,31 +421,3 @@ async def test_error_http_adapter_unreachable_endpoint(
     user_err = wrap_adapter_error(excinfo.value, url=url)
     user_msg = str(user_err)
     assert url in user_msg or "could not reach" in user_msg
-
-
-def test_error_sqlite_corrupted_db(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    # Write garbage to the db path so SQLite refuses to open it.
-    db = tmp_path / "corrupt.sqlite"
-    db.write_bytes(b"this is definitely not a valid sqlite database")
-    rc, _, stderr = _run_cli(["--db", str(db), "workspace", "show", WS], capsys)
-    assert rc == 2
-    # Either the corruption or 'not a database' path triggers depending on libsqlite,
-    # but the friendly layer should still produce a clean message.
-    assert "Traceback" not in stderr
-    assert str(db) in stderr or "sqlite" in stderr.lower()
-
-
-def test_error_sqlite_locked_message_shape() -> None:
-    """Directly exercise the sqlite friendly wrapper.
-
-    Acquiring a real BEGIN EXCLUSIVE on Mac+SQLite WAL is racy in CI;
-    instead we feed the wrapper a synthetic OperationalError whose
-    message contains the word `locked`, the same shape libsqlite emits.
-    """
-    from selfevals.cli._friendly import wrap_sqlite_error
-
-    err = wrap_sqlite_error(sqlite3.OperationalError("database is locked"), db_path="/x.db")
-    msg = str(err)
-    assert "locked" in msg
-    assert "/x.db" in msg
-    assert "another selfevals process" in msg

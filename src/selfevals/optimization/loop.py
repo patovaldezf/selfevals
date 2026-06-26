@@ -137,6 +137,7 @@ class OptimizationLoop:
         decision_evaluator: DecisionEvaluatorProtocol | None = None,
         repetitions_per_case: int = 1,
         grade_concurrency: int = 8,
+        case_concurrency: int = 8,
         split_allocation: SplitAllocation | None = None,
     ) -> None:
         if not graders:
@@ -147,6 +148,8 @@ class OptimizationLoop:
             raise ValueError("repetitions_per_case must be >= 1")
         if grade_concurrency < 1:
             raise ValueError("grade_concurrency must be >= 1")
+        if case_concurrency < 1:
+            raise ValueError("case_concurrency must be >= 1")
         # Consume run.sample_strategy + holdout + SplitAllocation: the loop
         # evaluates only the optimization set; holdout=True cases are reserved
         # for a held-out gate and never touch the optimizer (spec §5, §11).
@@ -170,6 +173,7 @@ class OptimizationLoop:
         self._evaluator = decision_evaluator or _DefaultEvaluator()
         self._reps = repetitions_per_case
         self._grade_concurrency = grade_concurrency
+        self._case_concurrency = case_concurrency
 
     @property
     def experiment(self) -> Experiment:
@@ -361,50 +365,68 @@ class OptimizationLoop:
             async with sem:
                 return await grader.grade(ctx)
 
-        for case in self._cases:
-            # Conversation cases run turn-by-turn (one trace per turn, all
-            # sharing a thread_id); everything else takes the single-shot path.
-            runner = self._multi_turn_executor if case.is_conversation() else self._executor
-            case_run = await runner.run_case(
-                case,
-                repetitions=self._reps,
-                experiment_id=self._experiment.id,
-                iteration=iteration,
-                parameter_overrides=proposal.parameters,
-            )
-            case_runs.append(case_run)
-            active_graders = _graders_for_case(self._graders, case)
-            # Grade every (rep, grader) pair concurrently, bounded by the
-            # semaphore. gather preserves order, so the flat result splits back
-            # into grades_per_rep with reps in order and grades in
-            # active_graders order.
-            grade_tasks = [
-                _graded(g, GraderContext(case=case, trace=rep.trace, response=rep.response))
-                for rep in case_run.repetitions
-                for g in active_graders
-            ]
-            flat_grades = await asyncio.gather(*grade_tasks)
-            width = len(active_graders)
-            grades_per_rep: list[list[GradeResult]] = [
-                list(flat_grades[i * width : (i + 1) * width])
-                for i in range(len(case_run.repetitions))
-            ]
-            # Stamp the grader results onto each rep's trace so they ride along
-            # in-memory on `case_runs` (the reporter and any consumer of
-            # IterationOutcome can read `rep.trace.grader_results` directly,
-            # including each grader's free-text reason). RepetitionResult is
-            # frozen, so rebuild it; CaseRun is rebuilt with the new reps.
-            stamped_reps = [
-                replace(
-                    rep,
-                    trace=rep.trace.model_copy(
-                        update={"grader_results": [_to_trace_grader_result(g) for g in grades]}
-                    ),
+        # Fan out cases concurrently, bounded by the case-level semaphore. The
+        # previous `for case in self._cases: await ...` ran cases strictly in
+        # series — the dominant bottleneck at scale, since each case's adapter
+        # call is the slow I/O. `_run_one_case` does only the awaitable work
+        # (execute + grade + stamp); persistence and list assembly happen
+        # afterwards in deterministic case order, so storage writes stay
+        # single-threaded and `case_runs`/`persisted_run_ids` keep their order.
+        case_sem = asyncio.Semaphore(self._case_concurrency)
+
+        async def _run_one_case(case: EvalCase) -> tuple[CaseRun, list[list[GradeResult]]]:
+            async with case_sem:
+                # Conversation cases run turn-by-turn (one trace per turn, all
+                # sharing a thread_id); everything else takes the single-shot path.
+                runner = self._multi_turn_executor if case.is_conversation() else self._executor
+                case_run = await runner.run_case(
+                    case,
+                    repetitions=self._reps,
+                    experiment_id=self._experiment.id,
+                    iteration=iteration,
+                    parameter_overrides=proposal.parameters,
                 )
-                for rep, grades in zip(case_run.repetitions, grades_per_rep, strict=True)
-            ]
-            case_run = replace(case_run, repetitions=stamped_reps)
-            case_runs[-1] = case_run
+                active_graders = _graders_for_case(self._graders, case)
+                # Grade every (rep, grader) pair concurrently, bounded by the
+                # grade semaphore. gather preserves order, so the flat result
+                # splits back into grades_per_rep with reps in order and grades
+                # in active_graders order.
+                grade_tasks = [
+                    _graded(g, GraderContext(case=case, trace=rep.trace, response=rep.response))
+                    for rep in case_run.repetitions
+                    for g in active_graders
+                ]
+                flat_grades = await asyncio.gather(*grade_tasks)
+                width = len(active_graders)
+                grades_per_rep: list[list[GradeResult]] = [
+                    list(flat_grades[i * width : (i + 1) * width])
+                    for i in range(len(case_run.repetitions))
+                ]
+                # Stamp the grader results onto each rep's trace so they ride
+                # along in-memory on `case_runs` (the reporter and any consumer
+                # of IterationOutcome can read `rep.trace.grader_results`
+                # directly, including each grader's free-text reason).
+                # RepetitionResult is frozen, so rebuild it; CaseRun is rebuilt.
+                stamped_reps = [
+                    replace(
+                        rep,
+                        trace=rep.trace.model_copy(
+                            update={"grader_results": [_to_trace_grader_result(g) for g in grades]}
+                        ),
+                    )
+                    for rep, grades in zip(case_run.repetitions, grades_per_rep, strict=True)
+                ]
+                return replace(case_run, repetitions=stamped_reps), grades_per_rep
+
+        # gather preserves input order → `results[i]` corresponds to
+        # `self._cases[i]`, keeping every downstream list in case order.
+        results = await asyncio.gather(*(_run_one_case(case) for case in self._cases))
+
+        for case, (case_run, grades_per_rep) in zip(self._cases, results, strict=True):
+            case_runs.append(case_run)
+            # Persist sequentially in case/rep order so storage writes stay
+            # single-threaded and `persisted_run_ids` keeps its deterministic
+            # order (the FE relies on it; see `_maybe_persist_trace`).
             for rep, grades in zip(case_run.repetitions, grades_per_rep, strict=True):
                 persisted_id = self._maybe_persist_trace(rep, grades)
                 if persisted_id is not None:

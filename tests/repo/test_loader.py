@@ -516,6 +516,45 @@ def test_set_match_bad_threshold_rejected(tmp_path: Path) -> None:
         load_experiment_spec(_write_yaml(tmp_path, body))
 
 
+def test_pairwise_grader_parsed_with_params(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [
+            {
+                "type": "pairwise",
+                "name": "taste_judge",
+                "rubric": "Which answer is better?",
+                "params": {"compare_against": "reference", "swap_and_average": True},
+            }
+        ]
+    )
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    g = next(g for g in spec.graders if g.name == "taste_judge")
+    assert g.type == "pairwise"
+    assert g.rubric == "Which answer is better?"
+    assert g.params == {"compare_against": "reference", "swap_and_average": True}
+
+
+def test_pairwise_grader_requires_rubric(tmp_path: Path) -> None:
+    body = _body_with_graders([{"type": "pairwise", "name": "tj"}])
+    with pytest.raises(LoaderError, match=r"\(pairwise\) requires a non-empty `rubric`"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_pairwise_bad_compare_against_rejected(tmp_path: Path) -> None:
+    body = _body_with_graders(
+        [
+            {
+                "type": "pairwise",
+                "name": "tj",
+                "rubric": "r",
+                "params": {"compare_against": "variant"},
+            }
+        ]
+    )
+    with pytest.raises(LoaderError, match=r"params\.compare_against must be one of"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
 def test_confusion_grader_parsed_with_params(tmp_path: Path) -> None:
     body = _body_with_graders(
         [{"type": "confusion", "name": "category_class", "params": {"extract": "result.category"}}]

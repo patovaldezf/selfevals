@@ -31,14 +31,19 @@ this file records what _is_.
   `messages` key remain opaque payloads passed to the adapter
   verbatim.
 - **Async-first evaluators**: `AgentAdapter.invoke` and
-  `Grader.grade` are async. The executor runs repetitions
-  concurrently and the optimization loop grades concurrently, both
-  bounded by configurable semaphores (`concurrency` /
-  `grade_concurrency`). As of SF-3 these are wired from
-  `run.parallelism` (YAML, default 8, `ge=1 le=64`) — previously dead
-  code, with the semaphores hardcoded to 8 (the default stays 8 so
-  specs that don't declare it keep the legacy concurrency).
-  `asyncio.run` lives only at the CLI edge.
+  `Grader.grade` are async. The optimization loop fans out **cases**
+  concurrently (the dominant bottleneck — each case's adapter call is
+  the slow I/O), the executor runs **repetitions** of a case
+  concurrently, and the loop grades **(rep, grader)** pairs
+  concurrently. All three are bounded by semaphores
+  (`case_concurrency` / `concurrency` / `grade_concurrency`), all wired
+  from `run.parallelism` (YAML, default 1, `ge=1 le=64`). Before
+  `case_concurrency` existed the loop ran cases strictly in series, so
+  a 50-case run took 50x a single case regardless of `parallelism`
+  (which only bounded intra-case work). `asyncio.run` lives only at the
+  CLI edge. NOTE: this in-process fan-out scales to hundreds/thousands;
+  millions needs the distributed path (shard cases → enqueue
+  shard-jobs on the existing Redis worker → aggregator).
 - **Adapters**: `EmbeddedAdapter` (sync or async Python callable),
   `CliCommandAdapter` (async subprocess JSON), `HttpEndpointAdapter`
   (native async on httpx). All three are auto-wired from YAML via the
@@ -75,6 +80,16 @@ this file records what _is_.
   target → improvement-vs-baseline. Emits `KEEP_CANDIDATE`, `REJECT`,
   `INVESTIGATE`, `SPAWN_SUBEXPERIMENT`, `REQUIRE_TRADEOFF_REVIEW`
   with rationale.
+- **Severity-weighted accuracy / readiness gate (G1)**: a case
+  declares per-mode business severity (`failure_weights`) and the
+  zero-tolerance modes (`critical_failure_modes`) — domain lives in the
+  case. The aggregator publishes `weighted_failure_total`,
+  `weighted_failure_per_case`, and `critical_failure_count` (the last
+  always, even at 0.0) into the guardrails dict, so a readiness gate is
+  just a guardrail `critical_failure_count == 0` — no DecisionMatrix
+  change. Weights are per-case (summed per outcome, not the global mode
+  counter × one weight). This is the go/no-go metric for autopilot:
+  "the expensive errors are ~0 even if plain accuracy is 92%".
 - **Storage**: SQLite-backed with optimistic concurrency, workspace
   isolation, migrations. Filesystem object store for blobs.
 - **Datasets** (v0.9.0): first-class, persisted, reusable across

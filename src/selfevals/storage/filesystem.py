@@ -16,9 +16,9 @@ This is what `WorkspaceScope` checks before allowing a cross-workspace
 read of a payload via a pointer obtained elsewhere.
 
 Storage is content-addressed: writing the same bytes twice resolves to
-the same pointer. The `objects` table (if a SQLiteStorage is paired)
-tracks the human-readable `key` separately. The MVP keeps the two
-independent — the object store does not need a database to function.
+the same pointer. The object store tracks the human-readable `key`
+separately and is kept independent of the row store — it does not need a
+database to function.
 """
 
 from __future__ import annotations

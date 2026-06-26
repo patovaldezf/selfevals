@@ -10,8 +10,6 @@ and a resolvable run_id/trace_id. This is the fix for
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -41,8 +39,8 @@ from selfevals.schemas.eval_case import (
 )
 from selfevals.schemas.experiment import SearchSpace
 from selfevals.schemas.fleet import Agent, ModelRef
+from selfevals.storage.factory import open_storage
 from selfevals.storage.seed import seed_workspace
-from selfevals.storage.sqlite import SQLiteStorage
 
 from ._experiment_factory import make_experiment
 
@@ -81,11 +79,10 @@ def _pong(req: AdapterRequest) -> AdapterResponse:
 
 
 @pytest.fixture
-def seeded(tmp_path: Path) -> tuple[TestClient, str, str]:
+def seeded(db_url: str) -> tuple[TestClient, str, str]:
     """A completed experiment with one passing + one failing case, all traces
     persisted. Returns (client, workspace_id, experiment_id)."""
-    db = tmp_path / "selfevals.sqlite"
-    storage = SQLiteStorage(str(db))
+    storage = open_storage(db_url)
     ws = seed_workspace(storage, slug="t", name="t", user_id="local").workspace
     ws_id = ws.id
     exp = make_experiment(workspace_id=ws_id, name="results-exp")
@@ -106,7 +103,7 @@ def seeded(tmp_path: Path) -> tuple[TestClient, str, str]:
         adapter=EmbeddedAdapter(_pong, agent=_agent(ws_id)),
         sandbox=SandboxPolicy(SandboxMode.MOCK),
         workspace_id=ws_id,
-        payload_router=payload_router_for_db(str(db), ws_id),
+        payload_router=payload_router_for_db(db_url, ws_id),
     )
     loop = OptimizationLoop(
         experiment=exp,
@@ -122,7 +119,7 @@ def seeded(tmp_path: Path) -> tuple[TestClient, str, str]:
     scope.close()
     storage.close()
 
-    c = TestClient(build_app(db_path=str(db)))
+    c = TestClient(build_app(db_path=db_url))
     c.headers.update({"X-SelfEvals-User": "local"})
     return c, ws_id, exp.id
 
@@ -201,12 +198,11 @@ def _classifier(req: AdapterRequest) -> AdapterResponse:
     )
 
 
-def test_results_shape_derived_for_structured_case(tmp_path: Path) -> None:
+def test_results_shape_derived_for_structured_case(db_url: str) -> None:
     """A classification case declares only `structured_output`, so its
     expected/detected carry only that dimension — no `content`/`must_include`
     nulls. This is the per-grader-derived shape."""
-    db = tmp_path / "s.sqlite"
-    storage = SQLiteStorage(str(db))
+    storage = open_storage(db_url)
     ws = seed_workspace(storage, slug="t", name="t", user_id="local").workspace
     ws_id = ws.id
     exp = make_experiment(workspace_id=ws_id, name="structured-exp")
@@ -223,7 +219,7 @@ def test_results_shape_derived_for_structured_case(tmp_path: Path) -> None:
         adapter=EmbeddedAdapter(_classifier, agent=_agent(ws_id)),
         sandbox=SandboxPolicy(SandboxMode.MOCK),
         workspace_id=ws_id,
-        payload_router=payload_router_for_db(str(db), ws_id),
+        payload_router=payload_router_for_db(db_url, ws_id),
     )
     loop = OptimizationLoop(
         experiment=exp,
@@ -239,7 +235,7 @@ def test_results_shape_derived_for_structured_case(tmp_path: Path) -> None:
     scope.close()
     storage.close()
 
-    c = TestClient(build_app(db_path=str(db)))
+    c = TestClient(build_app(db_path=db_url))
     c.headers.update({"X-SelfEvals-User": "local"})
     row = c.get(f"/api/workspaces/{ws_id}/experiments/{exp.id}/results").json()["cases"][0]
 
@@ -252,7 +248,7 @@ def test_results_shape_derived_for_structured_case(tmp_path: Path) -> None:
     assert "tools_invoked" not in row["detected"]
 
 
-def test_results_include_turns_expands_conversation(tmp_path: Path) -> None:
+def test_results_include_turns_expands_conversation(db_url: str) -> None:
     """?include=turns expands a conversation case into per-turn ScenarioResults;
     without it the case-level grid stays flat (no turns)."""
     from datetime import UTC, datetime, timedelta
@@ -281,8 +277,7 @@ def test_results_include_turns_expands_conversation(tmp_path: Path) -> None:
         TraceOutputs,
     )
 
-    db = tmp_path / "turns.sqlite"
-    storage = SQLiteStorage(str(db))
+    storage = open_storage(db_url)
     ws = seed_workspace(storage, slug="t", name="t", user_id="local").workspace
     ws_id = ws.id
     exp = make_experiment(workspace_id=ws_id, name="conv-exp")
@@ -337,7 +332,7 @@ def test_results_include_turns_expands_conversation(tmp_path: Path) -> None:
         scope.put_entity(_turn(1, {"intent": "other"}))
     storage.close()
 
-    c = TestClient(build_app(db_path=str(db)))
+    c = TestClient(build_app(db_path=db_url))
     c.headers.update({"X-SelfEvals-User": "local"})
     base = f"/api/workspaces/{ws_id}/experiments/{exp.id}/results"
 

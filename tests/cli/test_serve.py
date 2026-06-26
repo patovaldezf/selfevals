@@ -22,7 +22,7 @@ from selfevals.cli import commands
 def _ns(**overrides: Any) -> argparse.Namespace:
     """Build a serve-shaped namespace with sensible defaults."""
     base = {
-        "db": "/tmp/x.sqlite",
+        "db": "postgresql://localhost/selfevals",
         "host": "127.0.0.1",
         "port": 8000,
         "web_dist": None,
@@ -40,7 +40,7 @@ def test_serve_disables_web_when_no_web_flag_set(tmp_path: Path) -> None:
         patch.object(commands, "_run_uvicorn") as fake_uv,
         patch("subprocess.Popen") as fake_popen,
     ):
-        rc = commands.cmd_serve(_ns(no_web=True, db=str(tmp_path / "x.sqlite")))
+        rc = commands.cmd_serve(_ns(no_web=True, db="postgresql://localhost/selfevals"))
     assert rc == 0
     fake_uv.assert_called_once_with("127.0.0.1", 8000, False)
     fake_popen.assert_not_called()
@@ -73,7 +73,7 @@ def test_serve_explicit_web_dist_must_have_index_js(tmp_path: Path) -> None:
         patch.object(commands, "_run_uvicorn"),
         pytest.raises(SelfEvalsUserError, match=r"index\.js"),
     ):
-        commands.cmd_serve(_ns(web_dist=str(empty), db=str(tmp_path / "x.sqlite")))
+        commands.cmd_serve(_ns(web_dist=str(empty), db="postgresql://localhost/selfevals"))
 
 
 def test_serve_spawns_node_with_correct_env(tmp_path: Path) -> None:
@@ -92,7 +92,7 @@ def test_serve_spawns_node_with_correct_env(tmp_path: Path) -> None:
         fake_popen.return_value.terminate = MagicMock()
         fake_popen.return_value.wait = MagicMock()
         rc = commands.cmd_serve(
-            _ns(web_dist=str(build_dir), port=8000, db=str(tmp_path / "x.sqlite"))
+            _ns(web_dist=str(build_dir), port=8000, db="postgresql://localhost/selfevals")
         )
     assert rc == 0
     fake_uv.assert_called_once()
@@ -128,25 +128,25 @@ def test_serve_terminates_web_proc_when_uvicorn_raises(tmp_path: Path) -> None:
         fake_popen.return_value.terminate = MagicMock()
         fake_popen.return_value.wait = MagicMock()
         rc = commands.cmd_serve(
-            _ns(web_dist=str(build_dir), db=str(tmp_path / "x.sqlite"))
+            _ns(web_dist=str(build_dir), db="postgresql://localhost/selfevals")
         )
     assert rc == 0
     fake_popen.return_value.terminate.assert_called_once()
 
 
-def test_serve_sets_selfevals_db_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_serve_sets_storage_url_env(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """uvicorn factory loads the app fresh; the db path must reach the
-    factory via SELFEVALS_DB. cmd_serve sets it before uvicorn.run."""
-    monkeypatch.delenv("SELFEVALS_DB", raising=False)
-    db_path = tmp_path / "set-by-serve.sqlite"
+    """uvicorn factory loads the app fresh; the storage URL must reach the
+    factory via SELFEVALS_STORAGE_URL. cmd_serve sets it before uvicorn.run."""
+    monkeypatch.delenv("SELFEVALS_STORAGE_URL", raising=False)
+    db_url = "postgresql://localhost/set-by-serve"
     with (
         patch.object(commands, "_run_uvicorn"),
         patch("subprocess.Popen"),
     ):
-        commands.cmd_serve(_ns(no_web=True, db=str(db_path)))
-    assert os.environ["SELFEVALS_DB"] == str(db_path)
+        commands.cmd_serve(_ns(no_web=True, db=db_url))
+    assert os.environ["SELFEVALS_STORAGE_URL"] == db_url
 
 
 def test_serve_node_missing_falls_back_clean(tmp_path: Path) -> None:
@@ -161,4 +161,4 @@ def test_serve_node_missing_falls_back_clean(tmp_path: Path) -> None:
         patch("subprocess.Popen", side_effect=FileNotFoundError("no node")),
         pytest.raises(SelfEvalsUserError, match="node"),
     ):
-        commands.cmd_serve(_ns(web_dist=str(build_dir), db=str(tmp_path / "x.sqlite")))
+        commands.cmd_serve(_ns(web_dist=str(build_dir), db="postgresql://localhost/selfevals"))

@@ -2,28 +2,25 @@
 
 Covers the query params the Playground needs (`state`, `feature`) and the
 endpoints that were previously raw `dict` and are now typed (`/runs/active`,
-`/decisions`). Experiments are seeded directly via SQLiteStorage so we can
+`/decisions`). Experiments are seeded directly via the storage backend so we can
 vary `state` and `taxonomy.target_features` independently of a real run.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from selfevals.api.app import build_app
 from selfevals.schemas.enums import ExperimentState
+from selfevals.storage.factory import open_storage
 from selfevals.storage.seed import seed_workspace
-from selfevals.storage.sqlite import SQLiteStorage
 from tests.api._experiment_factory import make_experiment
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> tuple[TestClient, str]:
-    db = tmp_path / "selfevals.sqlite"
-    st = SQLiteStorage(str(db))
+def client(db_url: str) -> tuple[TestClient, str]:
+    st = open_storage(db_url)
     ws = seed_workspace(st, slug="t", name="t", user_id="local").workspace
     experiments = [
         make_experiment(
@@ -49,7 +46,7 @@ def client(tmp_path: Path) -> tuple[TestClient, str]:
         for exp in experiments:
             scope.put_entity(exp)
     st.close()
-    return TestClient(build_app(db_path=str(db))), ws.id
+    return TestClient(build_app(db_path=db_url)), ws.id
 
 
 def test_no_filter_returns_all(client: tuple[TestClient, str]) -> None:

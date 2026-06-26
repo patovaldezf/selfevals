@@ -7,7 +7,8 @@ does NOT overwrite it.
 
 from __future__ import annotations
 
-from pathlib import Path
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 from selfevals.optimization.aggregator import IterationAggregate
 from selfevals.optimization.loop import IterationOutcome, OptimizationResult
@@ -17,6 +18,7 @@ from selfevals.runner.baseline import (
     maybe_autoset_baseline,
     set_baseline,
 )
+from selfevals.runner.launch import ensure_workspace_by_id
 from selfevals.schemas.dataset import DatasetBaseline
 from selfevals.schemas.enums import DecisionOutcome, IterationState, ProposerStrategy
 from selfevals.schemas.iteration import (
@@ -35,10 +37,17 @@ WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 DS = "ds_01HAAAAAAAAAAAAAAAAAAAAAAA"
 
 
-def _scope(tmp_path: Path) -> WorkspaceScope:
-    storage = open_storage(f"sqlite:///{tmp_path / 'db.sqlite'}")
-    scope = storage.open(WS)
-    return scope
+@contextmanager
+def _scope(db_url: str) -> Iterator[WorkspaceScope]:
+    storage = open_storage(db_url)
+    try:
+        # Postgres enforces the workspace FK; the workspace row must exist before
+        # writing baselines/iterations into its scope.
+        ensure_workspace_by_id(storage, WS)
+        with storage.open(WS) as scope:
+            yield scope
+    finally:
+        storage.close()
 
 
 def _iteration_record(itr_id: str = "itr_01HBBBBBBBBBBBBBBBBBBBBBBB") -> IterationRecord:
@@ -99,13 +108,13 @@ def test_baseline_id_is_deterministic_per_dataset() -> None:
     assert baseline_id_for("ds_OTHER") != baseline_id_for(DS)
 
 
-def test_load_returns_none_when_unset(tmp_path: Path) -> None:
-    with _scope(tmp_path) as scope:
+def test_load_returns_none_when_unset(db_url: str) -> None:
+    with _scope(db_url) as scope:
         assert load_baseline(scope, DS) is None
 
 
-def test_set_and_load_round_trip(tmp_path: Path) -> None:
-    with _scope(tmp_path) as scope:
+def test_set_and_load_round_trip(db_url: str) -> None:
+    with _scope(db_url) as scope:
         set_baseline(
             scope,
             dataset_id=DS,
@@ -123,8 +132,8 @@ def test_set_and_load_round_trip(tmp_path: Path) -> None:
         assert loaded.confusion == {"per_label_f1": {"a": 0.9}}
 
 
-def test_set_overwrites_and_bumps_version(tmp_path: Path) -> None:
-    with _scope(tmp_path) as scope:
+def test_set_overwrites_and_bumps_version(db_url: str) -> None:
+    with _scope(db_url) as scope:
         first = set_baseline(
             scope, dataset_id=DS, iteration_id="itr_1", experiment_id="exp_1",
             primary_metric="pass@1", primary_value=0.8,
@@ -139,8 +148,8 @@ def test_set_overwrites_and_bumps_version(tmp_path: Path) -> None:
         assert loaded is not None and loaded.iteration_id == "itr_2"
 
 
-def test_autoset_creates_baseline_on_first_run(tmp_path: Path) -> None:
-    with _scope(tmp_path) as scope:
+def test_autoset_creates_baseline_on_first_run(db_url: str) -> None:
+    with _scope(db_url) as scope:
         result, spec = _result(DS)
         created = maybe_autoset_baseline(scope, spec, result)  # type: ignore[arg-type]
         assert created is not None
@@ -152,8 +161,8 @@ def test_autoset_creates_baseline_on_first_run(tmp_path: Path) -> None:
         assert loaded is not None and loaded.iteration_id == _iteration_record().id
 
 
-def test_autoset_is_idempotent_second_run_does_not_overwrite(tmp_path: Path) -> None:
-    with _scope(tmp_path) as scope:
+def test_autoset_is_idempotent_second_run_does_not_overwrite(db_url: str) -> None:
+    with _scope(db_url) as scope:
         result1, spec1 = _result(DS, primary=0.8)
         maybe_autoset_baseline(scope, spec1, result1)  # type: ignore[arg-type]
         before = load_baseline(scope, DS)
@@ -170,10 +179,10 @@ def test_autoset_is_idempotent_second_run_does_not_overwrite(tmp_path: Path) -> 
         assert after.version == before.version
 
 
-def test_autoset_skips_when_no_dataset_anchor(tmp_path: Path) -> None:
+def test_autoset_skips_when_no_dataset_anchor(db_url: str) -> None:
     from types import SimpleNamespace
 
-    with _scope(tmp_path) as scope:
+    with _scope(db_url) as scope:
         result, _ = _result(DS)
         spec = SimpleNamespace(
             experiment=SimpleNamespace(
@@ -184,7 +193,7 @@ def test_autoset_skips_when_no_dataset_anchor(tmp_path: Path) -> None:
         assert maybe_autoset_baseline(scope, spec, result) is None  # type: ignore[arg-type]
 
 
-def test_autoset_swallows_storage_failure(tmp_path: Path) -> None:
+def test_autoset_swallows_storage_failure(db_url: str) -> None:
     """A storage failure in the auto-set must never propagate into the run."""
     class _BoomScope:
         workspace_id = WS

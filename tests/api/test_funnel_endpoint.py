@@ -11,8 +11,6 @@ The same seeded funnel also exercises `experiment_detail`: the reconstructed
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -30,8 +28,9 @@ from selfevals.schemas.iteration import (
     MetricObservation,
     ProposerInputs,
 )
+from selfevals.storage.factory import open_storage
 from selfevals.storage.seed import seed_workspace
-from selfevals.storage.sqlite import SQLiteStorage
+from tests.api._experiment_factory import make_experiment
 
 
 def _funnel_metrics() -> dict[str, object]:
@@ -83,15 +82,15 @@ def _iteration(workspace_id: str, *, iteration: int, funnel: dict[str, object]) 
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> TestClient:
-    db = tmp_path / "selfevals.sqlite"
-    st = SQLiteStorage(str(db))
+def client(db_url: str) -> TestClient:
+    st = open_storage(db_url)
     ws = seed_workspace(st, slug="t", name="t", user_id="local").workspace
     with st.open(ws.id) as scope:
+        scope.put_entity(make_experiment(workspace_id=ws.id, id="exp_funnel", name="funnel exp"))
         scope.put_entity(_iteration(ws.id, iteration=3, funnel=_funnel_metrics()))
         scope.put_entity(_iteration(ws.id, iteration=4, funnel={}))
     st.close()
-    c = TestClient(build_app(db_path=str(db)))
+    c = TestClient(build_app(db_path=db_url))
     c.headers.update({"X-SelfEvals-User": "local"})
     return c
 
@@ -149,14 +148,11 @@ def test_unknown_iteration_returns_404(client: TestClient, ws_id: str) -> None:
 
 
 @pytest.fixture
-def detail_client(tmp_path: Path) -> tuple[TestClient, str, str]:
+def detail_client(db_url: str) -> tuple[TestClient, str, str]:
     """A workspace with one experiment and two iterations (one funnel, one not),
     so `experiment_detail` reconstructs a real result. Returns (client, ws_id,
     experiment_id)."""
-    from tests.api._experiment_factory import make_experiment
-
-    db = tmp_path / "selfevals.sqlite"
-    st = SQLiteStorage(str(db))
+    st = open_storage(db_url)
     ws = seed_workspace(st, slug="t", name="t", user_id="local").workspace
     exp = make_experiment(workspace_id=ws.id, id="exp_funnel", name="funnel exp")
     with st.open(ws.id) as scope:
@@ -177,7 +173,7 @@ def detail_client(tmp_path: Path) -> tuple[TestClient, str, str]:
                 )
             )
     st.close()
-    c = TestClient(build_app(db_path=str(db)))
+    c = TestClient(build_app(db_path=db_url))
     c.headers.update({"X-SelfEvals-User": "local"})
     return c, ws.id, exp.id
 

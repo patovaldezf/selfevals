@@ -14,10 +14,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--db",
         default=None,
-        help=(
-            "SQLite path or storage URL. Defaults to SELFEVALS_STORAGE_URL, "
-            "then SELFEVALS_DB, then ./selfevals.sqlite."
-        ),
+        help="Postgres storage URL. Defaults to SELFEVALS_STORAGE_URL.",
     )
     parser.add_argument(
         "--reload",
@@ -26,7 +23,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     if args.db is not None:
-        os.environ["SELFEVALS_DB"] = args.db
         os.environ["SELFEVALS_STORAGE_URL"] = args.db
 
     try:

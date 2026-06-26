@@ -3,14 +3,14 @@
 # Build a deterministic fixture database for E2E tests.
 #
 # The web UI is a thin client over the FastAPI bridge, which reads from
-# a SQLite db. Rather than mock the API, our E2E suite runs against a
+# a Postgres db. Rather than mock the API, our E2E suite runs against a
 # *real* backend pointed at a throwaway db that we seed here by running
 # the canonical example experiment through the real `selfevals run`
 # pipeline — the same path the test suite's `seeded_db` fixture uses
 # (tests/api/test_api.py). This exercises the SSR proxy in
 # hooks.server.ts for real, which a mock never would.
 #
-# Output: $E2E_DB (default web/e2e/.fixtures/e2e.sqlite), populated with
+# Output: the Postgres db at $E2E_DB_URL (default the compose :5433), populated with
 # one workspace, one experiment, two iterations, four traces, two
 # decisions. Idempotent: the db is recreated from scratch every run.
 #
@@ -27,13 +27,21 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # web/e2e/fixtures
 web_dir="$(cd "$here/../.." && pwd)"                    # web
 repo_dir="$(cd "$web_dir/.." && pwd)"                   # repo root
 
-E2E_DB="${E2E_DB:-$web_dir/e2e/.fixtures/e2e.sqlite}"
+# Postgres-only: the backend reads from a Postgres database. Default to the
+# docker-compose instance on :5433 locally; CI sets E2E_DB_URL to its service.
+E2E_DB_URL="${E2E_DB_URL:-postgresql://selfevals:selfevals@localhost:5433/selfevals}"
 SPEC="${E2E_SPEC:-$repo_dir/evals/experiments/example_pingpong.yaml}"
 MAX_ITERS="${E2E_MAX_ITERS:-2}"
 
-mkdir -p "$(dirname "$E2E_DB")"
-# SQLite leaves -wal / -shm sidecars; clear all three for a clean slate.
-rm -f "$E2E_DB" "$E2E_DB-wal" "$E2E_DB-shm"
+# Clean slate: drop and recreate the public schema so each E2E run seeds fresh.
+# Requires `psql` on PATH.
+if command -v psql >/dev/null 2>&1; then
+  psql "$E2E_DB_URL" -v ON_ERROR_STOP=1 \
+    -c "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;" >/dev/null
+else
+  echo "seed.sh: psql not found; cannot reset the E2E Postgres schema." >&2
+  exit 1
+fi
 
 # --- resolve the selfevals CLI ---------------------------------------
 run_selfevals() {
@@ -52,12 +60,12 @@ run_selfevals() {
   fi
 }
 
-echo "seed.sh: seeding $E2E_DB"
+echo "seed.sh: seeding $E2E_DB_URL"
 echo "         spec=$SPEC  max-iterations=$MAX_ITERS"
 
 # --persist-traces all  → store every trace so the trace-detail route
 #                         has something to render.
-run_selfevals --db "$E2E_DB" run "$SPEC" \
+run_selfevals --db "$E2E_DB_URL" run "$SPEC" \
   --max-iterations "$MAX_ITERS" \
   --persist-traces all \
   >/dev/null

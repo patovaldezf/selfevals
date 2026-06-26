@@ -29,7 +29,7 @@ import logging
 import os
 import threading
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from selfevals._errors import SelfEvalsUserError
 from selfevals.graders.base import Grader
@@ -73,12 +73,14 @@ from selfevals.runner.adapters import (
 )
 from selfevals.runner.executor import Executor
 from selfevals.runner.otlp_receiver import start_receiver
+from selfevals.runner.retry import RetryingAdapter, RetryPolicy
 from selfevals.runner.sandbox import SandboxPolicy
+from selfevals.runner.throttle import AsyncTokenBucket, RateLimitedAdapter
 from selfevals.schemas._base import EntityRef
 from selfevals.schemas.dataset import Dataset, SplitAllocation
 from selfevals.schemas.enums import ProposerStrategy
 from selfevals.schemas.eval_case import EvalCase
-from selfevals.schemas.experiment import Experiment
+from selfevals.schemas.experiment import Experiment, RunSpec
 from selfevals.schemas.fleet import ModelRef
 from selfevals.schemas.workspace import Workspace
 from selfevals.storage.factory import object_store_base_for_storage_url
@@ -195,6 +197,36 @@ def _model_ref(decl: AgentModelDecl | None) -> ModelRef | None:
     return ModelRef(provider=decl.provider, name=decl.name)
 
 
+def _wrap_resilience(adapter: AgentAdapter, run: RunSpec) -> AgentAdapter:
+    """Wrap the adapter with retry (inner) and rate-limit (outer) per `run`.
+
+    Order matters: the throttle is outermost so every physical request — first
+    try or retry — passes the bucket; if retry sat outside, a backoff storm could
+    bypass the limit and re-trigger 429s. Retry defaults ON (`max_retries=2`);
+    rate-limit is OFF unless `requests_per_minute` is set (we can't guess the
+    user's provider tier). One bucket per run → shared across every case (the
+    executor holds this single adapter)."""
+    if run.retry.max_retries > 0:
+        adapter = RetryingAdapter(
+            adapter,
+            RetryPolicy(
+                max_retries=run.retry.max_retries,
+                base_delay=run.retry.base_delay_seconds,
+                max_delay=run.retry.max_delay_seconds,
+                multiplier=run.retry.multiplier,
+                jitter=run.retry.jitter,
+            ),
+        )
+    rpm = run.rate_limit.requests_per_minute
+    if rpm is not None:
+        rate_per_sec = rpm / 60.0
+        capacity = float(run.rate_limit.burst) if run.rate_limit.burst else max(1.0, rate_per_sec)
+        adapter = RateLimitedAdapter(
+            adapter, AsyncTokenBucket(rate_per_sec=rate_per_sec, capacity=capacity)
+        )
+    return adapter
+
+
 def build_proposer(experiment: Experiment) -> Proposer:
     strategy = experiment.proposer.strategy
     if strategy == ProposerStrategy.GRID:
@@ -267,6 +299,19 @@ def register_grader_specs(spec: ExperimentSpec) -> list[str]:
             )
             registered.append(g_spec.name)
             continue
+        if g_spec.type == "pairwise":
+            entry = g_spec.judge_entrypoint or _agent_entrypoint_for_judge(g_spec.name, spec.agent)
+            try:
+                judge_callable = resolve_agent_callable(entry)
+            except LoaderError as exc:
+                raise SelfEvalsUserError(str(exc)) from exc
+            judge_adapter = _wrap_user_callable(judge_callable, entry)
+            register_grader(
+                g_spec.name,
+                _pairwise_factory(g_spec.name, judge_adapter, g_spec.rubric or "", g_spec.params),
+            )
+            registered.append(g_spec.name)
+            continue
         if g_spec.type == "set_match":
             register_grader(g_spec.name, _set_match_factory(g_spec.name, g_spec.params))
             registered.append(g_spec.name)
@@ -327,6 +372,39 @@ def _judge_panel_factory(
         ]
         weights = [1.0] * n_judges if consensus == "weighted" else None
         return JudgePanelGrader(name=name, judges=judges, consensus_rule=consensus, weights=weights)
+
+    return _build
+
+
+def _pairwise_factory(
+    name: str,
+    judge_adapter: AgentAdapter,
+    rubric: str,
+    params: dict[str, object],
+) -> Callable[[], Grader]:
+    """Build a PairwiseGrader (LLM head-to-head judge) from a YAML spec.
+
+    Reuses the same judge-adapter resolution as `llm_judge` (an explicit
+    `judge_entrypoint` or the embedded-agent fallback). The grader's behavior
+    flags come from the validated `params` bag (`compare_against`/`tie_is_pass`/
+    `swap_and_average`); loader validation guarantees their types.
+    """
+    from selfevals.graders.pairwise import PairwiseGrader, PairwiseRubric
+
+    template = PairwiseRubric(rubric=rubric)
+    compare_against = cast("Any", params.get("compare_against", "reference"))
+    tie_is_pass = bool(params.get("tie_is_pass", True))
+    swap_and_average = bool(params.get("swap_and_average", False))
+
+    def _build() -> Grader:
+        return PairwiseGrader(
+            name=name,
+            judge_adapter=judge_adapter,
+            rubric=template,
+            compare_against=compare_against,
+            tie_is_pass=tie_is_pass,
+            swap_and_average=swap_and_average,
+        )
 
     return _build
 
@@ -769,6 +847,7 @@ def build_loop(
     from selfevals.decision.matrix import DecisionMatrixEvaluator
 
     adapter = build_adapter(spec.agent)
+    adapter = _wrap_resilience(adapter, spec.experiment.run)
     proposer = build_proposer(spec.experiment)
 
     # Resolve a `ref:` dataset before anything reads `spec.cases` (graders,
@@ -785,9 +864,12 @@ def build_loop(
                 unregister_grader(name)
 
     if scope is not None:
+        # Persist the experiment FIRST: eval_cases carry an experiment_id FK to
+        # it, so the parent row must exist before the children. (SQLite tolerated
+        # the reverse order silently; Postgres enforces the FK.)
+        scope.put_entity(spec.experiment)
         _persist_cases(scope, spec)
         _materialize_inline_dataset(scope, spec)
-        scope.put_entity(spec.experiment)
 
     # Start an embedded OTLP receiver only for out-of-process agents (cli/http):
     # those run in a separate process and can export their own spans (LLM calls,
@@ -807,12 +889,15 @@ def build_loop(
         else None
     )
 
-    # run.parallelism (schema default 1, ge=1 le=64) is the per-run concurrency
-    # knob. Until now it was dead code: the executor and loop used their own
-    # hardcoded default of 8. Wiring it here makes the YAML field load-bearing —
-    # `parallelism` caps both how many cases the executor runs at once and how
-    # many graders the loop scores in parallel. NOTE: this changes the default
-    # behavior from a fixed 8 to `run.parallelism` (default 1). See the SF-3 PR.
+    # run.parallelism (schema default 8, ge=1 le=64) is the per-run concurrency
+    # knob. It caps three independent fan-outs, all sized off the same value:
+    #   - case_concurrency: how many CASES the loop runs at once (the dominant
+    #     bottleneck — each case's adapter call is the slow I/O);
+    #   - executor concurrency: how many REPETITIONS of one case run at once;
+    #   - grade_concurrency: how many (rep, grader) pairs the loop scores at once.
+    # Before case_concurrency existed, cases ran strictly in series regardless of
+    # this value (it only bounded intra-case work), so a 50-case run took
+    # 50x a single case even at parallelism=8.
     parallelism = spec.experiment.run.parallelism
     executor = Executor(
         adapter=adapter,
@@ -834,4 +919,5 @@ def build_loop(
         repetitions_per_case=repetitions_per_case,
         split_allocation=split_allocation,
         grade_concurrency=parallelism,
+        case_concurrency=parallelism,
     )

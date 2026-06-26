@@ -70,6 +70,80 @@ export type ExperimentListPage = {
   has_more: boolean;
 };
 
+/** What the case declared it expected — only declared dimensions are present.
+ * Mirror of `api.schemas.ExpectedView`. */
+export type ExpectedView = {
+  structured_output?: Record<string, unknown> | null;
+  must_include?: string[] | null;
+  must_not_include?: string[] | null;
+  required_tools?: string[] | null;
+  forbidden_tools?: string[] | null;
+};
+
+/** What the agent produced, projected to mirror `ExpectedView` for a direct
+ * expected-vs-detected diff. Mirror of `api.schemas.DetectedView`. */
+export type DetectedView = {
+  content?: string | null;
+  structured_output?: Record<string, unknown> | null;
+  missing?: string[] | null;
+  forbidden_present?: string[] | null;
+  tools_invoked?: string[] | null;
+};
+
+/** One evaluated scenario — a case, or one turn of a conversation case.
+ * The single recursive shape behind `/results` and `/threads`. Mirror of
+ * `api.schemas.ScenarioResult`. `expected`/`detected` are null when the case
+ * declares nothing to compare; `matched`/`detected` are null with no trace. */
+export type ScenarioResult = {
+  case_id: string;
+  case_name?: string | null;
+  run_id?: string | null;
+  trace_id?: string | null;
+  iteration: number;
+  position?: number | null;
+  matched?: boolean | null;
+  score?: number | null;
+  label?: string | null;
+  message?: string | null;
+  failure_modes: string[];
+  expected?: ExpectedView | null;
+  detected?: DetectedView | null;
+  grader_results: Record<string, unknown>[];
+  turns: ScenarioResult[];
+};
+
+export type ExperimentResults = {
+  experiment_id: string;
+  iteration: number | null;
+  cases: ScenarioResult[];
+  total: number;
+};
+
+export type FailureClusterExample = {
+  run_id: string;
+  experiment_id?: string | null;
+};
+
+/** One cluster = one failure mode (§J.6 v1). `status` is `"unknown"` for a mode
+ * seen on a grade but not yet registered in the taxonomy. */
+export type FailureClusterRow = {
+  failure_mode: string;
+  failure_mode_id?: string | null;
+  title?: string | null;
+  status: string;
+  count: number;
+  rate: number;
+  examples: FailureClusterExample[];
+};
+
+export type FailureClusters = {
+  workspace_id: string;
+  window: { start: string | null; end: string | null };
+  experiment_id: string | null;
+  total: number;
+  items: FailureClusterRow[];
+};
+
 export type DecisionRow = {
   id: string;
   iteration: number;
@@ -218,6 +292,300 @@ export type CompareResponse = {
   holdout_status: string;
 };
 
+// --- Metrics (observability layer) -------------------------------------
+// Mirror of `selfevals.api.schemas.*MetricsResponse`. Every metrics endpoint
+// shares the `{ workspace_id, window, experiment_id, total, items }` envelope;
+// only the row shape differs. All take a `from`/`to` time-range (ISO strings).
+
+export type MetricsWindow = { start: string | null; end: string | null };
+
+type MetricsEnvelope<Row> = {
+  workspace_id: string;
+  window: MetricsWindow;
+  experiment_id: string | null;
+  total: number;
+  items: Row[];
+};
+
+export type PassRateRow = { grader: string; label: string; count: number; rate: number };
+export type FailureModeRow = { failure_mode: string; count: number; rate: number };
+export type ToolRow = {
+  tool_name: string;
+  status: string;
+  count: number;
+  error_count: number;
+  avg_duration_ms: number | null;
+  retry_count: number;
+};
+export type CostRow = {
+  provider: string;
+  model: string;
+  call_count: number;
+  total_cost_usd: number;
+  avg_cost_usd: number;
+};
+export type TokenRow = {
+  provider: string;
+  model: string;
+  call_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  reasoning_tokens: number;
+  total_tokens: number;
+};
+export type LatencyRow = {
+  metric: string;
+  count: number;
+  p50_ms: number | null;
+  p95_ms: number | null;
+  p99_ms: number | null;
+};
+
+export type PassRateMetrics = MetricsEnvelope<PassRateRow>;
+export type FailureModeMetrics = MetricsEnvelope<FailureModeRow>;
+export type ToolMetrics = MetricsEnvelope<ToolRow>;
+export type CostMetrics = MetricsEnvelope<CostRow>;
+export type TokenMetrics = MetricsEnvelope<TokenRow>;
+export type LatencyMetrics = MetricsEnvelope<LatencyRow>;
+
+// --- Datasets ----------------------------------------------------------
+
+export type SplitAllocationView = {
+  optimization: number;
+  holdout: number;
+  reliability: number;
+  other: Record<string, number>;
+};
+
+export type DatasetStatisticsView = {
+  total_cases: number;
+  by_level: Record<string, number>;
+  by_feature: Record<string, number>;
+  by_source: Record<string, number>;
+  by_risk: Record<string, number>;
+  holdout_count: number;
+  pii_breakdown: Record<string, number>;
+};
+
+export type DatasetSummary = {
+  id: string;
+  name: string;
+  description: string | null;
+  dataset_type: string;
+  status: string;
+  case_count: number;
+  manifest_hash: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DatasetListPage = {
+  items: DatasetSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+};
+
+export type FeatureRef = { id: string; name: string } | Record<string, unknown>;
+
+export type CaseSummary = {
+  id: string;
+  name: string;
+  task_type: string;
+  modalities: string[];
+  input: Record<string, unknown>;
+  graders: string[];
+  holdout: boolean;
+  is_conversation: boolean;
+  feature: FeatureRef | null;
+  level: string | null;
+  dataset_type: string | null;
+  latest_run_id: string | null;
+  latest_trace_id: string | null;
+};
+
+export type DatasetDetail = {
+  id: string;
+  name: string;
+  description: string | null;
+  dataset_type: string;
+  status: string;
+  case_count: number;
+  manifest_hash: string | null;
+  split_allocation: SplitAllocationView;
+  statistics: DatasetStatisticsView | null;
+  cases: CaseSummary[];
+  created_at: string;
+  updated_at: string;
+};
+
+// --- Run / workspace mutation contracts --------------------------------
+
+export type RunExperimentResponse = {
+  experiment_id: string;
+  workspace_id: string;
+  state: string;
+  run_id: string | null;
+  job_id: string | null;
+  dispatch: string;
+};
+
+export type RunExperimentRequest = {
+  spec_path?: string;
+  spec_inline?: Record<string, unknown>;
+  dataset_id?: string;
+  max_iterations?: number;
+  reps?: number;
+  persist_traces?: 'none' | 'all' | 'failed';
+};
+
+export type CreateWorkspaceRequest = {
+  slug: string;
+  name?: string;
+  description?: string;
+};
+
+export type CreateDatasetRequest = {
+  name: string;
+  description?: string;
+  dataset_type?: string;
+  cases?: Record<string, unknown>[];
+  cases_path?: string;
+  split_allocation?: Record<string, number>;
+};
+
+export type PromoteCaseDraft = {
+  case: Record<string, unknown>;
+  source_trace_id: string;
+  source_run_id: string;
+  source_case_id: string;
+  warnings: string[];
+};
+
+export type AppendDatasetCaseResult = {
+  dataset: DatasetDetail;
+  case_id: string;
+  created_new_dataset: boolean;
+};
+
+// --- Failure-mode taxonomy (loop-closer 2A) ----------------------------
+
+export type FailureMode = {
+  id: string;
+  slug: string;
+  title: string;
+  definition: string;
+  status: string;
+  parent_mode_id: string | null;
+  proposed_by: string;
+  example_count: number;
+  first_seen_iteration: number | null;
+  superseded_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// --- Baseline & regression (loop-closer 2B) ----------------------------
+
+export type Baseline = {
+  dataset_id: string;
+  iteration_id: string;
+  experiment_id: string | null;
+  primary_metric_name: string;
+  primary_metric_value: number;
+  error_rate: number | null;
+  created_at: string;
+};
+
+export type RegressionFinding = {
+  signal: string;
+  baseline: number | null;
+  current: number | null;
+  delta: number | null;
+  regressed: boolean;
+  detail: string;
+};
+
+export type RegressionResult = {
+  dataset_id: string;
+  iteration_id: string;
+  regressed: boolean;
+  findings: RegressionFinding[];
+};
+
+// --- Error-analysis (loop-closer 2C) -----------------------------------
+// Mirror of `analysis/schemas.py`. The bundle is the failed-traces + live
+// taxonomy the human codes against; the result is what they compose back.
+
+export type TaxonomyEntry = {
+  id: string;
+  slug: string;
+  title: string;
+  definition: string;
+  status: string;
+};
+
+export type BundleGrade = {
+  label: string;
+  score: number | null;
+  deterministic_modes: string[];
+  judge_reason: string | null;
+};
+
+export type BundleMessage = { role: string; content: string };
+export type BundleErrorSpan = { kind: string; name: string; error: string | null };
+
+export type BundleTrace = {
+  trace_id: string;
+  run_id: string;
+  thread_id: string | null;
+  eval_case_id: string | null;
+  grade: BundleGrade;
+  transcript: BundleMessage[];
+  first_error_span: BundleErrorSpan | null;
+};
+
+export type AnalysisBundle = {
+  schema_version: string;
+  workspace_id: string;
+  experiment_id: string;
+  iteration: number | null;
+  taxonomy: TaxonomyEntry[];
+  traces: BundleTrace[];
+  instructions_ref: string;
+};
+
+// An assignment classifies a trace against an existing mode (`mode_id`) XOR
+// proposes a new one (`new_mode_slug`). `proposed_modes` carries the new modes'
+// definitions. This is what the annotation UI composes and POSTs.
+export type AnalysisAssignment = {
+  trace_id: string;
+  mode_id?: string;
+  new_mode_slug?: string;
+  open_note?: string;
+  quote?: string;
+};
+
+export type AnalysisProposedMode = {
+  slug: string;
+  title: string;
+  definition: string;
+  parent_slug?: string;
+};
+
+export type AnalysisResult = {
+  assignments?: AnalysisAssignment[];
+  proposed_modes?: AnalysisProposedMode[];
+};
+
+export type AnalysisIngestSummary = {
+  assignments_applied: number;
+  created_candidates: string[];
+  updated_candidates: string[];
+  hypotheses_recorded: number;
+};
+
 export class ApiError extends Error {
   status: number;
   body: unknown;
@@ -226,17 +594,45 @@ export class ApiError extends Error {
     this.status = status;
     this.body = body;
   }
+
+  /** A human-facing message: FastAPI's `{detail}` if present, else the status. */
+  get detail(): string {
+    const b = this.body;
+    if (b && typeof b === 'object' && 'detail' in b) {
+      const d = (b as { detail: unknown }).detail;
+      if (typeof d === 'string') return d;
+    }
+    if (typeof b === 'string' && b.trim()) return b;
+    return `Request failed (${this.status})`;
+  }
 }
 
-async function request<T>(path: string, init?: RequestInit & { fetch?: typeof fetch }): Promise<T> {
+type RequestInitX = Omit<RequestInit, 'body'> & {
+  fetch?: typeof fetch;
+  /** JSON body — serialized and sent with `Content-Type: application/json`. */
+  json?: unknown;
+  /** Multipart body — sent as-is; the browser owns the `Content-Type` boundary. */
+  form?: FormData;
+};
+
+async function request<T>(path: string, init?: RequestInitX): Promise<T> {
   const f = init?.fetch ?? fetch;
+  const { fetch: _f, json, form, headers, ...rest } = init ?? {};
+
+  // A bare GET keeps the original `X-SelfEvals-User` + JSON content type. A
+  // mutation either serializes `json` (JSON content type) or passes `form`
+  // through *without* setting Content-Type so the browser appends the
+  // multipart boundary itself — setting it by hand corrupts the upload.
+  const mergedHeaders: Record<string, string> = {
+    'X-SelfEvals-User': 'local',
+    ...(form ? {} : { 'Content-Type': 'application/json' }),
+    ...((headers as Record<string, string>) ?? {})
+  };
+
   const res = await f(DEFAULT_BASE + path, {
-    ...init,
-    headers: {
-      'X-SelfEvals-User': 'local',
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {})
-    }
+    ...rest,
+    headers: mergedHeaders,
+    body: form ?? (json !== undefined ? JSON.stringify(json) : undefined)
   });
   if (!res.ok) {
     // Read the body once as text, then try JSON. Calling `res.json()` then
@@ -253,7 +649,20 @@ async function request<T>(path: string, init?: RequestInit & { fetch?: typeof fe
     }
     throw new ApiError(res.status, body);
   }
-  return res.json() as Promise<T>;
+  // 204 / empty body (some mutations ack without content).
+  if (res.status === 204) return undefined as T;
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
+}
+
+/** Build a `?from=&to=&...` query string, dropping undefined values. */
+function qs(params: Record<string, string | number | undefined>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined) sp.set(k, String(v));
+  }
+  const s = sp.toString();
+  return s ? `?${s}` : '';
 }
 
 export const api = {
@@ -266,22 +675,46 @@ export const api = {
   workspace: (id: string, fetch?: typeof globalThis.fetch) =>
     request<WorkspaceDetail>(`/api/workspaces/${id}`, { fetch }),
 
+  /** Create a workspace. Returns the new workspace; redirect to its slug. */
+  createWorkspace: (body: CreateWorkspaceRequest, fetch?: typeof globalThis.fetch) =>
+    request<WorkspaceDetail>('/api/workspaces', { method: 'POST', json: body, fetch }),
+
   listExperiments: (
     workspaceId: string,
     fetch?: typeof globalThis.fetch,
     options: { limit?: number; offset?: number } = {}
-  ) => {
+  ) =>
     // A8: server returns a paginated envelope. Default page size matches
     // the server default (100) so the FE doesn't have to track it.
-    const params = new URLSearchParams();
-    if (options.limit !== undefined) params.set('limit', String(options.limit));
-    if (options.offset !== undefined) params.set('offset', String(options.offset));
-    const qs = params.toString();
-    return request<ExperimentListPage>(
-      `/api/workspaces/${workspaceId}/experiments${qs ? `?${qs}` : ''}`,
+    request<ExperimentListPage>(
+      `/api/workspaces/${workspaceId}/experiments${qs({
+        limit: options.limit,
+        offset: options.offset
+      })}`,
       { fetch }
-    );
-  },
+    ),
+
+  /**
+   * Launch a run. The body carries exactly one of `spec_path` / `spec_inline`
+   * (the form enforces this). Returns 202 with `dispatch` — `redis-worker`
+   * needs a live `selfevals worker runs`; the caller surfaces that.
+   */
+  runExperiment: (
+    workspaceId: string,
+    body: RunExperimentRequest,
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<RunExperimentResponse>(`/api/workspaces/${workspaceId}/experiments/run`, {
+      method: 'POST',
+      json: body,
+      fetch
+    }),
+
+  cancelExperiment: (workspaceId: string, experimentId: string, fetch?: typeof globalThis.fetch) =>
+    request<RunExperimentResponse>(
+      `/api/workspaces/${workspaceId}/experiments/${experimentId}/cancel`,
+      { method: 'POST', fetch }
+    ),
 
   experiment: (workspaceId: string, experimentId: string, fetch?: typeof globalThis.fetch) =>
     request<ExperimentDetail>(`/api/workspaces/${workspaceId}/experiments/${experimentId}`, {
@@ -293,6 +726,26 @@ export const api = {
       fetch
     }),
 
+  /**
+   * Per-scenario expected-vs-detected-vs-matched for the experiment's best
+   * iteration. Lazy-loaded only when the Results tab opens — it can be large.
+   * `includeTurns` expands each conversation case into per-turn `ScenarioResult`s
+   * (off by default). Cases with no persisted trace are still listed
+   * (`detected`/`matched` null) so the grid is honest.
+   */
+  experimentResults: (
+    workspaceId: string,
+    experimentId: string,
+    opts: { includeTurns?: boolean } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<ExperimentResults>(
+      `/api/workspaces/${workspaceId}/experiments/${experimentId}/results${qs({
+        include: opts.includeTurns ? 'turns' : undefined
+      })}`,
+      { fetch }
+    ),
+
   trace: (workspaceId: string, traceId: string, fetch?: typeof globalThis.fetch) =>
     request<TraceDetail>(`/api/workspaces/${workspaceId}/traces/${traceId}`, {
       fetch
@@ -302,6 +755,12 @@ export const api = {
     request<AnchorPoint[]>(`/api/workspaces/${workspaceId}/anchor-set`, {
       fetch
     }),
+
+  /** Runs currently streaming spans through the broker, across all workspaces.
+   *  The caller filters by workspace. Used to surface a live run and open its
+   *  trace stream. (The backend's `ActiveRun` carries no experiment_id.) */
+  activeRuns: (fetch?: typeof globalThis.fetch) =>
+    request<{ runs: { workspace_id: string; run_id: string }[] }>('/api/runs/active', { fetch }),
 
   /**
    * Resolve a `*_pointer` field from a span detail. The API returns the
@@ -371,5 +830,250 @@ export const api = {
     request<CompareResponse>(
       `/api/workspaces/${workspaceId}/experiments/${experimentId}/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`,
       { fetch }
+    ),
+
+  // --- Datasets --------------------------------------------------------
+
+  listDatasets: (
+    workspaceId: string,
+    fetch?: typeof globalThis.fetch,
+    options: { limit?: number; offset?: number; status?: string; dataset_type?: string } = {}
+  ) =>
+    request<DatasetListPage>(
+      `/api/workspaces/${workspaceId}/datasets${qs({
+        limit: options.limit,
+        offset: options.offset,
+        status: options.status,
+        dataset_type: options.dataset_type
+      })}`,
+      { fetch }
+    ),
+
+  dataset: (workspaceId: string, datasetId: string, fetch?: typeof globalThis.fetch) =>
+    request<DatasetDetail>(`/api/workspaces/${workspaceId}/datasets/${datasetId}`, { fetch }),
+
+  createDataset: (
+    workspaceId: string,
+    body: CreateDatasetRequest,
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<DatasetDetail>(`/api/workspaces/${workspaceId}/datasets`, {
+      method: 'POST',
+      json: body,
+      fetch
+    }),
+
+  /** Upload a `.jsonl` file as a new dataset (multipart). */
+  uploadDataset: (workspaceId: string, form: FormData, fetch?: typeof globalThis.fetch) =>
+    request<DatasetDetail>(`/api/workspaces/${workspaceId}/datasets/upload`, {
+      method: 'POST',
+      form,
+      fetch
+    }),
+
+  /** Freeze a dataset (irreversible — recomputes the manifest hash). */
+  freezeDataset: (workspaceId: string, datasetId: string, fetch?: typeof globalThis.fetch) =>
+    request<DatasetDetail>(`/api/workspaces/${workspaceId}/datasets/${datasetId}/freeze`, {
+      method: 'POST',
+      fetch
+    }),
+
+  draftCaseFromTrace: (
+    workspaceId: string,
+    traceId: string,
+    body: { name?: string; notes?: string } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<PromoteCaseDraft>(`/api/workspaces/${workspaceId}/traces/${traceId}/case-draft`, {
+      method: 'POST',
+      json: body,
+      fetch
+    }),
+
+  appendDatasetCase: (
+    workspaceId: string,
+    datasetId: string,
+    body: { case: Record<string, unknown>; create_version_if_frozen?: boolean },
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<AppendDatasetCaseResult>(`/api/workspaces/${workspaceId}/datasets/${datasetId}/cases`, {
+      method: 'POST',
+      json: body,
+      fetch
+    }),
+
+  // --- Metrics (observability) -----------------------------------------
+  // Each takes an optional `from`/`to` (ISO 8601) window + per-metric filter.
+
+  metricsPassRate: (
+    workspaceId: string,
+    opts: { from?: string; to?: string; experiment_id?: string; grader?: string } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<PassRateMetrics>(`/api/workspaces/${workspaceId}/metrics/pass-rate${qs(opts)}`, {
+      fetch
+    }),
+
+  metricsFailureModes: (
+    workspaceId: string,
+    opts: { from?: string; to?: string; experiment_id?: string; grader?: string } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<FailureModeMetrics>(`/api/workspaces/${workspaceId}/metrics/failure-modes${qs(opts)}`, {
+      fetch
+    }),
+
+  metricsTools: (
+    workspaceId: string,
+    opts: { from?: string; to?: string; experiment_id?: string; tool_name?: string } = {},
+    fetch?: typeof globalThis.fetch
+  ) => request<ToolMetrics>(`/api/workspaces/${workspaceId}/metrics/tools${qs(opts)}`, { fetch }),
+
+  metricsCost: (
+    workspaceId: string,
+    opts: { from?: string; to?: string; experiment_id?: string; model?: string } = {},
+    fetch?: typeof globalThis.fetch
+  ) => request<CostMetrics>(`/api/workspaces/${workspaceId}/metrics/cost${qs(opts)}`, { fetch }),
+
+  metricsTokens: (
+    workspaceId: string,
+    opts: { from?: string; to?: string; experiment_id?: string; model?: string } = {},
+    fetch?: typeof globalThis.fetch
+  ) => request<TokenMetrics>(`/api/workspaces/${workspaceId}/metrics/tokens${qs(opts)}`, { fetch }),
+
+  metricsLatency: (
+    workspaceId: string,
+    opts: { from?: string; to?: string; experiment_id?: string } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<LatencyMetrics>(`/api/workspaces/${workspaceId}/metrics/latency${qs(opts)}`, {
+      fetch
+    }),
+
+  /**
+   * Failing traces grouped by failure mode (§J.6). A first-order view (not under
+   * `/metrics`) — each cluster carries example `run_id`s that link straight into
+   * the trace viewer. v1 clusters by the stable taxonomy slug.
+   */
+  clusters: (
+    workspaceId: string,
+    opts: {
+      from?: string;
+      to?: string;
+      experiment_id?: string;
+      grader?: string;
+      limit?: number;
+    } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<FailureClusters>(`/api/workspaces/${workspaceId}/clusters${qs(opts)}`, {
+      fetch
+    }),
+
+  // --- Failure-mode taxonomy (2A) --------------------------------------
+
+  listFailureModes: (
+    workspaceId: string,
+    opts: { status?: string } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<{ items: FailureMode[] }>(`/api/workspaces/${workspaceId}/failure-modes${qs(opts)}`, {
+      fetch
+    }),
+
+  promoteFailureMode: (workspaceId: string, id: string, fetch?: typeof globalThis.fetch) =>
+    request<FailureMode>(`/api/workspaces/${workspaceId}/failure-modes/${id}/promote`, {
+      method: 'POST',
+      fetch
+    }),
+
+  retireFailureMode: (workspaceId: string, id: string, fetch?: typeof globalThis.fetch) =>
+    request<FailureMode>(`/api/workspaces/${workspaceId}/failure-modes/${id}/retire`, {
+      method: 'POST',
+      fetch
+    }),
+
+  mergeFailureMode: (
+    workspaceId: string,
+    id: string,
+    intoId: string,
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<FailureMode>(`/api/workspaces/${workspaceId}/failure-modes/${id}/merge`, {
+      method: 'POST',
+      json: { into_id: intoId },
+      fetch
+    }),
+
+  editFailureMode: (
+    workspaceId: string,
+    id: string,
+    patch: { title?: string; definition?: string },
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<FailureMode>(`/api/workspaces/${workspaceId}/failure-modes/${id}`, {
+      method: 'PATCH',
+      json: patch,
+      fetch
+    }),
+
+  // --- Baseline & regression (2B) --------------------------------------
+
+  getBaseline: (workspaceId: string, datasetId: string, fetch?: typeof globalThis.fetch) =>
+    request<Baseline>(`/api/workspaces/${workspaceId}/datasets/${datasetId}/baseline`, { fetch }),
+
+  setBaseline: (
+    workspaceId: string,
+    datasetId: string,
+    iterationId: string | null,
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<Baseline>(`/api/workspaces/${workspaceId}/datasets/${datasetId}/baseline`, {
+      method: 'PUT',
+      json: { iteration_id: iterationId ?? null },
+      fetch
+    }),
+
+  regressionCheck: (
+    workspaceId: string,
+    datasetId: string,
+    body: {
+      iteration_id: string;
+      primary_drop?: number;
+      per_class_f1_drop?: number;
+      error_rate_rise?: number;
+    },
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<RegressionResult>(
+      `/api/workspaces/${workspaceId}/datasets/${datasetId}/regression-check`,
+      { method: 'POST', json: body, fetch }
+    ),
+
+  // --- Error-analysis bundle / ingest (2C) -----------------------------
+
+  analysisBundle: (
+    workspaceId: string,
+    experimentId: string,
+    opts: { iteration?: number; all?: boolean } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<AnalysisBundle>(
+      `/api/workspaces/${workspaceId}/experiments/${experimentId}/analysis/bundle${qs({
+        iteration: opts.iteration,
+        all: opts.all ? 'true' : undefined
+      })}`,
+      { fetch }
+    ),
+
+  analysisIngest: (
+    workspaceId: string,
+    experimentId: string,
+    result: AnalysisResult,
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<AnalysisIngestSummary>(
+      `/api/workspaces/${workspaceId}/experiments/${experimentId}/analysis/ingest`,
+      { method: 'POST', json: result, fetch }
     )
 };

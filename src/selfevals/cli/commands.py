@@ -39,7 +39,6 @@ from selfevals.schemas.workspace import Workspace
 from selfevals.storage.factory import (
     open_storage,
     resolve_storage_url,
-    sqlite_path_from_url,
     storage_url_label,
 )
 from selfevals.storage.interface import ListFilter, StorageInterface
@@ -59,21 +58,13 @@ class CommandError(SelfEvalsUserError):
 
 
 def _storage(args: argparse.Namespace) -> StorageInterface:
-    """Open configured storage, translating sqlite errors into friendly messages.
+    """Open the configured Postgres storage.
 
-    The two errors users actually hit (locked from a concurrent
-    process, corrupted db pointed at by `--db`) both surface from the
-    `sqlite3.connect` / first-PRAGMA path; the friendly layer turns
-    them into a one-line CLI error.
+    A connection error surfaces as the underlying psycopg exception; we
+    don't translate it here (there's no single-file corruption/lock case to
+    rewrite the way the old SQLite path did).
     """
-    import sqlite3
-
-    storage_url = resolve_storage_url(args.db)
-    try:
-        return open_storage(storage_url)
-    except sqlite3.Error as exc:
-        db_path = Path(sqlite_path_from_url(storage_url))
-        raise _friendly.wrap_sqlite_error(exc, db_path=db_path) from exc
+    return open_storage(resolve_storage_url(args.db))
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -475,9 +466,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         if storage is not None:
             ensure_workspace(storage, spec)
             scope = storage.open(spec.workspace_id)
-            # Object store next to the SQLite db, so large trace payloads
-            # (prompts/responses) offload to a pointer the `/payloads` endpoint
-            # resolves. Ephemeral `--no-persist` runs skip it (inline only).
+            # Filesystem object store (SELFEVALS_OBJECTS_DIR, default ./objects),
+            # so large trace payloads (prompts/responses) offload to a pointer the
+            # `/payloads` endpoint resolves. Ephemeral `--no-persist` runs skip it
+            # (inline only).
             payload_router = payload_router_for_db(resolve_storage_url(args.db), spec.workspace_id)
         # `build_loop` owns adapter/proposer/grader wiring and persists the
         # experiment via `scope` — the same canonical path the HTTP
@@ -563,7 +555,6 @@ def cmd_serve(args: argparse.Namespace) -> int:
     from pathlib import Path
 
     storage_url = resolve_storage_url(args.db)
-    os.environ["SELFEVALS_DB"] = storage_url
     os.environ["SELFEVALS_STORAGE_URL"] = storage_url
 
     # Auto-detect a built web bundle if --web-dist wasn't given and the

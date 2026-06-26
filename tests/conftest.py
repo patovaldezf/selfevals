@@ -14,10 +14,76 @@ from __future__ import annotations
 
 import asyncio
 import gc
+import os
 import warnings
 from collections.abc import Iterator
+from urllib.parse import urlparse
 
 import pytest
+from pytest_postgresql import factories
+
+# ---------------------------------------------------------------------------
+# Postgres test fixtures.
+#
+# The app is Postgres-only. Tests run against a real Postgres reachable at
+# SELFEVALS_TEST_POSTGRES_URL (the docker-compose instance on :5433 locally, a
+# service container in CI). pytest-postgresql's `noproc` factory clones a fresh
+# database per test against that server, so every test is fully isolated and the
+# template server is never mutated. We can't use the self-spawning `postgresql_proc`
+# factory because the local Homebrew install ships libpq only (no server binary).
+# ---------------------------------------------------------------------------
+
+_DEFAULT_TEST_PG = "postgresql://selfevals:selfevals@localhost:5433/selfevals"
+
+
+def _pg_parts() -> dict[str, object]:
+    url = os.environ.get("SELFEVALS_TEST_POSTGRES_URL", _DEFAULT_TEST_PG)
+    parsed = urlparse(url)
+    return {
+        "host": parsed.hostname or "localhost",
+        "port": parsed.port or 5432,
+        "user": parsed.username or "postgres",
+        "password": parsed.password or "",
+    }
+
+
+_parts = _pg_parts()
+# `dbname` is the per-test database pytest-postgresql creates and drops; it must
+# NOT be the operator's live database, so use a dedicated test name regardless of
+# what database the connection URL points at.
+postgresql_noproc = factories.postgresql_noproc(
+    host=str(_parts["host"]),
+    port=int(_parts["port"]),  # type: ignore[arg-type]
+    user=str(_parts["user"]),
+    password=str(_parts["password"]),
+    dbname="selfevals_pytest",
+)
+postgresql = factories.postgresql("postgresql_noproc")
+
+
+@pytest.fixture
+def db_url(postgresql: object) -> str:
+    """A Postgres DSN for a fresh, isolated per-test database.
+
+    Pass this where the code wants a storage URL (``open_storage(db_url)``,
+    ``build_app(db_path=db_url)``, CLI ``--db db_url``).
+    """
+    info = postgresql.info  # type: ignore[attr-defined]
+    return (
+        f"postgresql://{info.user}:{_parts['password']}@{info.host}:{info.port}/{info.dbname}"
+    )
+
+
+@pytest.fixture
+def storage(db_url: str) -> Iterator[object]:
+    """An open PostgresStorage against a fresh per-test database (migrations applied)."""
+    from selfevals.storage.factory import open_storage
+
+    store = open_storage(db_url)
+    try:
+        yield store
+    finally:
+        store.close()
 
 
 @pytest.fixture(autouse=True)

@@ -1,8 +1,9 @@
 """Abstract storage and object-store contracts + WorkspaceScope.
 
 The two interfaces here are the only API the rest of selfevals uses to
-persist data. A future Postgres/S3 backend implements them the same way
-the MVP SQLite/filesystem backend does, and nothing else changes.
+persist data. The Postgres/filesystem backend implements them; a future
+backend (e.g. S3 for objects) would implement the same contracts and
+nothing else changes.
 
 Workspace isolation is structural: you obtain a `WorkspaceScope` for a
 given workspace_id; all reads and writes go through it. Direct access to
@@ -12,15 +13,21 @@ the underlying connection is not part of the public API.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Self
 
 from selfevals.storage.errors import WorkspaceMismatchError
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from types import TracebackType
 
+    from selfevals.api.schemas import WorkspaceSummary
     from selfevals.schemas._base import BaseEntity
+    from selfevals.schemas.eval_case import EvalCase
+    from selfevals.schemas.experiment import Experiment
+    from selfevals.schemas.trace import Trace
 
 
 @dataclass(frozen=True)
@@ -28,8 +35,7 @@ class ListFilter:
     """Filter spec for `list_entities`.
 
     Filters are AND-ed. Each value is matched with `=` against the stored
-    column (or row-as-dict for the SQLite generic table). For status-style
-    enums pass `.value` strings, not enum instances.
+    column. For status-style enums pass `.value` strings, not enum instances.
     """
 
     where: dict[str, Any] = field(default_factory=dict)
@@ -49,6 +55,83 @@ class StorageInterface(ABC):
     @abstractmethod
     def close(self) -> None:
         """Release underlying resources (file handles, connections)."""
+
+    # -- atomic batches -----------------------------------------------------
+
+    @contextmanager
+    @abstractmethod
+    def transaction(self) -> Iterator[None]:
+        """Run a block of writes atomically (all-or-nothing). Not re-entrant."""
+        raise NotImplementedError
+        yield  # pragma: no cover - signals a generator/contextmanager
+
+    # -- hot query helpers (part of the storage contract) -------------------
+
+    @abstractmethod
+    def list_workspace_summaries(self) -> list[WorkspaceSummary]:
+        """Cross-workspace listing for the dashboard index."""
+
+    @abstractmethod
+    def workspace_by_slug_owner(self, *, slug: str, user_id: str) -> Any | None:
+        """Resolve a workspace by (slug, owner) or None."""
+
+    @abstractmethod
+    def list_experiments_page(
+        self,
+        *,
+        workspace_id: str,
+        limit: int,
+        offset: int,
+        state: str | None,
+        feature: str | None,
+    ) -> tuple[list[Experiment], int, dict[str, int]]:
+        """Paginated experiments + total + per-experiment iteration counts."""
+
+    @abstractmethod
+    def eval_cases_for_experiment(
+        self, workspace_id: str, experiment_id: str
+    ) -> list[EvalCase]:
+        """All EvalCases persisted under an experiment."""
+
+    @abstractmethod
+    def latest_trace_refs_by_case(
+        self, workspace_id: str, experiment_id: str
+    ) -> dict[str, tuple[str, str]]:
+        """Map eval_case_id -> (run_id, trace_id) for the latest trace per case."""
+
+    @abstractmethod
+    def traces_for_experiment_iteration(
+        self, workspace_id: str, experiment_id: str, iteration: int
+    ) -> list[Trace]:
+        """All traces for one experiment iteration."""
+
+    @abstractmethod
+    def trace_by_id_or_run_id(self, workspace_id: str, trace_id: str) -> Trace | None:
+        """Look up a Trace by entity id or run_id; None if missing."""
+
+    @abstractmethod
+    def traces_by_thread_id(self, workspace_id: str, thread_id: str) -> list[Trace]:
+        """All traces sharing a thread_id (a conversation)."""
+
+    # -- metrics rollups ----------------------------------------------------
+
+    @abstractmethod
+    def pass_rate_metrics(self, **kwargs: Any) -> list[dict[str, Any]]: ...
+
+    @abstractmethod
+    def failure_mode_metrics(self, **kwargs: Any) -> list[dict[str, Any]]: ...
+
+    @abstractmethod
+    def tool_metrics(self, **kwargs: Any) -> list[dict[str, Any]]: ...
+
+    @abstractmethod
+    def cost_metrics(self, **kwargs: Any) -> list[dict[str, Any]]: ...
+
+    @abstractmethod
+    def token_metrics(self, **kwargs: Any) -> list[dict[str, Any]]: ...
+
+    @abstractmethod
+    def latency_metrics(self, **kwargs: Any) -> list[dict[str, Any]]: ...
 
 
 class ObjectStoreInterface(ABC):

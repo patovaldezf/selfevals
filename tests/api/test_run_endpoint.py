@@ -10,7 +10,9 @@ grader), so these are network-free and deterministic.
 from __future__ import annotations
 
 import json
+import threading
 import time
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -22,8 +24,8 @@ from fastapi.testclient import TestClient
 from selfevals.api.app import build_app
 from selfevals.schemas.enums import ExperimentState
 from selfevals.schemas.experiment import Experiment
+from selfevals.storage.factory import open_storage
 from selfevals.storage.seed import seed_workspace
-from selfevals.storage.sqlite import SQLiteStorage
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REPO_EXAMPLE = REPO_ROOT / "evals" / "experiments" / "example_pingpong.yaml"
@@ -41,10 +43,17 @@ def _inline_spec(*, max_iterations: int = 2) -> dict[str, Any]:
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> tuple[TestClient, str]:
-    db = tmp_path / "selfevals.sqlite"
-    # The endpoint creates the workspace on demand; we just hand back the path.
-    return TestClient(build_app(db_path=str(db))), str(db)
+def client(db_url: str) -> Iterator[tuple[TestClient, str]]:
+    # The endpoint creates the workspace on demand; we just hand back the URL.
+    yield TestClient(build_app(db_path=db_url)), db_url
+    # In-process runs dispatch a daemon thread named `run-<exp>` that holds its
+    # own Postgres connection. Join any still-running ones before this test's
+    # ephemeral database is dropped, so a late query doesn't hit a killed DB
+    # (psycopg AdminShutdown surfacing as an unraisable warning in teardown).
+    deadline = time.monotonic() + 20.0
+    for thread in threading.enumerate():
+        if thread.name.startswith("run-") and thread.is_alive():
+            thread.join(timeout=max(0.0, deadline - time.monotonic()))
 
 
 def _poll_state(c: TestClient, ws: str, exp_id: str, *, timeout: float = 15.0) -> str:
@@ -206,7 +215,7 @@ def test_run_409_when_active(client: tuple[TestClient, str]) -> None:
     c, db = client
     # Seed an experiment that is already RUNNING, then POST a spec that reuses
     # its id → conflict.
-    st = SQLiteStorage(db)
+    st = open_storage(db)
     ws = seed_workspace(st, slug="t", name="t", user_id="local").workspace
     spec = _inline_spec()
     exp_id = "exp_PINNEDPINNEDPINNEDPINNED"

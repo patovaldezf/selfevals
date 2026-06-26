@@ -9,6 +9,25 @@ jobs:
   python:
     name: Python
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: selfevals
+          POSTGRES_PASSWORD: selfevals
+          POSTGRES_DB: selfevals
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U selfevals -d selfevals"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # The storage backend is Postgres-only; the suite clones a fresh database
+      # per test from this server (pytest-postgresql noproc).
+      SELFEVALS_TEST_POSTGRES_URL: postgresql://selfevals:selfevals@localhost:5432/selfevals
+      SELFEVALS_STORAGE_URL: postgresql://selfevals:selfevals@localhost:5432/selfevals
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -43,10 +62,30 @@ jobs:
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: selfevals
+          POSTGRES_PASSWORD: selfevals
+          POSTGRES_DB: selfevals
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U selfevals -d selfevals"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # The E2E backend reads from this Postgres database; global-setup seeds it.
+      E2E_DB_URL: postgresql://selfevals:selfevals@localhost:5432/selfevals
     steps:
       - uses: actions/checkout@v4
+      # `psql` is needed by e2e/fixtures/seed.sh to reset the schema.
+      - name: Install Postgres client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
       # Python toolchain — the E2E suite boots the real FastAPI backend
-      # against a seeded fixture db (see web/playwright.config.ts).
+      # against a seeded Postgres fixture db (see web/playwright.config.ts).
       - uses: astral-sh/setup-uv@v5
       - uses: actions/setup-python@v5
         with:

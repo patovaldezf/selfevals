@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
@@ -253,3 +254,110 @@ async def test_http_adapter_handles_transport_error() -> None:
     adapter = HttpEndpointAdapter("http://127.0.0.1:1/", timeout_seconds=1.0)
     with pytest.raises(AdapterError, match="could not reach"):
         await adapter.invoke(_req())
+
+
+# --- F6: error classification (transient vs permanent) ------------------------
+
+
+async def _http_invoke_expecting_error(
+    handler: Callable[[httpx.Request], httpx.Response],
+) -> AdapterError:
+    """Run HttpEndpointAdapter against a mock handler, return the AdapterError."""
+    adapter = HttpEndpointAdapter("http://test.local/agent")
+    import selfevals.runner.adapters as adapters_mod
+
+    real_client = adapters_mod.httpx.AsyncClient
+
+    def factory(*args: object, **kwargs: object) -> httpx.AsyncClient:
+        kwargs.pop("timeout", None)
+        return real_client(transport=httpx.MockTransport(handler))
+
+    adapters_mod.httpx.AsyncClient = factory  # type: ignore[assignment]
+    try:
+        with pytest.raises(AdapterError) as excinfo:
+            await adapter.invoke(_req())
+    finally:
+        adapters_mod.httpx.AsyncClient = real_client  # type: ignore[assignment]
+    return excinfo.value
+
+
+@pytest.mark.asyncio
+async def test_http_429_is_retryable_with_retry_after() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, text="slow down", headers={"Retry-After": "7"})
+
+    err = await _http_invoke_expecting_error(handler)
+    assert err.retryable is True
+    assert err.status_code == 429
+    assert err.retry_after_seconds == 7.0
+
+
+@pytest.mark.asyncio
+async def test_http_503_is_retryable() -> None:
+    err = await _http_invoke_expecting_error(lambda r: httpx.Response(503, text="down"))
+    assert err.retryable is True
+    assert err.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_http_400_is_permanent() -> None:
+    err = await _http_invoke_expecting_error(lambda r: httpx.Response(400, text="bad request"))
+    assert err.retryable is False
+    assert err.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_http_timeout_is_retryable() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.TimeoutException("timed out", request=request)
+
+    err = await _http_invoke_expecting_error(handler)
+    assert err.retryable is True
+
+
+@pytest.mark.asyncio
+async def test_embedded_classifies_rate_limit_as_retryable() -> None:
+    class _FakeRateLimitError(Exception):
+        status_code = 429
+        retry_after = 3
+
+    def fn(req: AdapterRequest) -> AdapterResponse:
+        raise _FakeRateLimitError("rate limited")
+
+    adapter = EmbeddedAdapter(fn)
+    with pytest.raises(AdapterError) as excinfo:
+        await adapter.invoke(_req())
+    assert excinfo.value.retryable is True
+    assert excinfo.value.status_code == 429
+    assert excinfo.value.retry_after_seconds == 3.0
+
+
+@pytest.mark.asyncio
+async def test_embedded_plain_exception_is_permanent() -> None:
+    def fn(req: AdapterRequest) -> AdapterResponse:
+        raise ValueError("logic bug")
+
+    adapter = EmbeddedAdapter(fn)
+    with pytest.raises(AdapterError) as excinfo:
+        await adapter.invoke(_req())
+    assert excinfo.value.retryable is False
+
+
+@pytest.mark.asyncio
+async def test_cli_timeout_is_retryable(tmp_path: Path) -> None:
+    script = tmp_path / "slow.py"
+    script.write_text("import time; time.sleep(5)")
+    adapter = CliCommandAdapter([sys.executable, str(script)], timeout_seconds=0.2)
+    with pytest.raises(AdapterError) as excinfo:
+        await adapter.invoke(_req())
+    assert excinfo.value.retryable is True
+
+
+@pytest.mark.asyncio
+async def test_cli_nonzero_exit_is_permanent(tmp_path: Path) -> None:
+    script = tmp_path / "crash.py"
+    script.write_text("import sys; sys.exit(2)")
+    adapter = CliCommandAdapter([sys.executable, str(script)])
+    with pytest.raises(AdapterError) as excinfo:
+        await adapter.invoke(_req())
+    assert excinfo.value.retryable is False

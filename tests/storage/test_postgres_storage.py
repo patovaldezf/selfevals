@@ -1,7 +1,14 @@
+"""Contract tests for the Postgres storage backend.
+
+These exercise the generic ``WorkspaceScope`` contract (put/get/list/delete/
+exists, workspace isolation, optimistic concurrency) against a real Postgres
+database via the ``storage`` fixture (a fresh, isolated per-test database).
+"""
+
 from __future__ import annotations
 
 import threading
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -14,7 +21,9 @@ from selfevals.storage.errors import (
     WorkspaceMismatchError,
 )
 from selfevals.storage.interface import ListFilter
-from selfevals.storage.sqlite import SQLiteStorage
+
+if TYPE_CHECKING:
+    from selfevals.storage.interface import StorageInterface
 
 
 def _ws(slug: str = "pato") -> Workspace:
@@ -33,20 +42,17 @@ def _feature(workspace_id: str, *, primary: str = "commerce.product_resolution")
     )
 
 
-def test_put_and_get_roundtrip(tmp_path: Path) -> None:
-    store = SQLiteStorage(tmp_path / "test.db")
+def test_put_and_get_roundtrip(storage: StorageInterface) -> None:
     ws = _ws()
-    with store.open(ws.id) as scope:
+    with storage.open(ws.id) as scope:
         scope.put_entity(ws)
         roundtripped = scope.get_entity(Workspace, ws.id)
         assert isinstance(roundtripped, Workspace)
         assert roundtripped.id == ws.id
         assert roundtripped.slug == ws.slug
-    store.close()
 
 
-def test_put_rejects_cross_workspace_entity(tmp_path: Path) -> None:
-    store = SQLiteStorage(tmp_path / "test.db")
+def test_put_rejects_cross_workspace_entity(storage: StorageInterface) -> None:
     ws = _ws()
     other_id = Workspace.make_id()
     foreign = FeatureRegistry(
@@ -57,37 +63,33 @@ def test_put_rejects_cross_workspace_entity(tmp_path: Path) -> None:
         description="x",
         default_risk=RiskProfile(overall="low"),
     )
-    with store.open(ws.id) as scope, pytest.raises(WorkspaceMismatchError):
+    with storage.open(ws.id) as scope, pytest.raises(WorkspaceMismatchError):
         scope.put_entity(foreign)
-    store.close()
 
 
-def test_get_rejects_cross_workspace_read(tmp_path: Path) -> None:
-    store = SQLiteStorage(tmp_path / "test.db")
+def test_get_rejects_cross_workspace_read(storage: StorageInterface) -> None:
     ws_a = _ws("a")
     ws_b = _ws("b")
     feat = _feature(ws_a.id)
-    with store.open(ws_a.id) as scope:
+    with storage.open(ws_a.id) as scope:
         scope.put_entity(ws_a)
         scope.put_entity(feat)
-    with store.open(ws_b.id) as scope, pytest.raises(WorkspaceMismatchError):
+    with storage.open(ws_b.id) as scope:
+        scope.put_entity(ws_b)
+    with storage.open(ws_b.id) as scope, pytest.raises(WorkspaceMismatchError):
         scope.get_entity(FeatureRegistry, feat.id)
-    store.close()
 
 
-def test_get_missing_raises_entity_not_found(tmp_path: Path) -> None:
-    store = SQLiteStorage(tmp_path / "test.db")
+def test_get_missing_raises_entity_not_found(storage: StorageInterface) -> None:
     ws = _ws()
-    with store.open(ws.id) as scope, pytest.raises(EntityNotFoundError):
+    with storage.open(ws.id) as scope, pytest.raises(EntityNotFoundError):
         scope.get_entity(Workspace, "ws_nope")
-    store.close()
 
 
-def test_optimistic_concurrency_blocks_stale_writes(tmp_path: Path) -> None:
-    store = SQLiteStorage(tmp_path / "test.db")
+def test_optimistic_concurrency_blocks_stale_writes(storage: StorageInterface) -> None:
     ws = _ws()
     feat = _feature(ws.id)
-    with store.open(ws.id) as scope:
+    with storage.open(ws.id) as scope:
         scope.put_entity(ws)
         scope.put_entity(feat)
         # Update once: v1 -> v2.
@@ -97,48 +99,42 @@ def test_optimistic_concurrency_blocks_stale_writes(tmp_path: Path) -> None:
         skipped = feat.model_copy(update={"version": 4})
         with pytest.raises(OptimisticConcurrencyError):
             scope.put_entity(skipped)
-    store.close()
 
 
-def test_idempotent_same_version_write_is_allowed(tmp_path: Path) -> None:
-    store = SQLiteStorage(tmp_path / "test.db")
+def test_idempotent_same_version_write_is_allowed(storage: StorageInterface) -> None:
     ws = _ws()
     feat = _feature(ws.id)
-    with store.open(ws.id) as scope:
+    with storage.open(ws.id) as scope:
         scope.put_entity(ws)
         scope.put_entity(feat)
         # Re-saving the same version (same payload) is a no-op, not an error.
         scope.put_entity(feat)
-    store.close()
 
 
-def test_list_returns_only_current_workspace(tmp_path: Path) -> None:
-    store = SQLiteStorage(tmp_path / "test.db")
+def test_list_returns_only_current_workspace(storage: StorageInterface) -> None:
     ws_a = _ws("a")
     ws_b = _ws("b")
-    with store.open(ws_a.id) as scope:
+    with storage.open(ws_a.id) as scope:
         scope.put_entity(ws_a)
         scope.put_entity(_feature(ws_a.id, primary="a.one"))
         scope.put_entity(_feature(ws_a.id, primary="a.two"))
-    with store.open(ws_b.id) as scope:
+    with storage.open(ws_b.id) as scope:
         scope.put_entity(ws_b)
         scope.put_entity(_feature(ws_b.id, primary="b.one"))
 
-    with store.open(ws_a.id) as scope:
+    with storage.open(ws_a.id) as scope:
         items_a = scope.list_entities(FeatureRegistry)
         assert len(items_a) == 2
         assert all(isinstance(i, FeatureRegistry) for i in items_a)
         assert {i.primary_feature for i in items_a} == {"a.one", "a.two"}
-    with store.open(ws_b.id) as scope:
+    with storage.open(ws_b.id) as scope:
         items_b = scope.list_entities(FeatureRegistry)
         assert {i.primary_feature for i in items_b} == {"b.one"}
-    store.close()
 
 
-def test_list_filter_by_payload_field(tmp_path: Path) -> None:
-    store = SQLiteStorage(tmp_path / "test.db")
+def test_list_filter_by_column(storage: StorageInterface) -> None:
     ws = _ws()
-    with store.open(ws.id) as scope:
+    with storage.open(ws.id) as scope:
         scope.put_entity(ws)
         scope.put_entity(_feature(ws.id, primary="commerce.x"))
         scope.put_entity(_feature(ws.id, primary="support.y"))
@@ -148,89 +144,79 @@ def test_list_filter_by_payload_field(tmp_path: Path) -> None:
         )
         assert len(items) == 1
         assert items[0].primary_feature == "support.y"
-    store.close()
 
 
-def test_list_rejects_untrusted_order_by(tmp_path: Path) -> None:
-    store = SQLiteStorage(tmp_path / "test.db")
+def test_list_rejects_untrusted_order_by(storage: StorageInterface) -> None:
     ws = _ws()
-    with store.open(ws.id) as scope:
+    with storage.open(ws.id) as scope:
         scope.put_entity(ws)
         with pytest.raises(ValueError, match="unsupported order_by"):
-            scope.list_entities(FeatureRegistry, ListFilter(order_by="created_at; DROP TABLE entities"))
-    store.close()
+            scope.list_entities(
+                FeatureRegistry,
+                ListFilter(order_by="created_at; DROP TABLE feature_registries"),
+            )
 
 
-def test_delete_rejects_cross_workspace(tmp_path: Path) -> None:
-    store = SQLiteStorage(tmp_path / "test.db")
+def test_delete_rejects_cross_workspace(storage: StorageInterface) -> None:
     ws_a = _ws("a")
     ws_b = _ws("b")
     feat_a = _feature(ws_a.id)
-    with store.open(ws_a.id) as scope:
+    with storage.open(ws_a.id) as scope:
         scope.put_entity(ws_a)
         scope.put_entity(feat_a)
-    with store.open(ws_b.id) as scope, pytest.raises(WorkspaceMismatchError):
+    with storage.open(ws_b.id) as scope:
+        scope.put_entity(ws_b)
+    with storage.open(ws_b.id) as scope, pytest.raises(WorkspaceMismatchError):
         scope.delete_entity(FeatureRegistry, feat_a.id)
-    with store.open(ws_a.id) as scope:
+    with storage.open(ws_a.id) as scope:
         scope.delete_entity(FeatureRegistry, feat_a.id)
         assert not scope.exists(FeatureRegistry, feat_a.id)
-    store.close()
 
 
-def test_delete_missing_raises(tmp_path: Path) -> None:
-    store = SQLiteStorage(tmp_path / "test.db")
+def test_delete_missing_raises(storage: StorageInterface) -> None:
     ws = _ws()
-    with store.open(ws.id) as scope, pytest.raises(EntityNotFoundError):
+    with storage.open(ws.id) as scope, pytest.raises(EntityNotFoundError):
         scope.delete_entity(FeatureRegistry, "ftr_nope")
-    store.close()
 
 
-def test_scope_cannot_be_used_after_close(tmp_path: Path) -> None:
-    store = SQLiteStorage(tmp_path / "test.db")
+def test_scope_cannot_be_used_after_close(storage: StorageInterface) -> None:
     ws = _ws()
-    scope = store.open(ws.id)
+    scope = storage.open(ws.id)
     scope.close()
     with pytest.raises(RuntimeError):
         scope.exists(Workspace, ws.id)
-    store.close()
 
 
-def test_in_memory_store_works() -> None:
-    store = SQLiteStorage(":memory:")
+def test_transaction_rolls_back_on_error(storage: StorageInterface) -> None:
     ws = _ws()
-    with store.open(ws.id) as scope:
+    with storage.open(ws.id) as scope:
         scope.put_entity(ws)
-        assert scope.exists(Workspace, ws.id)
-    store.close()
+    with pytest.raises(RuntimeError), storage.transaction():  # type: ignore[attr-defined]
+        with storage.open(ws.id) as scope:
+            scope.put_entity(_feature(ws.id, primary="rollback.me"))
+        raise RuntimeError("boom")
+    with storage.open(ws.id) as scope:
+        assert scope.list_entities(FeatureRegistry) == []
 
 
-def test_storage_usable_across_threads(tmp_path: Path) -> None:
-    """Regression: FastAPI runs sync handlers in a threadpool, and
-    `Depends(_storage)` can create the connection on one worker and
-    close it on another. With sqlite's default `check_same_thread=True`,
-    that raises
-    `ProgrammingError: SQLite objects created in a thread can only be
-    used in that same thread` during teardown — handlers return 200
-    but the response stream is corrupted, the FE sees `!res.ok`, and
-    every page past `/` 500s. We use `check_same_thread=False` and
-    keep the storage single-use per request, so this must work.
-    """
-    db_path = str(tmp_path / "thread.sqlite")
-    # Open the connection on the main thread.
-    store = SQLiteStorage(db_path)
+def test_storage_usable_across_threads(db_url: str) -> None:
+    """FastAPI runs sync handlers in a threadpool; a connection may be opened on
+    one worker and read/closed on another. psycopg connections are guarded by an
+    internal lock, so a single connection must be usable across threads."""
+    from selfevals.storage.factory import open_storage
+
+    store = open_storage(db_url)
     ws = _ws()
     with store.open(ws.id) as scope:
         scope.put_entity(ws)
 
-    # Read from a worker thread (simulating Depends being re-resolved
-    # on a different worker than the one that built the connection).
     out: dict[str, object] = {}
 
     def _read() -> None:
         try:
             with store.open(ws.id) as scope:
                 out["found"] = scope.exists(Workspace, ws.id)
-        except Exception as e:  # pragma: no cover - failure surfaced via assert
+        except Exception as e:  # pragma: no cover - surfaced via assert
             out["error"] = repr(e)
 
     t = threading.Thread(target=_read)
@@ -238,19 +224,4 @@ def test_storage_usable_across_threads(tmp_path: Path) -> None:
     t.join(timeout=5.0)
     assert "error" not in out, f"cross-thread read failed: {out.get('error')!r}"
     assert out.get("found") is True
-
-    # And close from yet a third thread — this is the path that originally
-    # blew up in the API (`storage.close()` running on a different
-    # threadpool worker than the one that opened the connection).
-    closed_error: dict[str, object] = {}
-
-    def _close() -> None:
-        try:
-            store.close()
-        except Exception as e:  # pragma: no cover
-            closed_error["error"] = repr(e)
-
-    t2 = threading.Thread(target=_close)
-    t2.start()
-    t2.join(timeout=5.0)
-    assert "error" not in closed_error, f"cross-thread close failed: {closed_error!r}"
+    store.close()

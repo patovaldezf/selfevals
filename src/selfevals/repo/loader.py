@@ -540,10 +540,12 @@ _SUPPORTED_GRADER_TYPES = {
     "deterministic",
     "llm_judge",
     "judge_panel",
+    "pairwise",
     "set_match",
     "funnel",
     "confusion",
 }
+_PAIRWISE_COMPARE_AGAINST = {"reference"}
 _SET_MATCH_GATINGS = {"completeness", "precision", "recall", "f1"}
 _CONSENSUS_RULES = {"majority", "unanimous", "weighted"}
 _FUNNEL_MATCH_KINDS = {
@@ -590,7 +592,7 @@ def _build_grader_specs(spec_path: Path, raw: dict[str, Any]) -> list[GraderSpec
         consensus: str | None = None
         params: dict[str, Any] = {}
 
-        if type_ in ("llm_judge", "judge_panel"):
+        if type_ in ("llm_judge", "judge_panel", "pairwise"):
             rubric_raw = entry.get("rubric")
             if not isinstance(rubric_raw, str) or not rubric_raw.strip():
                 raise LoaderError(
@@ -602,6 +604,9 @@ def _build_grader_specs(spec_path: Path, raw: dict[str, Any]) -> list[GraderSpec
         if type_ == "judge_panel":
             n_judges = _parse_n_judges(spec_path, i, entry)
             consensus = _parse_consensus(spec_path, i, entry)
+
+        if type_ == "pairwise":
+            params = _parse_pairwise_params(spec_path, i, entry)
 
         if type_ == "set_match":
             params = _parse_set_match_params(spec_path, i, entry)
@@ -692,6 +697,36 @@ def _parse_set_match_params(spec_path: Path, i: int, entry: dict[str, Any]) -> d
                 f"got {case_sensitive!r}"
             )
         params["case_sensitive"] = case_sensitive
+    return params
+
+
+def _parse_pairwise_params(spec_path: Path, i: int, entry: dict[str, Any]) -> dict[str, Any]:
+    """Validate a `pairwise` grader's params.
+
+    `compare_against` selects what B is (MVP: only `reference`). `tie_is_pass`
+    maps a tie verdict to PASS (default true). `swap_and_average` runs A/B and
+    B/A and averages to neutralize the judge's position bias (default false).
+    """
+    raw = entry.get("params", {})
+    if not isinstance(raw, dict):
+        raise LoaderError(f"{spec_path}: graders[{i}].params must be a mapping, got {raw!r}")
+    params: dict[str, Any] = {}
+    compare_against = raw.get("compare_against")
+    if compare_against is not None:
+        if compare_against not in _PAIRWISE_COMPARE_AGAINST:
+            raise LoaderError(
+                f"{spec_path}: graders[{i}].params.compare_against must be one of "
+                f"{sorted(_PAIRWISE_COMPARE_AGAINST)}, got {compare_against!r}"
+            )
+        params["compare_against"] = compare_against
+    for flag in ("tie_is_pass", "swap_and_average"):
+        value = raw.get(flag)
+        if value is not None:
+            if not isinstance(value, bool):
+                raise LoaderError(
+                    f"{spec_path}: graders[{i}].params.{flag} must be a boolean, got {value!r}"
+                )
+            params[flag] = value
     return params
 
 

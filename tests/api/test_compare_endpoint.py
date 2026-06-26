@@ -1,8 +1,8 @@
 """GET .../compare — structured diff over the HTTP bridge (B3).
 
 The endpoint is a thin wrapper over the reporter's `compute_compare`
-(the same math the CLI uses). We seed two IterationRecords directly via
-SQLiteStorage, then assert the projected `CompareResponse`: a winner
+(the same math the CLI uses). We seed two IterationRecords directly via the
+storage backend, then assert the projected `CompareResponse`: a winner
 recommendation, correct metric deltas, the honest holdout caveat, and
 the 400/404 error paths.
 """
@@ -10,7 +10,6 @@ the 400/404 error paths.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -25,8 +24,8 @@ from selfevals.schemas.iteration import (
     MetricObservation,
     ProposerInputs,
 )
+from selfevals.storage.factory import open_storage
 from selfevals.storage.seed import seed_workspace
-from selfevals.storage.sqlite import SQLiteStorage
 
 TS = datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC)
 
@@ -62,10 +61,12 @@ def _iteration_record(
 
 
 @pytest.fixture
-def seeded(tmp_path: Path) -> tuple[TestClient, str, str, str, str]:
+def seeded(db_url: str) -> tuple[TestClient, str, str, str, str]:
     """Seed a workspace with two iterations of `exp_a` (A loses, B wins) and
     one iteration of a different experiment `exp_b` (for the 400 path)."""
-    st = SQLiteStorage(str(tmp_path / "selfevals.sqlite"))
+    from tests.api._experiment_factory import make_experiment
+
+    st = open_storage(db_url)
     ws = seed_workspace(st, slug="t", name="t", user_id="local").workspace
     a = _iteration_record(
         workspace_id=ws.id,
@@ -90,11 +91,13 @@ def seeded(tmp_path: Path) -> tuple[TestClient, str, str, str, str]:
         primary=0.5,
     )
     with st.open(ws.id) as scope:
+        scope.put_entity(make_experiment(workspace_id=ws.id, id="exp_a", name="exp a"))
+        scope.put_entity(make_experiment(workspace_id=ws.id, id="exp_b", name="exp b"))
         scope.put_entity(a)
         scope.put_entity(b)
         scope.put_entity(other)
     st.close()
-    client = TestClient(build_app(db_path=str(tmp_path / "selfevals.sqlite")))
+    client = TestClient(build_app(db_path=db_url))
     return client, ws.id, a.id, b.id, other.id
 
 

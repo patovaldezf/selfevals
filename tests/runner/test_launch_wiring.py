@@ -55,7 +55,7 @@ def test_build_adapter_embedded_bad_entrypoint_is_user_error() -> None:
         build_adapter(EmbeddedAgentSpec(entrypoint=ep))
 
 
-def test_build_loop_persists_cases_stamped_with_experiment_id(tmp_path: object) -> None:
+def test_build_loop_persists_cases_stamped_with_experiment_id(db_url: str) -> None:
     """build_loop must write the run's eval cases, stamped with experiment_id,
     so `GET .../experiments/{id}/cases` has something to list. Authoring leaves
     experiment_id None; persistence is where the link gets made."""
@@ -67,8 +67,8 @@ def test_build_loop_persists_cases_stamped_with_experiment_id(tmp_path: object) 
     from selfevals.repo.loader import build_spec_from_mapping
     from selfevals.runner.launch import build_loop, ensure_workspace
     from selfevals.schemas.eval_case import EvalCase
+    from selfevals.storage.factory import open_storage
     from selfevals.storage.interface import ListFilter
-    from selfevals.storage.sqlite import SQLiteStorage
 
     repo_root = Path(__file__).resolve().parents[2]
     raw = yaml.safe_load((repo_root / "evals/experiments/example_pingpong.yaml").read_text())
@@ -84,8 +84,7 @@ def test_build_loop_persists_cases_stamped_with_experiment_id(tmp_path: object) 
     # Authoring: cases carry no experiment link yet.
     assert all(c.experiment_id is None for c in spec.cases)
 
-    db = Path(str(tmp_path)) / "cases.sqlite"
-    storage = SQLiteStorage(str(db))
+    storage = open_storage(db_url)
     try:
         ensure_workspace(storage, spec)
         with storage.open(ws) as scope:
@@ -219,20 +218,17 @@ def _inline_spec(ws: str) -> object:
     return build_spec_from_mapping(raw, workspace_id=ws)
 
 
-def test_build_loop_materializes_inline_dataset(tmp_path: object) -> None:
+def test_build_loop_materializes_inline_dataset(db_url: str) -> None:
     """An inline run materializes a real Dataset over its cases and rewrites the
     experiment's dataset refs to point at it — no more dangling placeholder."""
-    from pathlib import Path
-
     from selfevals.runner.launch import build_loop, ensure_workspace
     from selfevals.schemas.dataset import Dataset, DatasetStatus
+    from selfevals.storage.factory import open_storage
     from selfevals.storage.interface import ListFilter
-    from selfevals.storage.sqlite import SQLiteStorage
 
     ws = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
     spec = _inline_spec(ws)
-    db = Path(str(tmp_path)) / "ds.sqlite"
-    storage = SQLiteStorage(str(db))
+    storage = open_storage(db_url)
     try:
         ensure_workspace(storage, spec)  # type: ignore[arg-type]
         with storage.open(ws) as scope:
@@ -256,20 +252,17 @@ def test_build_loop_materializes_inline_dataset(tmp_path: object) -> None:
     assert [r.id for r in spec.experiment.frozen.datasets] == [ds.id]  # type: ignore[attr-defined]
 
 
-def test_inline_dataset_materialization_is_idempotent(tmp_path: object) -> None:
+def test_inline_dataset_materialization_is_idempotent(db_url: str) -> None:
     """Relaunching the same experiment updates the same Dataset row in place
     (id derived from the experiment id) rather than spawning a duplicate."""
-    from pathlib import Path
-
     from selfevals.runner.launch import build_loop, ensure_workspace
     from selfevals.schemas.dataset import Dataset
+    from selfevals.storage.factory import open_storage
     from selfevals.storage.interface import ListFilter
-    from selfevals.storage.sqlite import SQLiteStorage
 
     ws = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
     spec = _inline_spec(ws)
-    db = Path(str(tmp_path)) / "ds.sqlite"
-    storage = SQLiteStorage(str(db))
+    storage = open_storage(db_url)
     try:
         ensure_workspace(storage, spec)  # type: ignore[arg-type]
         for _ in range(2):
@@ -285,7 +278,7 @@ def test_inline_dataset_materialization_is_idempotent(tmp_path: object) -> None:
     assert len(datasets) == 1
 
 
-def test_ref_dataset_resolution_hydrates_cases_and_split(tmp_path: object) -> None:
+def test_ref_dataset_resolution_hydrates_cases_and_split(db_url: str) -> None:
     """A `dataset: {ref: ds_x}` spec resolves the persisted dataset at launch:
     its cases hydrate `spec.cases` and its split allocation reaches the loop."""
     from pathlib import Path
@@ -297,12 +290,11 @@ def test_ref_dataset_resolution_hydrates_cases_and_split(tmp_path: object) -> No
     from selfevals.runner.launch import _resolve_dataset_source, ensure_workspace_by_id
     from selfevals.schemas.dataset import SplitAllocation
     from selfevals.schemas.enums import DatasetType
-    from selfevals.storage.sqlite import SQLiteStorage
+    from selfevals.storage.factory import open_storage
 
     ws = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
     repo_root = Path(__file__).resolve().parents[2]
-    db = Path(str(tmp_path)) / "ref.sqlite"
-    storage = SQLiteStorage(str(db))
+    storage = open_storage(db_url)
     try:
         ensure_workspace_by_id(storage, ws)
         cases = load_cases_from_jsonl(
@@ -357,7 +349,7 @@ def test_ref_dataset_without_scope_is_user_error() -> None:
         build_loop(spec, scope=None, repetitions_per_case=1)
 
 
-def test_ref_dataset_missing_is_user_error(tmp_path: object) -> None:
+def test_ref_dataset_missing_is_user_error(db_url: str) -> None:
     """A ref to a dataset that isn't in storage fails with a clear message."""
     from pathlib import Path
 
@@ -365,7 +357,7 @@ def test_ref_dataset_missing_is_user_error(tmp_path: object) -> None:
 
     from selfevals.repo.loader import build_spec_from_mapping
     from selfevals.runner.launch import build_loop, ensure_workspace_by_id
-    from selfevals.storage.sqlite import SQLiteStorage
+    from selfevals.storage.factory import open_storage
 
     ws = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
     repo_root = Path(__file__).resolve().parents[2]
@@ -374,8 +366,7 @@ def test_ref_dataset_missing_is_user_error(tmp_path: object) -> None:
     )
     raw["dataset"] = {"ref": "ds_01HZZZZZZZZZZZZZZZZZZZZZZZ"}
     spec = build_spec_from_mapping(raw, workspace_id=ws)
-    db = Path(str(tmp_path)) / "missing.sqlite"
-    storage = SQLiteStorage(str(db))
+    storage = open_storage(db_url)
     try:
         ensure_workspace_by_id(storage, ws)
         with storage.open(ws) as scope, pytest.raises(SelfEvalsUserError, match="not found"):
@@ -643,6 +634,35 @@ def test_register_set_match_bakes_gating(restore_registry: None) -> None:
     assert grader._threshold == 0.8
 
 
+def test_register_pairwise_bakes_flags(restore_registry: None) -> None:
+    from selfevals.graders.pairwise import PairwiseGrader
+    from selfevals.graders.registry import resolve_graders
+    from selfevals.runner.launch import register_grader_specs
+
+    spec = _SpecShim(
+        graders=[
+            GraderSpec(
+                type="pairwise",
+                name="taste_judge",
+                rubric="Which answer is better?",
+                params={
+                    "compare_against": "reference",
+                    "tie_is_pass": False,
+                    "swap_and_average": True,
+                },
+            )
+        ],
+        agent=_embedded_agent(),
+    )
+    registered = register_grader_specs(spec)  # type: ignore[arg-type]
+    assert registered == ["taste_judge"]
+    grader = resolve_graders(["taste_judge"])[0]
+    assert isinstance(grader, PairwiseGrader)
+    assert grader.name == "taste_judge"
+    assert grader._tie_is_pass is False
+    assert grader._swap is True
+
+
 # --- register_grader_specs: funnel wiring ---------------------------------
 
 
@@ -745,3 +765,62 @@ def test_register_funnel_unknown_ref_is_user_error(restore_registry: None) -> No
     # the friendly unknown-grader error.
     with pytest.raises(SelfEvalsUserError):
         resolve_graders(["fnl"])[0]
+
+
+# --- F1 + F6: case_concurrency + resilience wrapping wiring -------------------
+
+
+def test_build_loop_wires_case_concurrency() -> None:
+    from selfevals.runner.launch import build_loop
+
+    spec = _inline_spec_with_parallelism("ws_01HZZZZZZZZZZZZZZZZZZZZZZZ", 4)
+    loop = build_loop(spec, scope=None, repetitions_per_case=1)  # type: ignore[arg-type]
+    assert loop._case_concurrency == 4
+
+
+def _inline_spec_with_rate_limit(ws: str, rpm: int | None) -> object:
+    import json as _json
+    from pathlib import Path
+
+    import yaml
+
+    from selfevals.repo.loader import build_spec_from_mapping
+
+    repo_root = Path(__file__).resolve().parents[2]
+    raw = yaml.safe_load((repo_root / "evals/experiments/example_pingpong.yaml").read_text())
+    rows = [
+        _json.loads(line)
+        for line in (repo_root / "evals/datasets/pingpong.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    raw["dataset"] = {"cases_inline": rows, "name": "pingpong inline", "dataset_type": "capability"}
+    if rpm is not None:
+        raw["experiment"]["run"]["rate_limit"] = {"requests_per_minute": rpm}
+    return build_spec_from_mapping(raw, workspace_id=ws)
+
+
+def test_build_loop_default_wraps_retry_only() -> None:
+    # Retry is ON by default, rate-limit OFF → adapter is RetryingAdapter, not
+    # wrapped in a RateLimitedAdapter.
+    from selfevals.runner.launch import build_loop
+    from selfevals.runner.retry import RetryingAdapter
+    from selfevals.runner.throttle import RateLimitedAdapter
+
+    spec = _inline_spec_with_rate_limit("ws_01HZZZZZZZZZZZZZZZZZZZZZZZ", None)
+    loop = build_loop(spec, scope=None, repetitions_per_case=1)  # type: ignore[arg-type]
+    adapter = loop._executor._adapter
+    assert isinstance(adapter, RetryingAdapter)
+    assert not isinstance(adapter, RateLimitedAdapter)
+
+
+def test_build_loop_wraps_rate_limit_outermost_when_rpm_set() -> None:
+    # rate_limit set → RateLimitedAdapter(RetryingAdapter(inner)): throttle outer.
+    from selfevals.runner.launch import build_loop
+    from selfevals.runner.retry import RetryingAdapter
+    from selfevals.runner.throttle import RateLimitedAdapter
+
+    spec = _inline_spec_with_rate_limit("ws_01HZZZZZZZZZZZZZZZZZZZZZZZ", 600)
+    loop = build_loop(spec, scope=None, repetitions_per_case=1)  # type: ignore[arg-type]
+    adapter = loop._executor._adapter
+    assert isinstance(adapter, RateLimitedAdapter)
+    assert isinstance(adapter._inner, RetryingAdapter)
