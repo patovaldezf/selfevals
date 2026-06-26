@@ -29,7 +29,7 @@ import logging
 import os
 import threading
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from selfevals._errors import SelfEvalsUserError
 from selfevals.graders.base import Grader
@@ -267,6 +267,19 @@ def register_grader_specs(spec: ExperimentSpec) -> list[str]:
             )
             registered.append(g_spec.name)
             continue
+        if g_spec.type == "pairwise":
+            entry = g_spec.judge_entrypoint or _agent_entrypoint_for_judge(g_spec.name, spec.agent)
+            try:
+                judge_callable = resolve_agent_callable(entry)
+            except LoaderError as exc:
+                raise SelfEvalsUserError(str(exc)) from exc
+            judge_adapter = _wrap_user_callable(judge_callable, entry)
+            register_grader(
+                g_spec.name,
+                _pairwise_factory(g_spec.name, judge_adapter, g_spec.rubric or "", g_spec.params),
+            )
+            registered.append(g_spec.name)
+            continue
         if g_spec.type == "set_match":
             register_grader(g_spec.name, _set_match_factory(g_spec.name, g_spec.params))
             registered.append(g_spec.name)
@@ -327,6 +340,39 @@ def _judge_panel_factory(
         ]
         weights = [1.0] * n_judges if consensus == "weighted" else None
         return JudgePanelGrader(name=name, judges=judges, consensus_rule=consensus, weights=weights)
+
+    return _build
+
+
+def _pairwise_factory(
+    name: str,
+    judge_adapter: AgentAdapter,
+    rubric: str,
+    params: dict[str, object],
+) -> Callable[[], Grader]:
+    """Build a PairwiseGrader (LLM head-to-head judge) from a YAML spec.
+
+    Reuses the same judge-adapter resolution as `llm_judge` (an explicit
+    `judge_entrypoint` or the embedded-agent fallback). The grader's behavior
+    flags come from the validated `params` bag (`compare_against`/`tie_is_pass`/
+    `swap_and_average`); loader validation guarantees their types.
+    """
+    from selfevals.graders.pairwise import PairwiseGrader, PairwiseRubric
+
+    template = PairwiseRubric(rubric=rubric)
+    compare_against = cast("Any", params.get("compare_against", "reference"))
+    tie_is_pass = bool(params.get("tie_is_pass", True))
+    swap_and_average = bool(params.get("swap_and_average", False))
+
+    def _build() -> Grader:
+        return PairwiseGrader(
+            name=name,
+            judge_adapter=judge_adapter,
+            rubric=template,
+            compare_against=compare_against,
+            tie_is_pass=tie_is_pass,
+            swap_and_average=swap_and_average,
+        )
 
     return _build
 

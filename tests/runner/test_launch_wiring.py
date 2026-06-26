@@ -634,6 +634,35 @@ def test_register_set_match_bakes_gating(restore_registry: None) -> None:
     assert grader._threshold == 0.8
 
 
+def test_register_pairwise_bakes_flags(restore_registry: None) -> None:
+    from selfevals.graders.pairwise import PairwiseGrader
+    from selfevals.graders.registry import resolve_graders
+    from selfevals.runner.launch import register_grader_specs
+
+    spec = _SpecShim(
+        graders=[
+            GraderSpec(
+                type="pairwise",
+                name="taste_judge",
+                rubric="Which answer is better?",
+                params={
+                    "compare_against": "reference",
+                    "tie_is_pass": False,
+                    "swap_and_average": True,
+                },
+            )
+        ],
+        agent=_embedded_agent(),
+    )
+    registered = register_grader_specs(spec)  # type: ignore[arg-type]
+    assert registered == ["taste_judge"]
+    grader = resolve_graders(["taste_judge"])[0]
+    assert isinstance(grader, PairwiseGrader)
+    assert grader.name == "taste_judge"
+    assert grader._tie_is_pass is False
+    assert grader._swap is True
+
+
 # --- register_grader_specs: funnel wiring ---------------------------------
 
 

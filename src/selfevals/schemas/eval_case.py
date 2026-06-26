@@ -205,6 +205,12 @@ class EvalCase(BaseEntity):
     taxonomy: CaseTaxonomy
     graders: list[NonEmptyStr] = Field(default_factory=list)
     failure_weights: dict[str, int] = Field(default_factory=dict)
+    reference_output: str | None = None
+    """Gold/taste reference answer for pairwise judging (`compare_against:
+    reference`). The pairwise grader compares the agent's output (A) against
+    this reference (B). Domain lives in the case; the engine only judges. None
+    when no reference is authored — the pairwise grader then SKIPs the case."""
+
     metadata: CaseMetadata = Field(default_factory=CaseMetadata)
     blocking: Blocking = Field(default_factory=Blocking)
     holdout: bool = False

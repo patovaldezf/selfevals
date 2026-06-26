@@ -75,6 +75,7 @@ from selfevals.schemas.iteration import (
     ProposerInputs,
 )
 from selfevals.schemas.job import RunJob, RunJobStatus
+from selfevals.schemas.pairwise_verdict import PairRef, PairwiseVerdict
 from selfevals.schemas.registry import (
     FeatureRegistry,
     RiskDimension,
@@ -82,6 +83,7 @@ from selfevals.schemas.registry import (
     RiskRegistry,
 )
 from selfevals.schemas.tool import Tool, ToolSchema
+from selfevals.schemas.tournament import Tournament, TournamentRow
 from selfevals.schemas.trace import (
     TRACE_SCHEMA_VERSION,
     AgentSnapshotRef,
@@ -190,6 +192,8 @@ __all__ = [
     "ModelRef",
     "NextAction",
     "OutcomeMetricsSpec",
+    "PairRef",
+    "PairwiseVerdict",
     "Proposal",
     "ProposalRejectedError",
     "ProposerInputs",
@@ -216,6 +220,8 @@ __all__ = [
     "ToolCallSpan",
     "ToolSchema",
     "ToolUseRequest",
+    "Tournament",
+    "TournamentRow",
     "Trace",
     "TraceLink",
     "TraceMetrics",

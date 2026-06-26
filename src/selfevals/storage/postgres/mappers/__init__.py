@@ -27,9 +27,11 @@ from selfevals.storage.postgres.mappers import failure_mode as _failure_mode  # 
 from selfevals.storage.postgres.mappers import feature_registry as _feature_registry  # noqa: F401
 from selfevals.storage.postgres.mappers import grader_card as _grader_card  # noqa: F401
 from selfevals.storage.postgres.mappers import iteration_record as _iteration_record  # noqa: F401
+from selfevals.storage.postgres.mappers import pairwise_verdict as _pairwise_verdict  # noqa: F401
 from selfevals.storage.postgres.mappers import risk_registry as _risk_registry  # noqa: F401
 from selfevals.storage.postgres.mappers import run_job as _run_job  # noqa: F401
 from selfevals.storage.postgres.mappers import tool as _tool  # noqa: F401
+from selfevals.storage.postgres.mappers import tournament as _tournament  # noqa: F401
 from selfevals.storage.postgres.mappers import trace as _trace  # noqa: F401
 from selfevals.storage.postgres.mappers import workspace as _workspace  # noqa: F401
 from selfevals.storage.postgres.mappers.base import EntityMapper, register_mapper
