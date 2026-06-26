@@ -100,8 +100,13 @@ CREATE TABLE IF NOT EXISTS tournament_rows (
     PRIMARY KEY (tournament_id, position)
 );
 
--- ---------------------------------------------------------------- eval_cases.reference_output
+-- ---------------------------------------------------------------- eval_cases new columns
+-- reference_output: gold answer for pairwise compare_against=reference.
+-- critical_failure_modes: zero-tolerance modes for the readiness gate (merged
+-- from feat/frontend-levelup, which added the field to the EvalCase schema).
 ALTER TABLE eval_cases ADD COLUMN IF NOT EXISTS reference_output TEXT;
+ALTER TABLE eval_cases
+    ADD COLUMN IF NOT EXISTS critical_failure_modes TEXT[] NOT NULL DEFAULT '{}';
 """
 
 

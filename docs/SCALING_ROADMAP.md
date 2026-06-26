@@ -51,6 +51,9 @@ LLM proposer PR-13) — lo referencia.
 | 3   | **`consistency_rate` al reporte**                                       | el no-determinismo se computa pero no se ve                    | ✅ columna `consistency` en la tabla de iteraciones (`markdown.py`)                                                                                                              | S        | SF-1      |
 | ★4  | **`ClassificationGrader` (`type: confusion`) + matriz NxN agregada**    | "special orders se confunden con full orders" es la señal real | ✅ grader `confusion` + rollup NxN + per-class F1 + render markdown; matemática extraída a `graders/_confusion.py` reusada por calibración (`classification.py`/`aggregator.py`) | M        | SF-2      |
 | 5   | **Worker concurrente** (consumir `run.parallelism` + pool de N workers) | serial = no escala a N experimentos                            | ✅ `run.parallelism` cableado a los semáforos del executor/loop (default 8); pool inter-run vía Redis consumer-group (#47) (`launch.py`)                                         | M        | SF-3      |
+| ★5b | **Fan-out de cases concurrente** (los CASES de una iteración en paralelo) | el cuello real: `for case: await` corría los cases EN SERIE; subir `parallelism` solo afectaba reps+grading intra-case, no los cases | ✅ `_run_one_case` + `asyncio.gather` bounded por `case_concurrency` (=`run.parallelism`); persistencia secuencial post-gather conserva orden. Medido: 50 cases×50ms 2.9s→0.45s con parallelism=16 (`optimization/loop.py`) | S        | SF-5      |
+| ★5c | **Rate-limit + retry con backoff** (resiliencia a 429/5xx/timeout)       | con el fan-out de cases se golpean los rate limits del provider más rápido → tormenta de 429s sin protección | ✅ `RetryingAdapter` (backoff exponencial + full jitter, respeta `Retry-After`) + `RateLimitedAdapter`/`AsyncTokenBucket` (token bucket por-provider, compartido); config `run.retry`/`run.rate_limit`; retry ON por default, rate-limit OFF (`runner/retry.py`/`runner/throttle.py`) | M        | SF-5      |
+| 5d  | **Readiness gate por gravedad de negocio** (`failure_weights` ponderado) | "los errores caros están ~0 aunque el accuracy plano sea 92%" = el go/no-go de autopilot | ✅ aggregator consume `failure_weights` → `weighted_failure_total`/`_per_case` + `critical_failure_count` (siempre publicado, gate `==0` vía guardrail existente, sin tocar `matrix.py`); campo nuevo `EvalCase.critical_failure_modes` (`aggregator.py`/`eval_case.py`) | S        | SF-5      |
 | 6   | Observabilidad en la respuesta (nodos/tokens/latencia)                  | cuando un eval falla, el dev no ve por qué sin reproducir      | 🟡 = ROADMAP PR-2/#9                                                                                                                                                             | M        | (ROADMAP) |
 | 7   | Análisis de fallas auto (clustering de failure-modes)                   | clasificar fallos a mano no escala                             | 🟡 = ROADMAP PR-13/#6                                                                                                                                                            | S–M      | (ROADMAP) |
 | 8   | Regresión en CI + baselines versionados                                 | "intention bajó de 0.88 a 0.67, falla el build"                | ✅ baseline auto-anclado al dataset en la 1ra ejecución + `regression check` con exit code (primary/pass@1 + per-class F1) (`ci/regression.py`/`runner/baseline.py`)             | M        | SF-4      |
@@ -179,10 +182,44 @@ Los que más mueven la aguja para el diagnóstico real, en orden:
 SF-1 (items 1–3) es una sola tanda: tres cambios chicos, mismo módulo
 (`aggregator.py` + `markdown.py` + `deterministic.py`), un PR.
 
+### SF-5 — Escala real a millones (cuello: latencia LLM + rate limits)
+
+Decisión: **incremental, medir primero**. El cuello real NO es volumen de
+proceso sino I/O del LLM + rate limits del provider, así que el orden ataca eso
+antes que el sharding distribuido:
+
+1. **★5b fan-out de cases** (hecho) — el `for case: await` corría los cases en
+   serie; ahora `asyncio.gather` bounded por `case_concurrency`. Era el cuello #1.
+2. **★5c rate-limit + retry** (hecho) — consecuencia directa del fan-out: más
+   cases en paralelo golpean los rate limits más rápido. Retry absorbe 429/5xx/
+   timeout; el token bucket throttlea proactivamente. Cuello #2.
+3. **5d readiness gate por gravedad** (hecho) — go/no-go de autopilot.
+4. **Medir el techo** de un worker async (cuántos cases/run aguanta antes de
+   topar CPU/memoria). Ese número decide el siguiente paso.
+5. **Sharding distribuido** (🟡 diferido — SOLO si la medición topa el techo de
+   proceso, que NO es el caso hoy): shardear cases → encolar shard-jobs en la
+   cola Redis existente → aggregator de dos niveles → barrera de iteración.
+   Restricción verificada: el loop es secuencial por iteración (proposer corre
+   1×/iter; aggregator necesita todos los outcomes) pero paralelizable dentro de
+   la iteración → el sharding va por-iteración. Reusa cola/workers/job-states;
+   añade `ShardJob` + coordinador + aggregator distribuido.
+
+### Alineación con el Readiness Bar (`SCALE_ARCHITECTURE.md`)
+
+Estado contra los criterios formales de "ready for millions":
+
+- ✅ runs en workers externos (Redis-backed) — no daemon threads del API.
+- ✅ live events vía Redis Streams (sobreviven múltiples instancias del API).
+- ✅ Postgres como backend de facts indexados (detrás del interface abstracto).
+- ✅ fan-out de cases concurrente (★5b) + resiliencia a rate limits (★5c).
+- 🟡 cursor pagination en todos los list endpoints — parcial.
+- 🟡 sharding por-iteración para millones en un solo experimento — diferido.
+- ❌ RBAC/audit log/quotas/redaction/retention — no empezado (fase 7).
+
 ## Verificación (transversal)
 
 Cada capacidad cita el módulo real verificado contra el código (convención del repo:
 VERIFICAR antes de afirmar). Gate por PR: suite verde (`uv run pytest` surface por
-defecto, 971+), `mypy --strict`, `ruff`, y los ejemplos corren offline. La ★Capa 2
+defecto, 1091+), `mypy --strict`, `ruff`, y los ejemplos corren offline. La ★Capa 2
 se prueba contra el ejemplo `showcase` (ya ejercita `set_match`/confusion-style
 contra `structured_output`).

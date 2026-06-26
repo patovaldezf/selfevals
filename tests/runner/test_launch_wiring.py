@@ -765,3 +765,62 @@ def test_register_funnel_unknown_ref_is_user_error(restore_registry: None) -> No
     # the friendly unknown-grader error.
     with pytest.raises(SelfEvalsUserError):
         resolve_graders(["fnl"])[0]
+
+
+# --- F1 + F6: case_concurrency + resilience wrapping wiring -------------------
+
+
+def test_build_loop_wires_case_concurrency() -> None:
+    from selfevals.runner.launch import build_loop
+
+    spec = _inline_spec_with_parallelism("ws_01HZZZZZZZZZZZZZZZZZZZZZZZ", 4)
+    loop = build_loop(spec, scope=None, repetitions_per_case=1)  # type: ignore[arg-type]
+    assert loop._case_concurrency == 4
+
+
+def _inline_spec_with_rate_limit(ws: str, rpm: int | None) -> object:
+    import json as _json
+    from pathlib import Path
+
+    import yaml
+
+    from selfevals.repo.loader import build_spec_from_mapping
+
+    repo_root = Path(__file__).resolve().parents[2]
+    raw = yaml.safe_load((repo_root / "evals/experiments/example_pingpong.yaml").read_text())
+    rows = [
+        _json.loads(line)
+        for line in (repo_root / "evals/datasets/pingpong.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    raw["dataset"] = {"cases_inline": rows, "name": "pingpong inline", "dataset_type": "capability"}
+    if rpm is not None:
+        raw["experiment"]["run"]["rate_limit"] = {"requests_per_minute": rpm}
+    return build_spec_from_mapping(raw, workspace_id=ws)
+
+
+def test_build_loop_default_wraps_retry_only() -> None:
+    # Retry is ON by default, rate-limit OFF → adapter is RetryingAdapter, not
+    # wrapped in a RateLimitedAdapter.
+    from selfevals.runner.launch import build_loop
+    from selfevals.runner.retry import RetryingAdapter
+    from selfevals.runner.throttle import RateLimitedAdapter
+
+    spec = _inline_spec_with_rate_limit("ws_01HZZZZZZZZZZZZZZZZZZZZZZZ", None)
+    loop = build_loop(spec, scope=None, repetitions_per_case=1)  # type: ignore[arg-type]
+    adapter = loop._executor._adapter
+    assert isinstance(adapter, RetryingAdapter)
+    assert not isinstance(adapter, RateLimitedAdapter)
+
+
+def test_build_loop_wraps_rate_limit_outermost_when_rpm_set() -> None:
+    # rate_limit set → RateLimitedAdapter(RetryingAdapter(inner)): throttle outer.
+    from selfevals.runner.launch import build_loop
+    from selfevals.runner.retry import RetryingAdapter
+    from selfevals.runner.throttle import RateLimitedAdapter
+
+    spec = _inline_spec_with_rate_limit("ws_01HZZZZZZZZZZZZZZZZZZZZZZZ", 600)
+    loop = build_loop(spec, scope=None, repetitions_per_case=1)  # type: ignore[arg-type]
+    adapter = loop._executor._adapter
+    assert isinstance(adapter, RateLimitedAdapter)
+    assert isinstance(adapter._inner, RetryingAdapter)

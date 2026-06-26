@@ -4,11 +4,16 @@ import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ fetch, params }) => {
   try {
-    const [detail, decisions] = await Promise.all([
+    const [detail, decisions, datasets] = await Promise.all([
       api.experiment(params.workspace, params.experiment, fetch),
-      api.decisions(params.workspace, params.experiment, fetch).catch(() => [])
+      api.decisions(params.workspace, params.experiment, fetch).catch(() => []),
+      // Datasets power the baseline/regression actions in the iteration drawer.
+      api
+        .listDatasets(params.workspace, fetch)
+        .then((d) => d.items)
+        .catch(() => [])
     ]);
-    return { detail, decisions };
+    return { detail, decisions, datasets };
   } catch (err) {
     if (
       typeof err === 'object' &&

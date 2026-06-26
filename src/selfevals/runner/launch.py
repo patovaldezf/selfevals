@@ -73,12 +73,14 @@ from selfevals.runner.adapters import (
 )
 from selfevals.runner.executor import Executor
 from selfevals.runner.otlp_receiver import start_receiver
+from selfevals.runner.retry import RetryingAdapter, RetryPolicy
 from selfevals.runner.sandbox import SandboxPolicy
+from selfevals.runner.throttle import AsyncTokenBucket, RateLimitedAdapter
 from selfevals.schemas._base import EntityRef
 from selfevals.schemas.dataset import Dataset, SplitAllocation
 from selfevals.schemas.enums import ProposerStrategy
 from selfevals.schemas.eval_case import EvalCase
-from selfevals.schemas.experiment import Experiment
+from selfevals.schemas.experiment import Experiment, RunSpec
 from selfevals.schemas.fleet import ModelRef
 from selfevals.schemas.workspace import Workspace
 from selfevals.storage.factory import object_store_base_for_storage_url
@@ -193,6 +195,36 @@ def _model_ref(decl: AgentModelDecl | None) -> ModelRef | None:
     if decl is None:
         return None
     return ModelRef(provider=decl.provider, name=decl.name)
+
+
+def _wrap_resilience(adapter: AgentAdapter, run: RunSpec) -> AgentAdapter:
+    """Wrap the adapter with retry (inner) and rate-limit (outer) per `run`.
+
+    Order matters: the throttle is outermost so every physical request — first
+    try or retry — passes the bucket; if retry sat outside, a backoff storm could
+    bypass the limit and re-trigger 429s. Retry defaults ON (`max_retries=2`);
+    rate-limit is OFF unless `requests_per_minute` is set (we can't guess the
+    user's provider tier). One bucket per run → shared across every case (the
+    executor holds this single adapter)."""
+    if run.retry.max_retries > 0:
+        adapter = RetryingAdapter(
+            adapter,
+            RetryPolicy(
+                max_retries=run.retry.max_retries,
+                base_delay=run.retry.base_delay_seconds,
+                max_delay=run.retry.max_delay_seconds,
+                multiplier=run.retry.multiplier,
+                jitter=run.retry.jitter,
+            ),
+        )
+    rpm = run.rate_limit.requests_per_minute
+    if rpm is not None:
+        rate_per_sec = rpm / 60.0
+        capacity = float(run.rate_limit.burst) if run.rate_limit.burst else max(1.0, rate_per_sec)
+        adapter = RateLimitedAdapter(
+            adapter, AsyncTokenBucket(rate_per_sec=rate_per_sec, capacity=capacity)
+        )
+    return adapter
 
 
 def build_proposer(experiment: Experiment) -> Proposer:
@@ -815,6 +847,7 @@ def build_loop(
     from selfevals.decision.matrix import DecisionMatrixEvaluator
 
     adapter = build_adapter(spec.agent)
+    adapter = _wrap_resilience(adapter, spec.experiment.run)
     proposer = build_proposer(spec.experiment)
 
     # Resolve a `ref:` dataset before anything reads `spec.cases` (graders,
@@ -856,12 +889,15 @@ def build_loop(
         else None
     )
 
-    # run.parallelism (schema default 1, ge=1 le=64) is the per-run concurrency
-    # knob. Until now it was dead code: the executor and loop used their own
-    # hardcoded default of 8. Wiring it here makes the YAML field load-bearing —
-    # `parallelism` caps both how many cases the executor runs at once and how
-    # many graders the loop scores in parallel. NOTE: this changes the default
-    # behavior from a fixed 8 to `run.parallelism` (default 1). See the SF-3 PR.
+    # run.parallelism (schema default 8, ge=1 le=64) is the per-run concurrency
+    # knob. It caps three independent fan-outs, all sized off the same value:
+    #   - case_concurrency: how many CASES the loop runs at once (the dominant
+    #     bottleneck — each case's adapter call is the slow I/O);
+    #   - executor concurrency: how many REPETITIONS of one case run at once;
+    #   - grade_concurrency: how many (rep, grader) pairs the loop scores at once.
+    # Before case_concurrency existed, cases ran strictly in series regardless of
+    # this value (it only bounded intra-case work), so a 50-case run took
+    # 50x a single case even at parallelism=8.
     parallelism = spec.experiment.run.parallelism
     executor = Executor(
         adapter=adapter,
@@ -883,4 +919,5 @@ def build_loop(
         repetitions_per_case=repetitions_per_case,
         split_allocation=split_allocation,
         grade_concurrency=parallelism,
+        case_concurrency=parallelism,
     )

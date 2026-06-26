@@ -44,6 +44,8 @@ def _outcome(
     duration: int = 0,
     failure_modes: list[str] | None = None,
     breakdowns: list[BreakdownNode] | None = None,
+    failure_weights: dict[str, int] | None = None,
+    critical_failure_modes: list[str] | None = None,
 ) -> CaseOutcome:
     return CaseOutcome(
         case_id=f"ec_{hash(tuple(labels))}",
@@ -53,6 +55,8 @@ def _outcome(
         duration_ms=duration,
         failure_modes=failure_modes or [],
         breakdowns=breakdowns or [],
+        failure_weights=failure_weights or {},
+        critical_failure_modes=critical_failure_modes or [],
     )
 
 
@@ -651,3 +655,75 @@ def test_confusion_report_serialization_round_trip() -> None:
     assert rebuilt.confusion == agg.confusion.confusion
     assert rebuilt.per_label_f1 == agg.confusion.per_label_f1
     assert rebuilt.macro_f1 == agg.confusion.macro_f1
+
+
+# --- G1: severity-weighted accuracy + critical tier ---------------------------
+
+
+def test_weighted_failure_uses_per_case_weights() -> None:
+    # Same mode "wrong_price" weighs 10 in case A and 3 in case B. The aggregate
+    # must sum per-case (10 + 3 = 13), not multiply the global counter by one
+    # weight (which would give 2 * either weight).
+    outcomes = [
+        _outcome(
+            [GradeLabel.FAIL],
+            failure_modes=["wrong_price"],
+            failure_weights={"wrong_price": 10},
+        ),
+        _outcome(
+            [GradeLabel.FAIL],
+            failure_modes=["wrong_price"],
+            failure_weights={"wrong_price": 3},
+        ),
+    ]
+    agg = aggregate_iteration(case_outcomes=outcomes)
+    assert agg.guardrails["weighted_failure_total"] == 13.0
+    assert agg.guardrails["weighted_failure_per_case"] == 6.5
+
+
+def test_weighted_failure_counts_repeats_within_a_case() -> None:
+    # A mode occurring twice in one case (two reps) counts twice, times weight.
+    outcomes = [
+        _outcome(
+            [GradeLabel.FAIL, GradeLabel.FAIL],
+            failure_modes=["tone_off", "tone_off"],
+            failure_weights={"tone_off": 2},
+        ),
+    ]
+    agg = aggregate_iteration(case_outcomes=outcomes)
+    assert agg.guardrails["weighted_failure_total"] == 4.0
+
+
+def test_weighted_failure_absent_when_no_weights() -> None:
+    # No case declared weights → the weighted_* keys are not published (additive,
+    # like cost/latency). critical_failure_count is still published (see below).
+    outcomes = [_outcome([GradeLabel.FAIL], failure_modes=["x"])]
+    agg = aggregate_iteration(case_outcomes=outcomes)
+    assert "weighted_failure_total" not in agg.guardrails
+    assert "weighted_failure_per_case" not in agg.guardrails
+
+
+def test_critical_failure_count_tallies_only_critical_modes() -> None:
+    outcomes = [
+        _outcome(
+            [GradeLabel.FAIL],
+            failure_modes=["unauthorized_discount", "tone_off"],
+            critical_failure_modes=["unauthorized_discount"],
+        ),
+        _outcome(
+            [GradeLabel.FAIL],
+            failure_modes=["unauthorized_discount"],
+            critical_failure_modes=["unauthorized_discount"],
+        ),
+    ]
+    agg = aggregate_iteration(case_outcomes=outcomes)
+    # unauthorized_discount occurred twice (critical); tone_off is not critical.
+    assert agg.guardrails["critical_failure_count"] == 2.0
+
+
+def test_critical_failure_count_published_as_zero_when_none() -> None:
+    # Always published, even at 0.0 — else a guardrail `== 0` reads a missing
+    # value as "passing" and the zero-tolerance gate silently no-ops.
+    outcomes = [_outcome([GradeLabel.PASS]), _outcome([GradeLabel.FAIL])]
+    agg = aggregate_iteration(case_outcomes=outcomes)
+    assert agg.guardrails["critical_failure_count"] == 0.0

@@ -41,6 +41,7 @@ _EXTRA_COLUMNS: tuple[str, ...] = (
     "context",
     "graders",
     "failure_weights",
+    "critical_failure_modes",
     "reference_output",
     "holdout",
     "content_hash",
@@ -106,6 +107,7 @@ class EvalCaseMapper(EntityMapper[EvalCase]):
             Jsonb(e.context),
             list(e.graders),
             Jsonb(e.failure_weights),
+            list(e.critical_failure_modes),
             e.reference_output,
             e.holdout,
             e.content_hash,
@@ -250,6 +252,7 @@ class EvalCaseMapper(EntityMapper[EvalCase]):
             ),
             graders=d["graders"],
             failure_weights=d["failure_weights"],
+            critical_failure_modes=d["critical_failure_modes"],
             reference_output=d["reference_output"],
             metadata=CaseMetadata(
                 owner=d["metadata_owner"],

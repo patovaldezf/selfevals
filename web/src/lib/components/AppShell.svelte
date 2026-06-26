@@ -1,15 +1,18 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import ActiveRunsPill from './ActiveRunsPill.svelte';
+  import { theme } from '$lib/stores/theme';
   export let workspaceId: string | null = null;
 
   $: nav = workspaceId
     ? [
         { href: `/${workspaceId}`, label: 'Overview' },
         { href: `/${workspaceId}/experiments`, label: 'Experiments' },
+        { href: `/${workspaceId}/metrics`, label: 'Metrics' },
+        { href: `/${workspaceId}/datasets`, label: 'Datasets' },
+        { href: `/${workspaceId}/failure-modes`, label: 'Failure modes' },
         { href: `/${workspaceId}/anchor-set`, label: 'Anchor set' },
-        { href: `/${workspaceId}/clusters`, label: 'Clusters' },
-        { href: `/${workspaceId}/datasets`, label: 'Datasets' }
+        { href: `/${workspaceId}/clusters`, label: 'Clusters' }
       ]
     : [{ href: '/', label: 'Workspaces' }];
 </script>
@@ -39,7 +42,17 @@
 
     <div class="mt-auto pt-6 border-t border-border space-y-3">
       <ActiveRunsPill {workspaceId} />
-      <div class="text-xs text-text-3 font-mono">v0.0.1 · localhost</div>
+      <div class="flex items-center justify-between">
+        <span class="text-xs text-text-3 font-mono">v0.0.1 · localhost</span>
+        <button
+          class="rounded-md px-1.5 py-1 text-text-3 transition-colors hover:bg-surface-2 hover:text-text-1"
+          aria-label="Toggle theme"
+          title="Toggle theme"
+          on:click={() => theme.toggle()}
+        >
+          {$theme === 'dark' ? '☀' : '☾'}
+        </button>
+      </div>
     </div>
   </aside>
 

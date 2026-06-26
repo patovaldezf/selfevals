@@ -54,6 +54,14 @@ class CaseOutcome:
     pass-rate and `primary_grader` can score against a single grader instead of
     the conjunctive worst-of. Empty for outcomes built without per-grader data
     (e.g. rehydrated from persisted metrics)."""
+    failure_weights: dict[str, int] = field(default_factory=dict)
+    """Copy of the case's `failure_weights` (per-mode business severity). Carried
+    on the outcome so `aggregate_iteration` can weight this case's failure modes
+    by its own weights — weights are per-case, so the global mode counter can't
+    be multiplied by a single weight. Empty when the case declared none."""
+    critical_failure_modes: list[str] = field(default_factory=list)
+    """Copy of the case's `critical_failure_modes` (zero-tolerance modes). Used
+    to tally `critical_failure_count`. Empty when the case declared none."""
 
     @property
     def errored(self) -> bool:
@@ -324,6 +332,8 @@ def _outcome_for(
         llm_call_count=llm_calls,
         breakdowns=breakdowns,
         per_grader_label=per_grader,
+        failure_weights=dict(case.failure_weights),
+        critical_failure_modes=list(case.critical_failure_modes),
     )
 
 
@@ -452,9 +462,20 @@ def aggregate_iteration(
     reliability = {m: _compute_metric(m, case_outcomes) for m in reliability_metrics}
     per_grader_pass_rate = _per_grader_pass_rate(case_outcomes)
     failure_counter: Counter[str] = Counter()
+    # Severity-weighted accuracy (G1). Weights live per-case, so the global mode
+    # counter cannot be multiplied by a single weight — sum per outcome. critical
+    # modes are likewise per-case. See EvalCase.failure_weights / .critical_*.
+    weighted_failure_total = 0.0
+    critical_failure_count = 0
     for outcome in case_outcomes:
+        per_case_counts: Counter[str] = Counter()
         for mode in outcome.failure_modes:
             failure_counter[mode] += 1
+            per_case_counts[mode] += 1
+        for mode, count in per_case_counts.items():
+            weighted_failure_total += count * outcome.failure_weights.get(mode, 0)
+            if mode in outcome.critical_failure_modes:
+                critical_failure_count += count
     total_cost = sum(o.cost_usd for o in case_outcomes)
     total_duration = sum(o.duration_ms for o in case_outcomes)
     total_cache_hits = sum(o.cache_hit_count for o in case_outcomes)
@@ -472,6 +493,16 @@ def aggregate_iteration(
         guardrails["latency_ms_p50"] = _percentile(latencies, 0.50)
         guardrails["latency_ms_p95"] = _percentile(latencies, 0.95)
         guardrails["latency_ms_p99"] = _percentile(latencies, 0.99)
+    # Severity-weighted accuracy as guardrails (G1). Published so the
+    # DecisionMatrix resolves them by name (matrix._guardrails_violated) without
+    # any change there — a critical tier is a guardrail `critical_failure_count
+    # == 0`. weighted_* only when some weight applied; critical_failure_count is
+    # published ALWAYS (even 0.0), else a missing value reads as "passing" and
+    # the zero-tolerance gate silently no-ops exactly when it matters.
+    if weighted_failure_total > 0:
+        guardrails["weighted_failure_total"] = weighted_failure_total
+        guardrails["weighted_failure_per_case"] = weighted_failure_total / n
+    guardrails["critical_failure_count"] = float(critical_failure_count)
     return IterationAggregate(
         primary_metric=primary_metric,
         primary_value=primary_value,

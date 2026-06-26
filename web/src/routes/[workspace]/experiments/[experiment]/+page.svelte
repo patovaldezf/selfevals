@@ -6,8 +6,21 @@
   import MetricChip from '$lib/components/MetricChip.svelte';
   import Sparkline from '$lib/components/Sparkline.svelte';
   import { api, ApiError } from '$lib/api/client';
-  import type { CompareResponse, FunnelDetail, IterationSummary } from '$lib/api/client';
+  import { openTraceStream, type StreamHandle } from '$lib/api/sse';
+  import type {
+    CompareResponse,
+    ExperimentResults,
+    FunnelDetail,
+    IterationSummary
+  } from '$lib/api/client';
+  import CaseResultRow from '$lib/components/CaseResultRow.svelte';
   import type { PageData } from './$types';
+  import { onDestroy } from 'svelte';
+  import { invalidateAll } from '$app/navigation';
+  import { toast } from '$lib/stores/toasts';
+  import Button from '$lib/components/ui/Button.svelte';
+  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+  import BaselinePanel from '$lib/components/BaselinePanel.svelte';
 
   export let data: PageData;
 
@@ -18,10 +31,17 @@
   // `[workspace]` is a required route param, so it is always present here.
   $: workspaceId = $page.params.workspace as string;
 
-  type Tab = 'iterations' | 'compare' | 'funnel' | 'decisions';
+  type Tab = 'iterations' | 'results' | 'compare' | 'funnel' | 'decisions';
   let tab: Tab = 'iterations';
   function setTab(id: string) {
-    if (id === 'iterations' || id === 'compare' || id === 'funnel' || id === 'decisions') tab = id;
+    if (
+      id === 'iterations' ||
+      id === 'results' ||
+      id === 'compare' ||
+      id === 'funnel' ||
+      id === 'decisions'
+    )
+      tab = id;
   }
   let openIteration: IterationSummary | null = null;
 
@@ -40,6 +60,114 @@
   $: trendValues = iterations
     .map((it) => it.primary_metric_value)
     .filter((v): v is number => v !== null);
+
+  // --- Live run state: cancel + poll -------------------------------------
+  // While a run is queued/running we poll the experiment so iterations and
+  // state climb without a manual refresh — same lightweight cadence as
+  // ActiveRunsPill. Polling stops the moment the run reaches a terminal state.
+  const ACTIVE_STATES = new Set(['queued', 'running', 'draft']);
+  $: isActive = ACTIVE_STATES.has(summary.state);
+
+  let showCancel = false;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  function startPoll() {
+    if (pollTimer || typeof window === 'undefined') return;
+    pollTimer = setInterval(() => void invalidateAll(), 2500);
+  }
+  function stopPoll() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+  $: if (isActive) startPoll();
+  else stopPoll();
+  onDestroy(stopPoll);
+
+  async function cancelRun() {
+    try {
+      await api.cancelExperiment(workspaceId, summary.id);
+      toast.success('Cancel requested', 'The run will stop after the current step.');
+      await invalidateAll();
+    } catch (err) {
+      toast.error('Cancel failed', err instanceof ApiError ? err.detail : String(err));
+    }
+  }
+
+  // --- Live run: stream spans as they land --------------------------------
+  // While the experiment is active we look up the live run id from /runs/active
+  // (filtered to this workspace) and subscribe to its span stream, so the page
+  // shows real motion — span count climbing, last span name — instead of a
+  // static "running" badge. The trace viewer owns the full tree; here we want a
+  // pulse of life and a one-click jump to it. Everything tears down on
+  // complete / when the run leaves the active set / on navigate away.
+  let liveRunId: string | null = null;
+  let liveSpanCount = 0;
+  let liveLastSpan: string | null = null;
+  let liveStream: StreamHandle | null = null;
+  let liveLookupTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function findLiveRun(): Promise<void> {
+    try {
+      const { runs } = await api.activeRuns();
+      const mine = runs.find((r) => r.workspace_id === workspaceId);
+      if (mine && mine.run_id !== liveRunId) attachLive(mine.run_id);
+      else if (!mine) detachLive();
+    } catch {
+      /* transient — keep the last known live state */
+    }
+  }
+
+  function attachLive(runId: string): void {
+    detachLive();
+    liveRunId = runId;
+    liveSpanCount = 0;
+    liveLastSpan = null;
+    liveStream = openTraceStream(workspaceId, runId, {
+      onSnapshot: (trace) => {
+        liveSpanCount = trace.spans?.length ?? 0;
+      },
+      onSpan: (span) => {
+        liveSpanCount += 1;
+        liveLastSpan = span.name ?? span.kind ?? 'span';
+      },
+      onComplete: () => detachLive()
+    });
+  }
+
+  function detachLive(): void {
+    liveStream?.close();
+    liveStream = null;
+    liveRunId = null;
+  }
+
+  // Poll for the live run id only while active; the SSE itself is push-based.
+  $: if (isActive) startLiveLookup();
+  else stopLiveLookup();
+
+  function startLiveLookup(): void {
+    if (liveLookupTimer || typeof window === 'undefined') return;
+    void findLiveRun();
+    liveLookupTimer = setInterval(() => void findLiveRun(), 3000);
+  }
+  function stopLiveLookup(): void {
+    if (liveLookupTimer) {
+      clearInterval(liveLookupTimer);
+      liveLookupTimer = null;
+    }
+    detachLive();
+  }
+  onDestroy(stopLiveLookup);
+
+  const STATE_TONE: Record<string, string> = {
+    running: 'state-running',
+    queued: 'state-queued',
+    draft: 'state-queued',
+    completed: 'state-done',
+    aborted: 'state-aborted',
+    failed: 'state-aborted'
+  };
 
   // Compare tab (B3): the diff is computed server-side (one math source
   // shared with the CLI). The FE picks A and B, fetches the structured
@@ -122,6 +250,50 @@
 
   $: funnelKeys = funnelDetail ? Object.keys(funnelDetail.nodes).sort() : [];
 
+  // --- Results tab: per-case expected vs detected vs matched ---------------
+  // Lazy like the funnel — the per-scenario grid can be large, so it stays off
+  // the server load and is fetched only when the tab opens. `includeTurns`
+  // re-fetches with per-turn breakdowns for conversation cases; a token guard
+  // keeps an out-of-order response from clobbering a newer one.
+  let resultsData: ExperimentResults | null = null;
+  let resultsError: string | null = null;
+  let resultsLoading = false;
+  let resultsIncludeTurns = false;
+  let resultsRequest = 0;
+
+  $: if (tab === 'results') {
+    void loadResults(resultsIncludeTurns);
+  }
+
+  async function loadResults(includeTurns: boolean): Promise<void> {
+    const token = ++resultsRequest;
+    resultsLoading = true;
+    resultsError = null;
+    try {
+      const detail = await api.experimentResults(workspaceId, summary.id, { includeTurns });
+      if (token !== resultsRequest) return;
+      resultsData = detail;
+    } catch (err) {
+      if (token !== resultsRequest) return;
+      resultsData = null;
+      resultsError =
+        err instanceof ApiError && err.status === 404
+          ? 'No results yet for this experiment.'
+          : 'Could not load per-case results.';
+    } finally {
+      if (token === resultsRequest) resultsLoading = false;
+    }
+  }
+
+  function toggleResultTurns(): void {
+    resultsIncludeTurns = !resultsIncludeTurns;
+    void loadResults(resultsIncludeTurns);
+  }
+
+  // A case carries a multi-turn conversation when it has any persisted turns.
+  $: resultsHasConversations = (resultsData?.cases ?? []).some((c) => c.turns.length > 0);
+  $: resultsPassCount = (resultsData?.cases ?? []).filter((c) => c.matched === true).length;
+
   function fmtNumber(value: number | null, digits = 4): string {
     if (value === null) return '—';
     if (Number.isInteger(value)) return `${value}`;
@@ -172,16 +344,49 @@
     <span class="text-text-2">{summary.name}</span>
   </nav>
 
-  <header class="mb-10">
-    <div class="text-xs uppercase tracking-wide text-text-3 mb-2">
-      Experiment · {summary.mode}
+  <header class="mb-10 flex items-start justify-between gap-6">
+    <div class="min-w-0">
+      <div class="text-xs uppercase tracking-wide text-text-3 mb-2">
+        Experiment · {summary.mode}
+      </div>
+      <h1 class="text-3xl font-semibold tracking-tight">{summary.name}</h1>
+      <p class="text-text-2 mt-2 max-w-2xl">{summary.goal}</p>
+      <div class="mt-3">
+        <CopyableId id={summary.id} label="experiment id" />
+      </div>
     </div>
-    <h1 class="text-3xl font-semibold tracking-tight">{summary.name}</h1>
-    <p class="text-text-2 mt-2 max-w-2xl">{summary.goal}</p>
-    <div class="mt-3">
-      <CopyableId id={summary.id} label="experiment id" />
+    <div class="flex shrink-0 items-center gap-3">
+      <span class="state-badge {STATE_TONE[summary.state] ?? 'state-queued'}">
+        {#if isActive}<span class="pulse" aria-hidden="true"></span>{/if}
+        {summary.state}
+      </span>
+      <Button
+        variant="secondary"
+        size="sm"
+        href={`/${workspaceId}/experiments/${summary.id}/analyze`}
+      >
+        Analyze failures
+      </Button>
+      {#if isActive}
+        <Button variant="danger" size="sm" on:click={() => (showCancel = true)}>Cancel run</Button>
+      {/if}
     </div>
   </header>
+
+  {#if isActive && liveRunId}
+    <div class="live-banner mb-8">
+      <span class="live-dot" aria-hidden="true"></span>
+      <span class="text-sm">
+        <span class="font-medium">Live run</span>
+        <span class="text-text-2"
+          >· {liveSpanCount} span{liveSpanCount === 1 ? '' : 's'}{liveLastSpan
+            ? ` · ${liveLastSpan}`
+            : ''}</span
+        >
+      </span>
+      <a class="watch-link" href={`/${workspaceId}/traces/${liveRunId}`}>Watch live →</a>
+    </div>
+  {/if}
 
   <section class="grid grid-cols-4 gap-4 mb-10">
     <MetricChip
@@ -212,7 +417,7 @@
 
   <div class="border-b border-border mb-6">
     <div class="flex gap-6 text-sm">
-      {#each [{ id: 'iterations', label: `Iterations · ${iterations.length}` }, { id: 'compare', label: 'Compare' }, { id: 'funnel', label: 'Funnel' }, { id: 'decisions', label: `Decisions · ${data.decisions.length}` }] as t}
+      {#each [{ id: 'iterations', label: `Iterations · ${iterations.length}` }, { id: 'results', label: 'Results' }, { id: 'compare', label: 'Compare' }, { id: 'funnel', label: 'Funnel' }, { id: 'decisions', label: `Decisions · ${data.decisions.length}` }] as t}
         <button
           type="button"
           class="-mb-px py-2.5 border-b-2 transition-colors {tab === t.id
@@ -293,6 +498,51 @@
         </tbody>
       </table>
     </div>
+  {:else if tab === 'results'}
+    <section>
+      <div class="flex items-baseline justify-between mb-4">
+        <div class="flex items-baseline gap-3">
+          <h2 class="text-lg font-semibold">Per-case results</h2>
+          {#if resultsData}
+            <span class="text-xs text-text-3 font-mono" data-numeric>
+              {resultsPassCount}/{resultsData.total} passed
+              {#if resultsData.iteration !== null}· iter {resultsData.iteration}{/if}
+            </span>
+          {/if}
+        </div>
+        {#if resultsHasConversations}
+          <button
+            type="button"
+            class="text-xs text-text-2 underline-offset-2 hover:text-text-1 hover:underline"
+            on:click={toggleResultTurns}
+          >
+            {resultsIncludeTurns ? 'Hide turns' : 'Expand turns'}
+          </button>
+        {/if}
+      </div>
+
+      {#if resultsLoading && !resultsData}
+        <div class="space-y-3">
+          {#each Array(3) as _}
+            <div class="h-20 rounded-md border border-border bg-surface animate-pulse"></div>
+          {/each}
+        </div>
+      {:else if resultsError}
+        <div class="rounded-lg border border-border bg-surface px-6 py-8 text-center text-text-2">
+          {resultsError}
+        </div>
+      {:else if resultsData && resultsData.cases.length === 0}
+        <div class="rounded-lg border border-border bg-surface px-6 py-12 text-center text-text-2">
+          No cases recorded for the best iteration yet.
+        </div>
+      {:else if resultsData}
+        <div class="space-y-3" class:opacity-60={resultsLoading}>
+          {#each resultsData.cases as c (c.case_id)}
+            <CaseResultRow result={c} {workspaceId} />
+          {/each}
+        </div>
+      {/if}
+    </section>
   {:else if tab === 'compare'}
     <div class="grid grid-cols-2 gap-6 mb-6">
       <div class="rounded-lg border border-border bg-surface px-5 py-4">
@@ -721,6 +971,110 @@
         <dt class="text-text-3 text-xs mb-0.5">Record id</dt>
         <dd><CopyableId id={openIteration.id} label="iteration record id" /></dd>
       </div>
+      {#if openIteration.primary_metric_value !== null}
+        <div class="pt-2 border-t border-border">
+          <dt class="text-text-3 text-xs mb-2 uppercase tracking-wide">
+            Baseline &amp; regression
+          </dt>
+          <dd>
+            <BaselinePanel {workspaceId} iterationId={openIteration.id} datasets={data.datasets} />
+          </dd>
+        </div>
+      {/if}
     </dl>
   </aside>
 {/if}
+
+<ConfirmDialog
+  open={showCancel}
+  title="Cancel this run?"
+  message="The run stops after the current step finishes. Iterations already completed are kept."
+  confirmLabel="Cancel run"
+  cancelLabel="Keep running"
+  tone="danger"
+  onConfirm={cancelRun}
+  on:close={() => (showCancel = false)}
+/>
+
+<style>
+  .state-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: var(--radius-md);
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: capitalize;
+    border: 1px solid var(--color-border);
+  }
+  .state-running {
+    color: var(--color-success);
+    border-color: color-mix(in srgb, var(--color-success) 35%, transparent);
+    background: color-mix(in srgb, var(--color-success) 8%, transparent);
+  }
+  .state-queued {
+    color: var(--color-warning);
+    border-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
+    background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+  }
+  .state-done {
+    color: var(--color-text-2);
+  }
+  .state-aborted {
+    color: var(--color-danger);
+    border-color: color-mix(in srgb, var(--color-danger) 35%, transparent);
+    background: color-mix(in srgb, var(--color-danger) 8%, transparent);
+  }
+  .pulse {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pulse {
+      animation: none;
+    }
+    .live-dot {
+      animation: none;
+    }
+  }
+
+  .live-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.6rem 0.9rem;
+    border: 1px solid color-mix(in srgb, var(--color-success) 30%, var(--color-border));
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--color-success) 7%, transparent);
+  }
+  .live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-success);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  .watch-link {
+    margin-left: auto;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--color-success);
+    text-underline-offset: 2px;
+  }
+  .watch-link:hover {
+    text-decoration: underline;
+  }
+</style>

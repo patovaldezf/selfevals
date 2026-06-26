@@ -2,9 +2,15 @@
   import CopyableId from '$lib/components/CopyableId.svelte';
   import PointerField from '$lib/components/PointerField.svelte';
   import SpanTreeFlat from '$lib/components/SpanTreeFlat.svelte';
+  import { api, ApiError } from '$lib/api/client';
   import { factsFor } from '$lib/spans/facts';
   import { styleForKind } from '$lib/spans/kindStyle';
-  import type { SpanSummary } from '$lib/api/client';
+  import type {
+    AppendDatasetCaseResult,
+    DatasetDetail,
+    DatasetSummary,
+    SpanSummary
+  } from '$lib/api/client';
   import { openTraceStream, type StreamHandle } from '$lib/api/sse';
   import { onDestroy, onMount } from 'svelte';
   import { page } from '$app/stores';
@@ -13,6 +19,18 @@
   export let data: PageData;
 
   let selected: SpanSummary | null = null;
+  let promoteOpen = false;
+  let promoteLoading = false;
+  let promoteSaving = false;
+  let promoteError: string | null = null;
+  let promoteDraftText = '';
+  let regressionDatasets: DatasetSummary[] = [];
+  let selectedDatasetId = '';
+  let newDatasetName = 'agent regressions';
+  let promoteResult:
+    | AppendDatasetCaseResult
+    | { dataset: DatasetDetail; case_id: string; created_new_dataset: boolean }
+    | null = null;
 
   // Pointer fields by span kind. The schema (schemas/trace.py) puts these
   // on every span as `<name>_pointer` + `<name>_hash`. We surface them as
@@ -132,6 +150,71 @@
   });
 
   $: traceTitle = data.trace.experiment_name ?? 'Standalone trace';
+
+  async function openPromote() {
+    const workspaceId = $page.params.workspace;
+    if (!workspaceId) return;
+    promoteOpen = true;
+    promoteLoading = true;
+    promoteSaving = false;
+    promoteError = null;
+    promoteResult = null;
+    try {
+      const [draft, datasets] = await Promise.all([
+        api.draftCaseFromTrace(workspaceId, data.trace.id),
+        api.listDatasets(workspaceId, undefined, { dataset_type: 'regression', limit: 100 })
+      ]);
+      promoteDraftText = JSON.stringify(draft.case, null, 2);
+      regressionDatasets = datasets.items;
+      selectedDatasetId = datasets.items[0]?.id ?? '__new';
+    } catch (e) {
+      promoteError = e instanceof ApiError ? e.detail : 'Could not draft regression case.';
+    } finally {
+      promoteLoading = false;
+    }
+  }
+
+  async function savePromotion() {
+    const workspaceId = $page.params.workspace;
+    if (!workspaceId) return;
+    promoteSaving = true;
+    promoteError = null;
+    try {
+      const parsed = JSON.parse(promoteDraftText) as Record<string, unknown>;
+      if (selectedDatasetId === '__new') {
+        const dataset = await api.createDataset(workspaceId, {
+          name: newDatasetName.trim() || 'agent regressions',
+          dataset_type: 'regression',
+          cases: [parsed]
+        });
+        promoteResult = {
+          dataset,
+          case_id: typeof parsed.id === 'string' ? parsed.id : 'unknown',
+          created_new_dataset: true
+        };
+      } else {
+        promoteResult = await api.appendDatasetCase(workspaceId, selectedDatasetId, {
+          case: parsed,
+          create_version_if_frozen: true
+        });
+      }
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        promoteError = 'Case JSON is invalid.';
+      } else {
+        promoteError = e instanceof ApiError ? e.detail : 'Could not save regression case.';
+      }
+    } finally {
+      promoteSaving = false;
+    }
+  }
+
+  $: runCommand =
+    promoteResult &&
+    `selfevals --db ./selfevals.sqlite run <spec.yaml> --dataset ${promoteResult.dataset.id}`;
+  $: gateCommand =
+    promoteResult &&
+    `selfevals --db ./selfevals.sqlite regression check ${$page.params.workspace} --dataset ${promoteResult.dataset.id} --iteration <new_iteration_id>`;
 </script>
 
 <svelte:head>
@@ -217,6 +300,14 @@
       {/if}
     </dl>
 
+    <button
+      type="button"
+      class="w-full rounded-md border border-border bg-surface-2 px-3 py-2.5 text-sm text-text-1 hover:bg-bg transition-colors mb-6"
+      on:click={openPromote}
+    >
+      Promote to regression case
+    </button>
+
     <div
       class="text-xs uppercase tracking-wide text-text-3 mb-2 flex items-baseline justify-between"
     >
@@ -298,3 +389,134 @@
     {/if}
   </main>
 </div>
+
+{#if promoteOpen}
+  <div class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6 py-8">
+    <section
+      class="w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-lg border border-border bg-bg shadow-xl"
+    >
+      <div class="flex items-center justify-between gap-4 border-b border-border px-5 py-4">
+        <div>
+          <div class="text-xs uppercase tracking-wide text-text-3">Regression case</div>
+          <h2 class="text-lg font-semibold">Promote this trace</h2>
+        </div>
+        <button
+          type="button"
+          class="text-text-3 hover:text-text-1 text-sm"
+          on:click={() => (promoteOpen = false)}
+        >
+          Close
+        </button>
+      </div>
+
+      <div class="grid grid-cols-[1fr_320px] min-h-0 max-h-[calc(90vh-73px)]">
+        <div class="p-5 overflow-y-auto">
+          {#if promoteLoading}
+            <div class="text-text-3 text-sm py-20 text-center">Building case draft...</div>
+          {:else}
+            <label class="block">
+              <span class="text-xs uppercase tracking-wide text-text-3">Editable EvalCase JSON</span
+              >
+              <textarea
+                class="mt-2 h-[58vh] w-full resize-none rounded border border-border bg-surface p-4 font-mono text-xs text-text-1 outline-none focus:ring-2 focus:ring-text-1"
+                bind:value={promoteDraftText}
+                spellcheck="false"
+              ></textarea>
+            </label>
+          {/if}
+        </div>
+
+        <aside class="border-l border-border bg-surface px-5 py-5 overflow-y-auto">
+          <div class="space-y-5">
+            <div>
+              <label class="text-xs uppercase tracking-wide text-text-3" for="dataset-target">
+                Target dataset
+              </label>
+              <select
+                id="dataset-target"
+                class="mt-2 w-full rounded border border-border bg-bg px-2 py-2 text-sm"
+                bind:value={selectedDatasetId}
+                disabled={promoteLoading || promoteSaving}
+              >
+                <option value="__new">Create new regression dataset</option>
+                {#each regressionDatasets as ds}
+                  <option value={ds.id}>
+                    {ds.name} · {ds.status} · {ds.case_count} cases
+                  </option>
+                {/each}
+              </select>
+            </div>
+
+            {#if selectedDatasetId === '__new'}
+              <label class="block">
+                <span class="text-xs uppercase tracking-wide text-text-3">New dataset name</span>
+                <input
+                  class="mt-2 w-full rounded border border-border bg-bg px-3 py-2 text-sm"
+                  bind:value={newDatasetName}
+                  disabled={promoteSaving}
+                />
+              </label>
+            {/if}
+
+            <div class="rounded border border-border bg-bg px-3 py-3 text-xs text-text-2">
+              The draft keeps the original expected answer. Review it before saving; this becomes
+              regression coverage.
+            </div>
+
+            {#if promoteError}
+              <div
+                class="rounded border px-3 py-3 text-xs"
+                style:border-color="var(--color-danger)"
+                style:color="var(--color-danger)"
+              >
+                {promoteError}
+              </div>
+            {/if}
+
+            <button
+              type="button"
+              class="w-full rounded bg-text-1 px-3 py-2.5 text-sm font-medium text-bg disabled:opacity-50"
+              disabled={promoteLoading || promoteSaving}
+              on:click={savePromotion}
+            >
+              {promoteSaving ? 'Saving...' : 'Save regression case'}
+            </button>
+
+            {#if promoteResult}
+              <div class="space-y-3 border-t border-border pt-4">
+                <div class="text-sm font-medium">Saved</div>
+                <div class="space-y-1 text-xs">
+                  <div class="flex justify-between gap-2">
+                    <span class="text-text-3">dataset</span>
+                    <CopyableId id={promoteResult.dataset.id} label="dataset id" />
+                  </div>
+                  <div class="flex justify-between gap-2">
+                    <span class="text-text-3">case</span>
+                    <CopyableId id={promoteResult.case_id} label="case id" />
+                  </div>
+                  {#if promoteResult.created_new_dataset}
+                    <div class="text-text-3">Created a new active dataset.</div>
+                  {/if}
+                </div>
+                {#if runCommand}
+                  <div>
+                    <div class="text-xs uppercase tracking-wide text-text-3 mb-1">Run</div>
+                    <pre
+                      class="whitespace-pre-wrap break-words rounded bg-bg border border-border p-2 font-mono text-[11px]">{runCommand}</pre>
+                  </div>
+                {/if}
+                {#if gateCommand}
+                  <div>
+                    <div class="text-xs uppercase tracking-wide text-text-3 mb-1">Gate</div>
+                    <pre
+                      class="whitespace-pre-wrap break-words rounded bg-bg border border-border p-2 font-mono text-[11px]">{gateCommand}</pre>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        </aside>
+      </div>
+    </section>
+  </div>
+{/if}

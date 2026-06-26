@@ -116,6 +116,20 @@ def test_failure_weights_non_negative() -> None:
         _case(failure_weights={"wrong_product": -3})
 
 
+def test_critical_failure_modes_default_empty() -> None:
+    assert _case().critical_failure_modes == []
+
+
+def test_critical_failure_modes_unique() -> None:
+    with pytest.raises(ValidationError):
+        _case(critical_failure_modes=["unauthorized_discount", "unauthorized_discount"])
+
+
+def test_critical_failure_modes_accepted() -> None:
+    case = _case(critical_failure_modes=["unauthorized_discount", "sale_marked_spam"])
+    assert case.critical_failure_modes == ["unauthorized_discount", "sale_marked_spam"]
+
+
 def test_modalities_must_be_unique_and_nonempty() -> None:
     with pytest.raises(ValidationError):
         _case(modalities=["text", "text"])
