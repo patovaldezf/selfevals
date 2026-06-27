@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from selfevals.schemas._base import BaseEntity
     from selfevals.schemas.eval_case import EvalCase
     from selfevals.schemas.experiment import Experiment
+    from selfevals.schemas.job import ScenarioJob
     from selfevals.schemas.trace import Trace
 
 
@@ -148,6 +149,58 @@ class PostgresStorage(StorageInterface):
             owner=owner,
             lease_expires_at=lease_expires_at,
         )
+
+    # -- scenario jobs (sharded per-case claim/plan/barrier) ----------------
+
+    def claim_scenario_jobs(
+        self,
+        *,
+        run_job_id: str,
+        iteration: int,
+        worker_id: str,
+        lease_until: datetime,
+        batch: int,
+    ) -> list[ScenarioJob]:
+        # The SELECT FOR UPDATE SKIP LOCKED + UPDATE must be one transaction so
+        # the row locks the claim takes are held until commit (autocommit would
+        # release them between statements and break the no-double-claim invariant).
+        result: list[ScenarioJob]
+        with self.transaction():
+            result = _queries.claim_scenario_jobs(
+                self._conn,
+                run_job_id=run_job_id,
+                iteration=iteration,
+                worker_id=worker_id,
+                lease_until=lease_until,
+                batch=batch,
+            )
+        return result
+
+    def insert_scenario_jobs(self, jobs: list[ScenarioJob]) -> int:
+        with self.transaction():
+            return _queries.insert_scenario_jobs(self._conn, list(jobs))
+
+    def barrier_counts(self, *, run_job_id: str, iteration: int) -> dict[str, int]:
+        return _queries.barrier_counts(self._conn, run_job_id=run_job_id, iteration=iteration)
+
+    def finalize_scenario_job(
+        self, *, job_id: str, status: str, error: str | None, finished_at: datetime
+    ) -> None:
+        _queries.finalize_scenario_job(
+            self._conn, job_id=job_id, status=status, error=error, finished_at=finished_at
+        )
+
+    def touch_scenario_job_lease(
+        self, *, job_id: str, worker_id: str, lease_until: datetime
+    ) -> bool:
+        return _queries.touch_scenario_job_lease(
+            self._conn, job_id=job_id, worker_id=worker_id, lease_until=lease_until
+        )
+
+    def expired_scenario_job_leases(
+        self, *, now: datetime, limit: int = 100
+    ) -> list[tuple[str, str]]:
+        return _queries.expired_scenario_job_leases(self._conn, now=now, limit=limit)
 
     # -- metrics rollups ----------------------------------------------------
 

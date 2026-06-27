@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from selfevals.schemas._base import BaseEntity
     from selfevals.schemas.eval_case import EvalCase
     from selfevals.schemas.experiment import Experiment
+    from selfevals.schemas.job import ScenarioJob
     from selfevals.schemas.trace import Trace
 
 
@@ -127,6 +128,46 @@ class StorageInterface(ABC):
         self, *, workspace_id: str, job_id: str, owner: str, lease_expires_at: datetime
     ) -> bool:
         """Renew a job's lease via a direct unversioned UPDATE; True if renewed."""
+
+    # -- scenario jobs (sharded per-case claim/plan/barrier) ----------------
+
+    @abstractmethod
+    def claim_scenario_jobs(
+        self,
+        *,
+        run_job_id: str,
+        iteration: int,
+        worker_id: str,
+        lease_until: datetime,
+        batch: int,
+    ) -> list[ScenarioJob]:
+        """Atomically claim up to ``batch`` pending scenario jobs (SKIP LOCKED)."""
+
+    @abstractmethod
+    def insert_scenario_jobs(self, jobs: list[ScenarioJob]) -> int:
+        """Batch-insert scenario jobs, idempotent on (run_job_id, iteration, case_id)."""
+
+    @abstractmethod
+    def barrier_counts(self, *, run_job_id: str, iteration: int) -> dict[str, int]:
+        """Count scenario jobs by status for one iteration (coordinator barrier)."""
+
+    @abstractmethod
+    def finalize_scenario_job(
+        self, *, job_id: str, status: str, error: str | None, finished_at: datetime
+    ) -> None:
+        """Persist a scenario job's terminal/retry state via direct SQL."""
+
+    @abstractmethod
+    def touch_scenario_job_lease(
+        self, *, job_id: str, worker_id: str, lease_until: datetime
+    ) -> bool:
+        """Heartbeat a claimed/running scenario job's lease; True if renewed."""
+
+    @abstractmethod
+    def expired_scenario_job_leases(
+        self, *, now: datetime, limit: int = 100
+    ) -> list[tuple[str, str]]:
+        """Cross-run ``(workspace_id, scenario_job_id)`` whose worker died."""
 
     # -- metrics rollups ----------------------------------------------------
 
