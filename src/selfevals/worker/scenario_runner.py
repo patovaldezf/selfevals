@@ -37,6 +37,33 @@ logger = logging.getLogger(__name__)
 DEFAULT_BATCH = 4
 
 
+def drain_self(storage_url: str, workspace_id: str) -> object:
+    """Build a coordinator ``drain`` callback that runs scenario jobs in-process.
+
+    The coordinator hands each iteration's scenario jobs to whoever can claim
+    them. In a multi-worker cluster that's the pool draining the shared frontier
+    via ``SKIP LOCKED``; with a single worker (or a local ``selfevals run``) the
+    coordinating process must also be the executor — this callback makes the
+    coordinator's own process claim and run its jobs until the iteration's
+    frontier is empty, then return so the coordinator polls the barrier. With N
+    workers the same callback on each just races on the claim, so no case runs
+    twice.
+    """
+
+    def drain(*, run_job_id: str, iteration: int) -> None:
+        while run_scenario_jobs_once(
+            storage_url=storage_url,
+            run_job_id=run_job_id,
+            workspace_id=workspace_id,
+            iteration=iteration,
+            worker_id=f"{workspace_id}:self-drain",
+            batch=DEFAULT_BATCH,
+        ):
+            pass
+
+    return drain
+
+
 def run_scenario_jobs_once(
     *,
     storage_url: str,
