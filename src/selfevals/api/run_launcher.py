@@ -18,6 +18,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 from fastapi import HTTPException
 
@@ -25,8 +27,10 @@ from selfevals._errors import SelfEvalsUserError
 from selfevals.api.broker import get_broker
 from selfevals.api.recorder_sink import BrokerSpanSink
 from selfevals.api.run_jobs import (
+    DEFAULT_LEASE_SECONDS,
     RunJobQueue,
     create_run_job,
+    heartbeat_run_job_lease,
     lease_run_job,
     mark_run_job_cancelled,
     mark_run_job_failed,
@@ -192,6 +196,50 @@ def _run_in_thread(*, storage_url: str, workspace_id: str, job_id: str) -> None:
     execute_run_job(storage_url=storage_url, workspace_id=workspace_id, job_id=job_id, owner="api-thread")
 
 
+@contextmanager
+def _lease_heartbeat(
+    *, storage_url: str, workspace_id: str, job_id: str, owner: str
+) -> Iterator[None]:
+    """Renew the job's lease in the background while the run executes.
+
+    Without this, a run longer than ``DEFAULT_LEASE_SECONDS`` lets its own lease
+    lapse, and the sweeper would reap a perfectly healthy run as a zombie. A
+    daemon thread re-touches the lease every ``DEFAULT_LEASE_SECONDS / 3`` so two
+    consecutive misses still beat expiry. The heartbeat opens its own storage
+    (its own DB connection): the run owns this thread's connection via
+    ``asyncio.run`` below, and psycopg connections are not shareable across
+    threads. Failures are swallowed — a missed beat is recoverable (next beat or
+    sweeper retry), and the heartbeat must never crash the run.
+    """
+    interval = max(1.0, DEFAULT_LEASE_SECONDS / 3)
+    stop = threading.Event()
+
+    def _beat() -> None:
+        hb_storage = open_storage(storage_url)
+        try:
+            while not stop.wait(interval):
+                try:
+                    renewed = heartbeat_run_job_lease(
+                        hb_storage, workspace_id=workspace_id, job_id=job_id, owner=owner
+                    )
+                except Exception:  # pragma: no cover - best-effort, never fatal
+                    logger.warning("lease heartbeat failed for job %s", job_id, exc_info=True)
+                    continue
+                if not renewed:
+                    # Job reached a terminal state (or vanished) — stop beating.
+                    return
+        finally:
+            hb_storage.close()
+
+    thread = threading.Thread(target=_beat, name=f"lease-heartbeat-{job_id}", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=5.0)
+
+
 def execute_run_job(
     *,
     storage_url: str,
@@ -239,7 +287,13 @@ def execute_run_job(
                 span_sink=span_sink,
                 payload_router=payload_router,
             )
-            asyncio.run(loop.run())
+            with _lease_heartbeat(
+                storage_url=storage_url,
+                workspace_id=job.workspace_id,
+                job_id=job.id,
+                owner=owner,
+            ):
+                asyncio.run(loop.run())
             mark_run_job_succeeded(storage, job=job)
             return True
         except Exception as exc:

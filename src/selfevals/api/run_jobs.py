@@ -157,6 +157,31 @@ def renew_run_job_lease(
     return job
 
 
+def heartbeat_run_job_lease(
+    storage: StorageInterface,
+    *,
+    workspace_id: str,
+    job_id: str,
+    owner: str,
+    lease_seconds: int = DEFAULT_LEASE_SECONDS,
+) -> bool:
+    """Renew a running job's lease without a version bump (the heartbeat path).
+
+    Unlike ``renew_run_job_lease`` (which round-trips the entity through
+    ``put_entity`` and its version-CAS), this issues a direct unversioned UPDATE
+    of the lease columns. The in-flight run holds a stale in-memory copy of the
+    row, so a CAS here would raise ``OptimisticConcurrencyError``; the lease is
+    operational metadata, not versioned domain state. No-op once the job is
+    terminal. Returns True if a row was renewed.
+    """
+    return storage.touch_run_job_lease(
+        workspace_id=workspace_id,
+        job_id=job_id,
+        owner=owner,
+        lease_expires_at=utc_now() + timedelta(seconds=lease_seconds),
+    )
+
+
 def mark_run_job_succeeded(storage: StorageInterface, *, job: RunJob) -> RunJob:
     job.mark_succeeded(utc_now())
     with storage.open(job.workspace_id) as scope:

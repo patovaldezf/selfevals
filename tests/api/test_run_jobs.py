@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 import yaml
 from fastapi.testclient import TestClient
 
+from selfevals._internal.time import utc_now
 from selfevals.api.app import build_app
 from selfevals.schemas.job import RunJob, RunJobStatus
 from selfevals.storage.factory import open_storage
@@ -98,3 +100,73 @@ def test_cancel_queued_job_marks_cancelled_and_aborts_experiment(
         detail = client.get(f"/api/workspaces/{WS}/experiments/{exp_id}")
         assert detail.status_code == 200
         assert detail.json()["summary"]["state"] == "aborted"
+
+
+def _seed_running_job(db_url: str, monkeypatch: Any) -> str:
+    monkeypatch.setattr("selfevals.api.run_launcher.configured_run_queue", lambda: _FakeQueue())
+    with TestClient(build_app(db_path=db_url)) as client:
+        res = client.post(f"/api/workspaces/{WS}/experiments/run", json={"spec_inline": _inline_spec()})
+        assert res.status_code == 202
+        job_id = str(res.json()["job_id"])
+    storage = open_storage(db_url)
+    try:
+        with storage.open(WS) as scope:
+            job = scope.get_entity(RunJob, job_id)
+            assert isinstance(job, RunJob)
+            job.status = RunJobStatus.RUNNING
+            job.lease_owner = "worker-1"
+            job.lease_expires_at = utc_now()
+            scope.put_entity(job)
+    finally:
+        storage.close()
+    return job_id
+
+
+def test_heartbeat_renews_lease_without_version_bump(db_url: str, monkeypatch: Any) -> None:
+    """The heartbeat must extend the lease via a direct UPDATE — not a versioned
+    write — or a long run would race its own in-memory copy into an
+    OptimisticConcurrencyError. Pin that the lease moves forward and `version`
+    does not."""
+    job_id = _seed_running_job(db_url, monkeypatch)
+    storage = open_storage(db_url)
+    try:
+        before = storage.expired_run_job_leases(now=utc_now() + timedelta(seconds=1))
+        assert (WS, job_id) in before  # lease at-or-before now → currently expired
+
+        new_expiry = utc_now() + timedelta(seconds=300)
+        renewed = storage.touch_run_job_lease(
+            workspace_id=WS, job_id=job_id, owner="worker-1", lease_expires_at=new_expiry
+        )
+        assert renewed is True
+
+        with storage.open(WS) as scope:
+            job = scope.get_entity(RunJob, job_id)
+            assert isinstance(job, RunJob)
+            assert job.version == 1  # untouched by the unversioned UPDATE
+            assert job.lease_expires_at is not None and job.lease_expires_at > utc_now()
+        # No longer expired after the renew.
+        assert (WS, job_id) not in storage.expired_run_job_leases(now=utc_now())
+    finally:
+        storage.close()
+
+
+def test_heartbeat_is_noop_on_terminal_job(db_url: str, monkeypatch: Any) -> None:
+    """Once a job is terminal the heartbeat must do nothing — this closes the
+    sweeper-vs-heartbeat race (the status guard lives in the UPDATE's WHERE)."""
+    job_id = _seed_running_job(db_url, monkeypatch)
+    storage = open_storage(db_url)
+    try:
+        with storage.open(WS) as scope:
+            job = scope.get_entity(RunJob, job_id)
+            assert isinstance(job, RunJob)
+            job.mark_succeeded(utc_now())
+            scope.put_entity(job)
+        renewed = storage.touch_run_job_lease(
+            workspace_id=WS,
+            job_id=job_id,
+            owner="worker-1",
+            lease_expires_at=utc_now() + timedelta(seconds=300),
+        )
+        assert renewed is False
+    finally:
+        storage.close()

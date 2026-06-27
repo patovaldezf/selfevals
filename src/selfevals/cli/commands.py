@@ -667,3 +667,27 @@ def cmd_worker_runs(args: argparse.Namespace) -> int:
     if args.once:
         print(f"processed run jobs: {processed}")
     return 0
+
+
+def cmd_worker_sweeper(args: argparse.Namespace) -> int:
+    import logging
+    import os
+
+    # Lazy import: same import-cycle reasoning as cmd_worker_runs.
+    from selfevals.worker.lease_sweeper import LeaseSweeperConfig, run_lease_sweeper
+
+    if not logging.getLogger().handlers:
+        level = os.environ.get("SELFEVALS_LOG_LEVEL", "INFO").upper()
+        logging.basicConfig(level=level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    storage_url = resolve_storage_url(args.db)
+    reaped = run_lease_sweeper(
+        LeaseSweeperConfig(
+            storage_url=storage_url,
+            redis_url=args.redis_url,
+            interval_seconds=args.interval,
+            once=args.once,
+        )
+    )
+    if args.once:
+        print(f"swept expired-lease jobs: {reaped}")
+    return 0

@@ -30,6 +30,8 @@ from selfevals.storage.postgres.mappers import mapper_for
 from selfevals.storage.postgres.migrations import apply_migrations
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from selfevals.api.schemas import WorkspaceSummary
     from selfevals.schemas._base import BaseEntity
     from selfevals.schemas.eval_case import EvalCase
@@ -128,6 +130,24 @@ class PostgresStorage(StorageInterface):
 
     def traces_by_thread_id(self, workspace_id: str, thread_id: str) -> list[Trace]:
         return _queries.traces_by_thread_id(self._conn, workspace_id, thread_id)
+
+    # -- run-job durability (sweeper + heartbeat) ---------------------------
+
+    def expired_run_job_leases(
+        self, *, now: datetime, limit: int = 100
+    ) -> list[tuple[str, str]]:
+        return _queries.expired_run_job_leases(self._conn, now=now, limit=limit)
+
+    def touch_run_job_lease(
+        self, *, workspace_id: str, job_id: str, owner: str, lease_expires_at: datetime
+    ) -> bool:
+        return _queries.touch_run_job_lease(
+            self._conn,
+            workspace_id=workspace_id,
+            job_id=job_id,
+            owner=owner,
+            lease_expires_at=lease_expires_at,
+        )
 
     # -- metrics rollups ----------------------------------------------------
 
