@@ -2,17 +2,24 @@
   One turn in a thread conversation.
 
   Layout: a left rail carries the at-a-glance signals (position pill +
-  GradeChip), the body carries context (timestamp), a quiet escalation
-  ("Open trace →" to zoom into this turn's full span tree), and a
-  collapsible for the raw grader results. Designed to read top-to-bottom
-  chronologically with calm, generous spacing.
+  GradeChip), the body carries context (timestamp + classified message), a
+  quiet escalation ("Open trace →" to zoom into this turn's full span tree),
+  and a collapsible for the raw grader results. Designed to read
+  top-to-bottom chronologically with calm, generous spacing.
+
+  `turn` is a `ScenarioResult` (the same shape `/results` uses) — so a turn
+  and a case render identically. `started_at`/`position` may be null for
+  scenarios without a persisted trace; we guard accordingly.
 -->
 <script lang="ts">
   import GradeChip from '$lib/components/GradeChip.svelte';
-  import type { ThreadTurn } from '$lib/api/client';
+  import type { ScenarioResult } from '$lib/api/client';
 
-  export let turn: ThreadTurn;
+  export let turn: ScenarioResult;
   export let workspaceId: string;
+  // 0-based fallback index from the parent's {#each}, used when the backend
+  // didn't carry an explicit `position` (single-shot scenarios).
+  export let index = 0;
 
   // Local, friendly timestamp. Falls back to the raw ISO string if the
   // value can't be parsed — never blank, never a crash.
@@ -29,6 +36,12 @@
   }
 
   $: graderResults = turn.grader_results ?? [];
+  // `position` is the 0-based turn index when present; otherwise fall back to
+  // the render index so the pill is never blank.
+  $: turnNumber = (turn.position ?? index) + 1;
+  // `run_id` is the link target for the trace; absent only when there's no
+  // persisted trace (then "Open trace" is hidden).
+  $: traceHref = turn.run_id ? `/${workspaceId}/traces/${turn.run_id}` : null;
 </script>
 
 <article class="flex gap-5 rounded-lg border border-border bg-surface px-5 py-4">
@@ -37,27 +50,37 @@
     <span
       class="inline-flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface-2 font-mono text-xs text-text-2"
       data-numeric
-      title={`Turn ${turn.position + 1}`}
+      title={`Turn ${turnNumber}`}
     >
-      {turn.position + 1}
+      {turnNumber}
     </span>
-    <GradeChip grade={turn.primary_grade} />
+    <GradeChip grade={turn.label ?? null} />
   </div>
 
   <!-- Body. -->
   <div class="min-w-0 flex-1">
     <div class="mb-3 flex items-baseline justify-between gap-3">
-      <time class="font-mono text-xs text-text-3" datetime={turn.started_at}>
-        {fmtTime(turn.started_at)}
-      </time>
-      <a
-        href={`/${workspaceId}/traces/${turn.run_id}`}
-        class="group inline-flex items-center gap-1.5 text-xs text-text-3 hover:text-text-1 transition-colors"
-      >
-        <span>Open trace</span>
-        <span class="shrink-0" aria-hidden="true">→</span>
-      </a>
+      {#if turn.started_at}
+        <time class="font-mono text-xs text-text-3" datetime={turn.started_at}>
+          {fmtTime(turn.started_at)}
+        </time>
+      {:else}
+        <span class="text-xs text-text-3">{turn.case_name ?? turn.case_id}</span>
+      {/if}
+      {#if traceHref}
+        <a
+          href={traceHref}
+          class="group inline-flex items-center gap-1.5 text-xs text-text-3 hover:text-text-1 transition-colors"
+        >
+          <span>Open trace</span>
+          <span class="shrink-0" aria-hidden="true">→</span>
+        </a>
+      {/if}
     </div>
+
+    {#if turn.message}
+      <p class="mb-3 whitespace-pre-wrap text-sm text-text-1">{turn.message}</p>
+    {/if}
 
     {#if graderResults.length > 0}
       <details class="group">

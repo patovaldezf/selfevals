@@ -406,6 +406,9 @@ class ScenarioResult(BaseModel):
     """Whether the primary grade passed. None when there's no persisted trace."""
     score: float | None = None
     label: str | None = None
+    started_at: datetime | None = None
+    """When this turn's trace started. Poblado por turno de thread; `None` para
+    cases sin trace persistido o single-shot sin timestamp."""
     message: str | None = None
     """The classified message — the agent's reply text for this case/turn."""
     failure_modes: list[str] = Field(default_factory=list)

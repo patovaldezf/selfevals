@@ -104,6 +104,7 @@ export type ScenarioResult = {
   matched?: boolean | null;
   score?: number | null;
   label?: string | null;
+  started_at?: string | null;
   message?: string | null;
   failure_modes: string[];
   expected?: ExpectedView | null;
@@ -189,24 +190,12 @@ export type TraceDetail = {
   metrics: Record<string, unknown>;
 };
 
-export type ThreadTurn = {
-  trace_id: string;
-  run_id: string;
-  position: number;
-  experiment_id: string | null;
-  iteration: number | null;
-  final_state: string;
-  started_at: string;
-  ended_at: string | null;
-  primary_grade: string | null;
-  grader_results: Record<string, unknown>[];
-  metrics: Record<string, unknown>;
-};
-
+/** A conversation's turns, each a `ScenarioResult` — the same shape `/results`
+ * uses (replaces the old flat `ThreadTurn`). Mirror of `api.schemas.ThreadResponse`. */
 export type ThreadDetail = {
   thread_id: string;
   turn_count: number;
-  turns: ThreadTurn[];
+  turns: ScenarioResult[];
 };
 
 /**
@@ -586,6 +575,109 @@ export type AnalysisIngestSummary = {
   hypotheses_recorded: number;
 };
 
+// --- Pairwise verdicts + tournaments -----------------------------------
+// LLM + human pairwise judgments (RLHF / judge calibration) and N-candidate
+// ranking via Elo / Bradley-Terry. Mirrors of `selfevals.api.schemas`.
+
+/** One side of a compared pair. Mirror of `api.schemas.PairRefBody`. */
+export type PairRef = {
+  kind: string;
+  trace_id?: string | null;
+  case_id?: string | null;
+  iteration_id?: string | null;
+  content_snapshot?: string | null;
+};
+
+export type PairwiseVerdict = {
+  id: string;
+  a_ref: PairRef;
+  b_ref: PairRef;
+  preferred: 'a' | 'b' | 'tie';
+  margin: number;
+  rationale?: string | null;
+  judge_kind: 'llm' | 'human';
+  judge_id: string;
+  rubric_version?: number | null;
+  experiment_id?: string | null;
+  case_id?: string | null;
+  created_at: string;
+};
+
+/** A verdict to ingest. `id`/`workspace_id` are assigned server-side. */
+export type IngestPairwiseVerdict = {
+  a_ref: PairRef;
+  b_ref: PairRef;
+  preferred: 'a' | 'b' | 'tie';
+  margin?: number;
+  rationale?: string | null;
+  judge_kind: 'llm' | 'human';
+  judge_id: string;
+  judge_model?: string | null;
+  rubric_version?: number | null;
+  position?: string | null;
+  case_id?: string | null;
+  dataset_id?: string | null;
+};
+
+export type PairwiseCalibrationCell = {
+  rubric_version?: number | null;
+  compared_pairs: number;
+  agreements: number;
+  disagreements: number;
+  agreement_rate: number;
+};
+
+export type PairwiseCalibration = {
+  compared_pairs: number;
+  agreements: number;
+  disagreements: number;
+  agreement_rate: number;
+  by_rubric_version: PairwiseCalibrationCell[];
+};
+
+export type TournamentCandidate = {
+  id: string;
+  output_text: string;
+  trace_id?: string | null;
+};
+
+export type RunTournamentRequest = {
+  candidates: TournamentCandidate[];
+  /** Dotted path `mod:fn` to the LLM judge callable. */
+  judge_entrypoint: string;
+  rubric: string;
+  strategy?: string;
+  method?: string;
+  baseline_id?: string | null;
+  comparisons_per_candidate?: number;
+  swiss_rounds?: number;
+  swap_and_average?: boolean;
+  case_input?: Record<string, unknown> | null;
+};
+
+export type RankingRow = {
+  candidate_id: string;
+  rank: number;
+  score: number;
+  wins: number;
+  losses: number;
+  ties: number;
+  n_comparisons: number;
+};
+
+export type Tournament = {
+  id: string;
+  experiment_id?: string | null;
+  strategy: string;
+  method: string;
+  candidate_ids: string[];
+  baseline_id?: string | null;
+  n_comparisons: number;
+  swap_and_average: boolean;
+  ranking: RankingRow[];
+  created_at: string;
+};
+
 export class ApiError extends Error {
   status: number;
   body: unknown;
@@ -667,7 +759,12 @@ function qs(params: Record<string, string | number | undefined>): string {
 
 export const api = {
   health: (fetch?: typeof globalThis.fetch) =>
-    request<{ status: string; db_path: string }>('/api/health', { fetch }),
+    request<{
+      status: string;
+      db_path: string;
+      storage_url?: string | null;
+      storage_backend?: string;
+    }>('/api/health', { fetch }),
 
   listWorkspaces: (fetch?: typeof globalThis.fetch) =>
     request<{ workspaces: WorkspaceSummary[] }>('/api/workspaces', { fetch }),
@@ -1075,5 +1172,66 @@ export const api = {
     request<AnalysisIngestSummary>(
       `/api/workspaces/${workspaceId}/experiments/${experimentId}/analysis/ingest`,
       { method: 'POST', json: result, fetch }
-    )
+    ),
+
+  // --- Pairwise verdicts + tournaments ----------------------------------
+
+  /** Pairwise verdicts for an experiment, optionally filtered by case or
+   * judge kind (LLM vs human). */
+  listVerdicts: (
+    workspaceId: string,
+    experimentId: string,
+    opts: { caseId?: string; judgeKind?: 'llm' | 'human' } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<PairwiseVerdict[]>(
+      `/api/workspaces/${workspaceId}/experiments/${experimentId}/verdicts${qs({
+        case_id: opts.caseId,
+        judge_kind: opts.judgeKind
+      })}`,
+      { fetch }
+    ),
+
+  /** LLM-vs-human agreement report (overall + per rubric version). */
+  verdictCalibration: (
+    workspaceId: string,
+    experimentId: string,
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<PairwiseCalibration>(
+      `/api/workspaces/${workspaceId}/experiments/${experimentId}/verdicts/calibration`,
+      { fetch }
+    ),
+
+  /** Ingest a batch of LLM/human verdicts. Returns the count persisted. */
+  ingestVerdicts: (
+    workspaceId: string,
+    experimentId: string,
+    verdicts: IngestPairwiseVerdict[],
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<{ ingested: number }>(
+      `/api/workspaces/${workspaceId}/experiments/${experimentId}/verdicts/ingest`,
+      { method: 'POST', json: { verdicts }, fetch }
+    ),
+
+  /** Past tournaments for an experiment, newest first. */
+  listTournaments: (workspaceId: string, experimentId: string, fetch?: typeof globalThis.fetch) =>
+    request<Tournament[]>(
+      `/api/workspaces/${workspaceId}/experiments/${experimentId}/tournaments`,
+      { fetch }
+    ),
+
+  /** Run a pairwise tournament: rank N candidates via Elo / Bradley-Terry. */
+  runTournament: (
+    workspaceId: string,
+    experimentId: string,
+    body: RunTournamentRequest,
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<Tournament>(`/api/workspaces/${workspaceId}/experiments/${experimentId}/tournaments`, {
+      method: 'POST',
+      json: body,
+      fetch
+    })
 };

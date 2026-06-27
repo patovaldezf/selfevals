@@ -389,6 +389,7 @@ def _scenario_result(
         matched=matched,
         score=primary.score if primary is not None else None,
         label=primary.label if primary is not None else None,
+        started_at=trace.environment.started_at,
         message=message,
         failure_modes=failure_modes,
         expected=expected,
