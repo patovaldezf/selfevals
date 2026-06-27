@@ -111,9 +111,11 @@ Workspace
   final_state, started_at/ended_at, spans[], metrics{}.
 - **SpanSummary**: id, parent_id, kind, name, started_at, duration_ms, **detail{}**
   (campos kind-specific filtrados — p.ej. LLM: provider/model/stop_reason).
-- **ThreadTurn** / **ThreadResponse**: traces con mismo thread_id ensamblados como
-  conversación ordenada (por thread_position, luego started_at); cada turn carga
-  primary_grade + grader_results.
+- **ScenarioResult** / **ThreadResponse**: traces con mismo thread_id ensamblados como
+  conversación ordenada (por thread_position, luego started_at); cada turn es un
+  `ScenarioResult` — la misma shape que `/results` — con label/score/matched,
+  started_at, el `message` clasificado y grader_results. (Reemplazó al viejo
+  `ThreadTurn`; el FE renderiza un turn y un case idénticamente.)
 - **AnchorPoint**: experiment_id, experiment_name, iteration, primary_metric_name/value,
   decision_outcome, created_at (vista longitudinal de tendencia por workspace).
 
@@ -178,9 +180,9 @@ Routing por archivos de SvelteKit. Cliente tipado en `lib/api/client.ts`; SSE he
 | `/`                                     | ✅ funcional            | Lista de workspaces; error si la API no responde.                                                                                                                                                                                                                                                                                                                                                          |
 | `/[workspace]`                          | ✅ funcional            | Detalle: tabla de experimentos con sparkline de tendencia, chips (exp count, recent_health, anchor points), recientes. Secciones skeleton "failure clusters (soon)" + datasets.                                                                                                                                                                                                                            |
 | `/[workspace]/experiments`              | 🟡 scaffolded           | Lista completa de experimentos.                                                                                                                                                                                                                                                                                                                                                                            |
-| `/[workspace]/experiments/[experiment]` | ✅ funcional            | 4 tabs: **Iterations** (tabla hypothesis/params/metric/delta/decision/rationale), **Compare** (diff server-rendered vía `GET .../compare?a&b` — params/métricas/failure-modes/funnel + recomendación), **Funnel** (drill-down por iteración vía `GET .../iterations/{id}/funnel`, render recursivo con `FunnelNode.svelte`), **Decisions** (audit trail). Sidebar al clickear iteración: detalle completo. |
+| `/[workspace]/experiments/[experiment]` | ✅ funcional            | Tabs: **Iterations** (tabla hypothesis/params/metric/delta/decision/rationale), **Results** (por-case vía `ScenarioResult`), **Compare** (diff server-rendered vía `GET .../compare?a&b` — params/métricas/failure-modes/funnel + recomendación), **Funnel** (drill-down por iteración vía `GET .../iterations/{id}/funnel`, render recursivo con `FunnelNode.svelte`), **Pairwise** (`PairwisePanel.svelte`: calibración LLM↔human + ranking Elo/BT + verdicts filtrables, lazy GET), **Decisions** (audit trail). Sidebar al clickear iteración: detalle completo. |
 | `/[workspace]/anchor-set`               | 🟡 skeletal             | Vista longitudinal de anchor points.                                                                                                                                                                                                                                                                                                                                                                       |
-| `/[workspace]/threads/[thread]`         | ✅ funcional            | Thread viewer: conversación multi-turno vía `GET .../threads/{thread_id}`, un turn por trace ordenado por thread_position; cada turn lleva primary_grade + grader_results + link al trace.                                                                                                                                                                                                                 |
+| `/[workspace]/threads/[thread]`         | ✅ funcional            | Thread viewer: conversación multi-turno vía `GET .../threads/{thread_id}`, un turn por trace ordenado por thread_position; cada turn es un `ScenarioResult` y lleva label + started_at + el message clasificado + grader_results + link al trace.                                                                                                                                                          |
 | `/[workspace]/traces/[trace]`           | ✅ funcional + **live** | Inspector de trace. Sidebar izq: árbol de spans jerárquico. Main: detalle del span seleccionado con facetas kind-specific. **SSE**: actualiza el árbol en vivo, pill "live" mientras el stream está activo.                                                                                                                                                                                                |
 | `/[workspace]/clusters`                 | ❌ stub                 | Placeholder; necesita failure-clusters API (§7).                                                                                                                                                                                                                                                                                                                                                           |
 | `/[workspace]/datasets`                 | ❌ stub                 | Placeholder; necesita datasets + cases API (§7).                                                                                                                                                                                                                                                                                                                                                           |
@@ -235,10 +237,19 @@ grader_result) y `grader_results[]`. La ruta web la renderiza turn-by-turn con l
 trace. Cuando exista #2 (executor real) + #15 (simulador), distinguir turnos
 `user_simulator` de usuario real (tag en provider_metadata).
 
-### 5.4 Judge panel / calibración · depende de #17
+### 5.4 Judge panel / calibración · 🟡 parcial (pairwise SHIPPED)
 
-**Dónde:** dentro del trace viewer (cuando el grader es panel) + ruta nueva
-`/[workspace]/judges`.
+**Ya shipped (pairwise):** tab **Pairwise** en experiment detail (`PairwisePanel.svelte`):
+calibración LLM↔human (agreement_rate global + por rubric_version vía
+`GET .../verdicts/calibration`), ranking de torneo Elo/Bradley-Terry
+(`GET .../tournaments`), y lista de verdicts filtrable por judge kind
+(`GET .../verdicts`). Solo lectura (los GET); lanzar torneo (`POST .../tournaments`,
+necesita resolver `judge_entrypoint`) queda para una segunda iteración. Cliente en
+`web/src/lib/api/client.ts` (`listVerdicts`/`verdictCalibration`/`ingestVerdicts`/
+`listTournaments`/`runTournament`).
+
+**Falta (panel consensus):** dentro del trace viewer (cuando el grader es panel) +
+ruta nueva `/[workspace]/judges`.
 **Qué:** para un `JudgePanelGrader`: mostrar el **consenso** (majority/unanimous/weighted),
 el voto de cada juez miembro, y la variance de counterfactuals (paráfrasis). Vista de
 calibración: precision/recall/F1/macro-F1 del juez vs labels humanos (de `calibration.py`),

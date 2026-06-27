@@ -21,6 +21,7 @@
   import Button from '$lib/components/ui/Button.svelte';
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
   import BaselinePanel from '$lib/components/BaselinePanel.svelte';
+  import PairwisePanel from '$lib/components/PairwisePanel.svelte';
 
   export let data: PageData;
 
@@ -31,7 +32,7 @@
   // `[workspace]` is a required route param, so it is always present here.
   $: workspaceId = $page.params.workspace as string;
 
-  type Tab = 'iterations' | 'results' | 'compare' | 'funnel' | 'decisions';
+  type Tab = 'iterations' | 'results' | 'compare' | 'funnel' | 'pairwise' | 'decisions';
   let tab: Tab = 'iterations';
   function setTab(id: string) {
     if (
@@ -39,6 +40,7 @@
       id === 'results' ||
       id === 'compare' ||
       id === 'funnel' ||
+      id === 'pairwise' ||
       id === 'decisions'
     )
       tab = id;
@@ -417,7 +419,7 @@
 
   <div class="border-b border-border mb-6">
     <div class="flex gap-6 text-sm">
-      {#each [{ id: 'iterations', label: `Iterations · ${iterations.length}` }, { id: 'results', label: 'Results' }, { id: 'compare', label: 'Compare' }, { id: 'funnel', label: 'Funnel' }, { id: 'decisions', label: `Decisions · ${data.decisions.length}` }] as t}
+      {#each [{ id: 'iterations', label: `Iterations · ${iterations.length}` }, { id: 'results', label: 'Results' }, { id: 'compare', label: 'Compare' }, { id: 'funnel', label: 'Funnel' }, { id: 'pairwise', label: 'Pairwise' }, { id: 'decisions', label: `Decisions · ${data.decisions.length}` }] as t}
         <button
           type="button"
           class="-mb-px py-2.5 border-b-2 transition-colors {tab === t.id
@@ -849,6 +851,8 @@
         {/if}
       </div>
     </div>
+  {:else if tab === 'pairwise'}
+    <PairwisePanel {workspaceId} experimentId={summary.id} />
   {:else if tab === 'decisions'}
     <ul class="space-y-3">
       {#each data.decisions as d}

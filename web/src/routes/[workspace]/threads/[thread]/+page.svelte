@@ -43,8 +43,8 @@
     </div>
   {:else}
     <div class="flex flex-col gap-4">
-      {#each thread.turns as turn (turn.trace_id)}
-        <ThreadTurn {turn} {workspaceId} />
+      {#each thread.turns as turn, i (turn.trace_id ?? turn.run_id ?? i)}
+        <ThreadTurn {turn} {workspaceId} index={i} />
       {/each}
     </div>
   {/if}
