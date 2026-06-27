@@ -30,6 +30,7 @@ from selfevals.storage.postgres.mappers import iteration_record as _iteration_re
 from selfevals.storage.postgres.mappers import pairwise_verdict as _pairwise_verdict  # noqa: F401
 from selfevals.storage.postgres.mappers import risk_registry as _risk_registry  # noqa: F401
 from selfevals.storage.postgres.mappers import run_job as _run_job  # noqa: F401
+from selfevals.storage.postgres.mappers import scenario_job as _scenario_job  # noqa: F401
 from selfevals.storage.postgres.mappers import tool as _tool  # noqa: F401
 from selfevals.storage.postgres.mappers import tournament as _tournament  # noqa: F401
 from selfevals.storage.postgres.mappers import trace as _trace  # noqa: F401
