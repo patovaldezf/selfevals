@@ -145,21 +145,39 @@ this file records what _is_.
 
 - Only `manual`, `grid`, `random`, and `llm_proposer` proposers. No
   Bayesian, no bandit, no evolutionary, no streaming proposers.
-- No pairwise comparison or multi-judge consensus (single judge
-  only — the `GraderCard` schema is panel-ready).
 - Convergence detection is delta-based; there is no learned
   stopping criterion.
+
+Pairwise comparison and multi-judge consensus **do** exist now:
+`JudgePanelGrader` (N judges + consensus, `type: judge_panel`), the
+`PairwiseGrader` (reference mode), and pairwise tournaments (Elo /
+Bradley-Terry via `runner/pairwise_tournament.py`, exposed at
+`POST .../tournaments`) with LLM↔human verdict calibration
+(`POST .../verdicts/ingest`). The web `PairwisePanel` drives both writes.
+What is still missing on the optimization side is **in-loop** A/B —
+using a pairwise verdict to steer the proposer mid-run; today the
+tournament runs off the loop on outputs already in hand.
 
 ### API and web UI
 
 - `src/selfevals/api/` ships read endpoints plus a growing write side:
   create workspace, launch an experiment run (`POST
-.../experiments/run`, background + 202), and full dataset CRUD
-  (create/upload/freeze). Experiment authoring/editing beyond launch
-  still goes through the CLI.
-- `web/` (SvelteKit) is scaffolded but not feature-complete.
-  `selfevals serve` exists (`cmd_serve` mounts the FastAPI app) but the
-  web UI it serves is still partial.
+.../experiments/run`, background + 202), full dataset CRUD
+  (create/upload/freeze), and the pairwise write side (run a
+  tournament, ingest verdicts). Experiment authoring/editing beyond
+  launch still goes through the CLI.
+- `web/` (SvelteKit) covers the core loop end-to-end: experiments,
+  iterations, results, compare, funnel, decisions, datasets, metrics,
+  clusters, failure-mode taxonomy, traces, threads (multi-turn), and
+  the **Pairwise** tab (calibration + tournament ranking + verdicts,
+  with modals to run a tournament and add a human verdict). The known
+  remaining gap is a true global anchor-set (see
+  `docs/spec/anchor_set_global.md`); the current view is
+  per-experiment timelines.
+- `selfevals serve` (`cmd_serve`) mounts the FastAPI app + the
+  SvelteKit build. `selfevals demo` seeds a real, end-to-end workspace
+  (real LLM calls when `ANTHROPIC_API_KEY` is set) so every web view
+  has production-shaped data to dogfood against.
 
 ### Telemetry and OTel
 

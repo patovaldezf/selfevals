@@ -353,6 +353,7 @@ team does the analysis. Humans gate the taxonomy.
 
 ```text
 selfevals init <slug>
+selfevals demo [--slug demo]   # seed a real, end-to-end demo workspace (real LLM calls)
 selfevals run <spec.yaml>
 selfevals report <workspace_id> <experiment_id> [--format markdown|json]
 selfevals compare <workspace_id> <iteration_a> <iteration_b>

@@ -64,6 +64,43 @@ def judge(req: AdapterRequest) -> AdapterResponse:
     return build_judge()(req)
 
 
+def judge_pairwise(req: AdapterRequest) -> AdapterResponse:
+    """Pairwise-judge entrypoint for tournaments (`runner.pairwise_tournament`).
+
+    The pairwise judge sees a comparative prompt (Response A vs Response B) and
+    must reply with a JSON object containing `preferred` ("a"|"b"|"tie"),
+    `margin` (0..1), and `reason` — the shape `graders.pairwise._parse_pairwise_output`
+    expects. This is a DIFFERENT contract from `judge` (which scores a single
+    output), so the tournament needs its own entrypoint. Real Anthropic call
+    when the SDK + API key are present; deterministic fake otherwise.
+    """
+    return build_pairwise_judge()(req)
+
+
+def build_pairwise_judge(
+    *,
+    fake_responder: FakeResponder | None = None,
+    model: str = DEFAULT_MODEL,
+) -> Callable[[AdapterRequest], AdapterResponse]:
+    """Construct a pairwise judge `(AdapterRequest) -> AdapterResponse`.
+
+    Same fall-back contract as `build_judge`: real Anthropic if the SDK + API
+    key are present, otherwise the injected fake (which picks the longer, more
+    empathetic-looking reply deterministically)."""
+    responder = fake_responder or _default_fake_pairwise_judge
+
+    def _invoke(req: AdapterRequest) -> AdapterResponse:
+        ctx = _judge_context(req)
+        if _anthropic_available():
+            try:
+                return _call_anthropic_pairwise_judge(ctx, model=model)
+            except _AnthropicCallError:
+                return responder(ctx)
+        return responder(ctx)
+
+    return _invoke
+
+
 def build_runner(
     *,
     fake_responder: FakeResponder | None = None,
@@ -151,7 +188,7 @@ def _call_anthropic_judge(ctx: PromptContext, *, model: str) -> AdapterResponse:
         message = client.messages.create(**kwargs)
     except Exception as exc:
         raise _AnthropicCallError(str(exc)) from exc
-    text = _join_text_blocks(message.content)
+    text = _strip_json_fences(_join_text_blocks(message.content))
     usage = getattr(message, "usage", None)
     return AdapterResponse(
         content=text,
@@ -160,6 +197,110 @@ def _call_anthropic_judge(ctx: PromptContext, *, model: str) -> AdapterResponse:
         stop_reason=getattr(message, "stop_reason", None),
         provider_metadata={"model": model, "judge": True},
     )
+
+
+def _call_anthropic_pairwise_judge(ctx: PromptContext, *, model: str) -> AdapterResponse:
+    import anthropic  # type: ignore[import-not-found]
+
+    client = anthropic.Anthropic()
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "max_tokens": DEFAULT_MAX_TOKENS,
+        "temperature": 0.0,
+        "system": (
+            "You compare two responses (A and B) to the same task and decide "
+            "which is better. Reply with a single JSON object containing keys: "
+            'preferred ("a"|"b"|"tie"), margin (number 0..1), reason. No prose '
+            "outside the JSON."
+        ),
+        "messages": [{"role": "user", "content": ctx.user_text}],
+    }
+    try:
+        message = client.messages.create(**kwargs)
+    except Exception as exc:
+        raise _AnthropicCallError(str(exc)) from exc
+    # Models often wrap JSON in ```json fences; the pairwise parser does a bare
+    # json.loads, so strip them here.
+    text = _strip_json_fences(_join_text_blocks(message.content))
+    usage = getattr(message, "usage", None)
+    return AdapterResponse(
+        content=text,
+        tokens_input=int(getattr(usage, "input_tokens", 0) or 0),
+        tokens_output=int(getattr(usage, "output_tokens", 0) or 0),
+        stop_reason=getattr(message, "stop_reason", None),
+        provider_metadata={"model": model, "judge": True, "pairwise": True},
+    )
+
+
+def _strip_json_fences(text: str) -> str:
+    """Remove a leading/trailing ```json ... ``` markdown fence if present.
+
+    Real LLMs frequently wrap structured replies in a fenced code block; the
+    downstream JSON parsers expect a bare object. Idempotent on un-fenced text."""
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    # Drop the opening fence line (``` or ```json) and the closing fence.
+    body = stripped[3:]
+    newline = body.find("\n")
+    if newline != -1 and body[:newline].strip().lower() in {"", "json"}:
+        body = body[newline + 1 :]
+    if body.rstrip().endswith("```"):
+        body = body.rstrip()[:-3]
+    return body.strip()
+
+
+def _default_fake_pairwise_judge(ctx: PromptContext) -> AdapterResponse:
+    """Deterministic pairwise verdict for the no-credentials demo.
+
+    The comparative prompt embeds "Response A:" and "Response B:" sections; we
+    pull both out and prefer the one that reads as more empathetic + actionable,
+    falling back to the longer reply. Keeps the tournament meaningful offline."""
+    a_text, b_text = _split_pairwise_prompt(ctx.user_text)
+
+    def _score(text: str) -> float:
+        lowered = text.lower()
+        empathic = sum(t in lowered for t in ("sorry", "apologi", "thanks", "understand"))
+        actionable = sum(t in lowered for t in ("refund", "replacement", "prefer", "next step"))
+        return empathic + actionable + len(text) / 1000.0
+
+    sa, sb = _score(a_text), _score(b_text)
+    if abs(sa - sb) < 1e-9:
+        preferred, margin = "tie", 0.0
+    elif sa > sb:
+        preferred, margin = "a", min(1.0, (sa - sb) / max(sa, 1.0))
+    else:
+        preferred, margin = "b", min(1.0, (sb - sa) / max(sb, 1.0))
+    payload = {
+        "preferred": preferred,
+        "margin": round(margin, 3),
+        "reason": "more empathetic and actionable" if preferred != "tie" else "comparable",
+    }
+    body = json.dumps(payload)
+    return AdapterResponse(
+        content=body,
+        tokens_input=max(len(ctx.user_text.split()), 1),
+        tokens_output=max(len(body.split()), 1),
+        cost_usd=_FAKE_TOKEN_COST * max(len(body.split()), 1),
+        provider_metadata={"model": "fake", "judge": True, "pairwise": True},
+    )
+
+
+def _split_pairwise_prompt(prompt: str) -> tuple[str, str]:
+    """Extract the two responses from the comparative judge prompt.
+
+    The template renders 'Response A:\\n<a>\\n\\nResponse B:\\n<b>\\n\\nReturn ...'.
+    We slice on those markers; if they are missing we return the whole prompt
+    as A and empty B (the scorer then trivially prefers A)."""
+    a_marker, b_marker = "Response A:", "Response B:"
+    ai, bi = prompt.find(a_marker), prompt.find(b_marker)
+    if ai == -1 or bi == -1 or bi < ai:
+        return prompt, ""
+    a_text = prompt[ai + len(a_marker) : bi].strip()
+    tail = prompt[bi + len(b_marker) :]
+    end = tail.find("\n\nReturn ")
+    b_text = (tail if end == -1 else tail[:end]).strip()
+    return a_text, b_text
 
 
 def _default_fake_judge(ctx: PromptContext) -> AdapterResponse:

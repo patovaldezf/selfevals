@@ -554,6 +554,19 @@ def cmd_serve(args: argparse.Namespace) -> int:
     import subprocess
     from pathlib import Path
 
+    # Put the cwd on sys.path so user/example entrypoints resolve from the API
+    # too. The pairwise tournament endpoint resolves a `judge_entrypoint` (e.g.
+    # `examples.hello_llm.agent:judge_pairwise`) by import — without this, a
+    # tournament launched from the web UI 422s with "No module named 'examples'"
+    # even though the same entrypoint works from `selfevals run` (which already
+    # calls this). `sys.path` covers the in-process case; `PYTHONPATH` covers the
+    # uvicorn `--reload` worker subprocess, which gets a fresh interpreter.
+    _ensure_cwd_on_path()
+    cwd = str(Path.cwd())
+    existing_pp = os.environ.get("PYTHONPATH", "")
+    if cwd not in existing_pp.split(os.pathsep):
+        os.environ["PYTHONPATH"] = cwd + (os.pathsep + existing_pp if existing_pp else "")
+
     storage_url = resolve_storage_url(args.db)
     os.environ["SELFEVALS_STORAGE_URL"] = storage_url
 
