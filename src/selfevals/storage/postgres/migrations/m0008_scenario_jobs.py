@@ -88,11 +88,13 @@ CREATE TABLE IF NOT EXISTS scenario_outcomes (
 
     -- CaseOutcome shape: per-rep labels/scores plus rolled-up scalars. Arrays
     -- and per-grader/funnel/confusion structures stay JSONB (free-form by design).
-    labels            JSONB NOT NULL DEFAULT '[]'::jsonb,
-    scores            JSONB NOT NULL DEFAULT '[]'::jsonb,
-    per_grader_labels JSONB NOT NULL DEFAULT '{}'::jsonb,
-    failure_modes     JSONB NOT NULL DEFAULT '[]'::jsonb,
-    breakdowns        JSONB NOT NULL DEFAULT '[]'::jsonb,
+    labels                 JSONB NOT NULL DEFAULT '[]'::jsonb,
+    scores                 JSONB NOT NULL DEFAULT '[]'::jsonb,
+    per_grader_labels      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    failure_modes          JSONB NOT NULL DEFAULT '[]'::jsonb,
+    breakdowns             JSONB NOT NULL DEFAULT '[]'::jsonb,
+    failure_weights        JSONB NOT NULL DEFAULT '{}'::jsonb,
+    critical_failure_modes JSONB NOT NULL DEFAULT '[]'::jsonb,
     cost_usd          DOUBLE PRECISION NOT NULL DEFAULT 0.0,
     duration_ms       INTEGER NOT NULL DEFAULT 0,
     llm_call_count    INTEGER NOT NULL DEFAULT 0,

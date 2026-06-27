@@ -169,6 +169,27 @@ class StorageInterface(ABC):
     ) -> list[tuple[str, str]]:
         """Cross-run ``(workspace_id, scenario_job_id)`` whose worker died."""
 
+    @abstractmethod
+    def write_scenario_outcome(
+        self,
+        *,
+        outcome_id: str,
+        workspace_id: str,
+        run_job_id: str,
+        scenario_job_id: str,
+        experiment_id: str,
+        iteration: int,
+        fields: dict[str, Any],
+        now: datetime,
+    ) -> None:
+        """Upsert one scenario_outcomes row (relational CaseOutcome)."""
+
+    @abstractmethod
+    def scenario_outcomes_for_iteration(
+        self, *, run_job_id: str, iteration: int
+    ) -> list[dict[str, Any]]:
+        """Read persisted CaseOutcome fields for one iteration, in case order."""
+
     # -- metrics rollups ----------------------------------------------------
 
     @abstractmethod

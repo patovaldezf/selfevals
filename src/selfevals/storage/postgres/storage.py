@@ -202,6 +202,37 @@ class PostgresStorage(StorageInterface):
     ) -> list[tuple[str, str]]:
         return _queries.expired_scenario_job_leases(self._conn, now=now, limit=limit)
 
+    def write_scenario_outcome(
+        self,
+        *,
+        outcome_id: str,
+        workspace_id: str,
+        run_job_id: str,
+        scenario_job_id: str,
+        experiment_id: str,
+        iteration: int,
+        fields: dict[str, Any],
+        now: datetime,
+    ) -> None:
+        _queries.write_scenario_outcome(
+            self._conn,
+            outcome_id=outcome_id,
+            workspace_id=workspace_id,
+            run_job_id=run_job_id,
+            scenario_job_id=scenario_job_id,
+            experiment_id=experiment_id,
+            iteration=iteration,
+            fields=fields,
+            now=now,
+        )
+
+    def scenario_outcomes_for_iteration(
+        self, *, run_job_id: str, iteration: int
+    ) -> list[dict[str, Any]]:
+        return _queries.scenario_outcomes_for_iteration(
+            self._conn, run_job_id=run_job_id, iteration=iteration
+        )
+
     # -- metrics rollups ----------------------------------------------------
 
     def pass_rate_metrics(self, **kwargs: Any) -> list[dict[str, Any]]:

@@ -471,3 +471,85 @@ def expired_scenario_job_leases(
             [now, limit],
         )
     ]
+
+
+# -- scenario outcomes: the relational form of a CaseOutcome ----------------
+
+_OUTCOME_FIELD_COLUMNS: tuple[str, ...] = (
+    "case_id",
+    "labels",
+    "scores",
+    "per_grader_labels",
+    "failure_modes",
+    "breakdowns",
+    "failure_weights",
+    "critical_failure_modes",
+    "cost_usd",
+    "duration_ms",
+    "llm_call_count",
+    "cache_hit_count",
+)
+_OUTCOME_JSONB = frozenset(
+    {"labels", "scores", "per_grader_labels", "failure_modes", "breakdowns",
+     "failure_weights", "critical_failure_modes"}
+)
+
+
+def write_scenario_outcome(
+    conn: Any,
+    *,
+    outcome_id: str,
+    workspace_id: str,
+    run_job_id: str,
+    scenario_job_id: str,
+    experiment_id: str,
+    iteration: int,
+    fields: dict[str, Any],
+    now: datetime,
+) -> None:
+    """Upsert one scenario_outcomes row from a flattened CaseOutcome.
+
+    Idempotent on (run_job_id, iteration, case_id) so a re-run of the same
+    scenario job overwrites rather than duplicates. JSONB columns are wrapped;
+    scalars pass through.
+    """
+    cols = ["id", "workspace_id", "version", "created_at", "updated_at",
+            "run_job_id", "scenario_job_id", "experiment_id", "iteration",
+            *_OUTCOME_FIELD_COLUMNS]
+    values: list[Any] = [
+        outcome_id, workspace_id, 1, now, now,
+        run_job_id, scenario_job_id, experiment_id, iteration,
+    ]
+    for col in _OUTCOME_FIELD_COLUMNS:
+        v = fields[col]
+        values.append(Jsonb(v) if col in _OUTCOME_JSONB else v)
+    placeholders = ", ".join(["%s"] * len(cols))
+    updates = ", ".join(
+        f"{c} = EXCLUDED.{c}" for c in cols if c not in ("id", "created_at")
+    )
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            INSERT INTO scenario_outcomes ({", ".join(cols)})
+            VALUES ({placeholders})
+            ON CONFLICT (run_job_id, iteration, case_id) DO UPDATE SET {updates}
+            """,
+            values,
+        )
+
+
+def scenario_outcomes_for_iteration(
+    conn: Any, *, run_job_id: str, iteration: int
+) -> list[dict[str, Any]]:
+    """Read the persisted CaseOutcome fields for one iteration, in case order."""
+    cols = ", ".join(_OUTCOME_FIELD_COLUMNS)
+    rows = _fetchall(
+        conn,
+        f"""
+        SELECT {cols} FROM scenario_outcomes
+        WHERE run_job_id = %s AND iteration = %s
+        ORDER BY case_id ASC
+        """,
+        [run_job_id, iteration],
+    )
+    return [dict(zip(_OUTCOME_FIELD_COLUMNS, row, strict=True)) for row in rows]
