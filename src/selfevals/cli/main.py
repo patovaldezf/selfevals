@@ -678,6 +678,35 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_worker_runs.set_defaults(func=commands.cmd_worker_runs)
 
+    p_worker_sweeper = worker_sub.add_parser(
+        "sweeper",
+        help="Reap run jobs whose lease lapsed (worker crash recovery).",
+        description=(
+            "Long-lived sweeper that fails/re-queues run jobs stranded in "
+            "'running' by a worker that died without writing a terminal state "
+            "(OOMKill/SIGKILL). One sweeper suffices for the whole cluster."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_worker_sweeper.add_argument(
+        "--redis-url",
+        default=os.environ.get("SELFEVALS_REDIS_URL"),
+        help="Redis URL to re-enqueue retryable jobs (default: SELFEVALS_REDIS_URL). "
+        "Omit to mark expired jobs failed without re-queuing.",
+    )
+    p_worker_sweeper.add_argument(
+        "--interval",
+        type=float,
+        default=30.0,
+        help="Seconds between sweeps (default: 30).",
+    )
+    p_worker_sweeper.add_argument(
+        "--once",
+        action="store_true",
+        help="Sweep one batch and exit.",
+    )
+    p_worker_sweeper.set_defaults(func=commands.cmd_worker_sweeper)
+
     return parser
 
 

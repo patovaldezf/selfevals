@@ -21,6 +21,7 @@ from selfevals.storage.errors import WorkspaceMismatchError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from datetime import datetime
     from types import TracebackType
 
     from selfevals.api.schemas import WorkspaceSummary
@@ -112,6 +113,20 @@ class StorageInterface(ABC):
     @abstractmethod
     def traces_by_thread_id(self, workspace_id: str, thread_id: str) -> list[Trace]:
         """All traces sharing a thread_id (a conversation)."""
+
+    # -- run-job durability (sweeper + heartbeat) ---------------------------
+
+    @abstractmethod
+    def expired_run_job_leases(
+        self, *, now: datetime, limit: int = 100
+    ) -> list[tuple[str, str]]:
+        """Cross-workspace ``(workspace_id, job_id)`` of run jobs with a lapsed lease."""
+
+    @abstractmethod
+    def touch_run_job_lease(
+        self, *, workspace_id: str, job_id: str, owner: str, lease_expires_at: datetime
+    ) -> bool:
+        """Renew a job's lease via a direct unversioned UPDATE; True if renewed."""
 
     # -- metrics rollups ----------------------------------------------------
 

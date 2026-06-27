@@ -13,6 +13,7 @@ rebuild full models, so a row never has to be hand-assembled twice.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from selfevals.schemas.eval_case import EvalCase
@@ -223,3 +224,59 @@ def traces_by_thread_id(conn: Any, workspace_id: str, thread_id: str) -> list[Tr
             if tr is not None:
                 out.append(tr)
     return out
+
+
+def expired_run_job_leases(
+    conn: Any, *, now: datetime, limit: int = 100
+) -> list[tuple[str, str]]:
+    """Cross-workspace listing of run jobs whose lease has lapsed.
+
+    Returns ``(workspace_id, job_id)`` for jobs that are mid-flight
+    (``leased``/``running``) but whose ``lease_expires_at`` is in the past — i.e.
+    the worker that held them died without writing a terminal state (OOMKill /
+    SIGKILL never raise, so the ``execute_run_job`` failure path never runs). The
+    sweeper reloads each and routes it through ``mark_run_job_failed`` for the
+    retry-vs-dead-letter decision. This is a ``<`` cross-workspace scan, so it
+    does not fit the per-workspace ``list_entities`` contract; it rides the
+    partial-friendly ``idx_run_jobs_lease`` index.
+    """
+    return [
+        (str(ws_id), str(job_id))
+        for ws_id, job_id in _fetchall(
+            conn,
+            """
+            SELECT workspace_id, id FROM run_jobs
+            WHERE status IN ('leased', 'running')
+              AND lease_expires_at IS NOT NULL
+              AND lease_expires_at < %s
+            ORDER BY lease_expires_at ASC
+            LIMIT %s
+            """,
+            [now, limit],
+        )
+    ]
+
+
+def touch_run_job_lease(
+    conn: Any, *, workspace_id: str, job_id: str, owner: str, lease_expires_at: datetime
+) -> bool:
+    """Renew a job's lease via a direct, unversioned UPDATE (the heartbeat path).
+
+    The lease is operational metadata, not versioned domain state, so it must NOT
+    go through ``put_entity``'s version-CAS — the in-flight run holds a stale
+    in-memory copy of the row and a CAS would raise ``OptimisticConcurrencyError``.
+    The ``status IN ('leased','running')`` guard in the WHERE makes this a no-op
+    once the job reaches a terminal state, closing the heartbeat-vs-sweeper race.
+    Returns True if a row was renewed.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE run_jobs
+            SET lease_owner = %s, lease_expires_at = %s, updated_at = %s
+            WHERE id = %s AND workspace_id = %s
+              AND status IN ('leased', 'running')
+            """,
+            (owner, lease_expires_at, lease_expires_at, job_id, workspace_id),
+        )
+        return bool(cur.rowcount > 0)
