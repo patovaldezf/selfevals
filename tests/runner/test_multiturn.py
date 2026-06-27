@@ -146,7 +146,7 @@ async def test_multiple_repetitions_are_distinct_threads() -> None:
 @pytest.mark.asyncio
 async def test_collapse_turns_into_per_thread_funnel() -> None:
     from selfevals.graders.base import GradeLabel, GradeResult
-    from selfevals.optimization.loop import _collapse_conversation_turns
+    from selfevals.optimization.scenario_exec import collapse_conversation_turns
 
     case = _conversation_case(
         [
@@ -160,7 +160,7 @@ async def test_collapse_turns_into_per_thread_funnel() -> None:
         [GradeResult(grader="g", label=GradeLabel.FAIL, reason="t0", score=0.0)],
         [GradeResult(grader="g", label=GradeLabel.PASS, reason="t1", score=1.0)],
     ]
-    collapsed_run, collapsed_grades = _collapse_conversation_turns(run, grades_per_turn)
+    collapsed_run, collapsed_grades = collapse_conversation_turns(run, grades_per_turn)
     # Two turns of one thread collapse to a single repetition.
     assert len(collapsed_run.repetitions) == 1
     assert len(collapsed_grades) == 1
@@ -184,7 +184,7 @@ async def test_collapse_preserves_grader_breakdown_under_turn() -> None:
     conversation case loses its rule-level drill-down and the funnel shows
     only bare per-turn pass/fail (the "Sin breakdown" regression)."""
     from selfevals.graders.base import BreakdownNode, GradeLabel, GradeResult
-    from selfevals.optimization.loop import _collapse_conversation_turns
+    from selfevals.optimization.scenario_exec import collapse_conversation_turns
 
     case = _conversation_case([{"role": "user", "content": "u1"}])
     run = await _executor(_history_echo).run_case(case)
@@ -203,7 +203,7 @@ async def test_collapse_preserves_grader_breakdown_under_turn() -> None:
     grades_per_turn = [
         [GradeResult(grader="g", label=GradeLabel.PASS, reason="t0", score=1.0, breakdown=rule_tree)]
     ]
-    _, collapsed_grades = _collapse_conversation_turns(run, grades_per_turn)
+    _, collapsed_grades = collapse_conversation_turns(run, grades_per_turn)
     turn_0 = collapsed_grades[0][0].breakdown.children[0]
     assert turn_0.key == "turn_0"
     # The grader tree's children are grafted under the turn (root level dropped).
