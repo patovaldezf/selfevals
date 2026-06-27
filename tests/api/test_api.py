@@ -31,7 +31,7 @@ REPO_EXAMPLE = (
 
 
 @pytest.fixture
-def seeded_db(db_url: str) -> str:
+def seeded_db(db_url: str, synchronous_run_queue: None) -> str:
     rc = cli_app(["--db", db_url, "run", str(REPO_EXAMPLE), "--max-iterations", "2"])
     assert rc == 0
     return db_url

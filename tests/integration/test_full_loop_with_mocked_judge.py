@@ -261,7 +261,7 @@ def test_error_invalid_yaml_is_actionable(
 ) -> None:
     bad = tmp_path / "bad.yaml"
     bad.write_text("garbage: [unclosed\n")
-    rc, _, stderr = _run_cli(["run", str(bad), "--no-persist"], capsys)
+    rc, _, stderr = _run_cli(["run", str(bad)], capsys)
     assert rc == 2
     assert "could not parse YAML" in stderr
     assert str(bad) in stderr
@@ -327,7 +327,7 @@ def test_error_dataset_path_missing_with_suggestion(
     # should suggest it via fuzzy match.
     (tmp_path / "pingpong.jsonl").write_text("{}\n")
     yaml = _write_minimal_yaml(tmp_path, dataset="cases_path: pingpang.jsonl")
-    rc, _, stderr = _run_cli(["run", str(yaml), "--no-persist"], capsys)
+    rc, _, stderr = _run_cli(["run", str(yaml)], capsys)
     assert rc == 2
     assert "pingpang.jsonl" in stderr
     assert "not found" in stderr
@@ -337,7 +337,7 @@ def test_error_dataset_path_missing_with_suggestion(
 
 
 def test_error_unknown_grader_lists_available(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, db_url: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A YAML whose case references a grader name that is not registered.
     # We embed the case inline with `graders: [not_a_real_grader]`.
@@ -391,7 +391,7 @@ def test_error_unknown_grader_lists_available(
     ).strip()
     yaml = tmp_path / "exp.yaml"
     yaml.write_text(body)
-    rc, _, stderr = _run_cli(["run", str(yaml), "--no-persist"], capsys)
+    rc, _, stderr = _run_cli(["--db", db_url, "run", str(yaml)], capsys)
     assert rc == 2
     assert "not_a_real_grader" in stderr
     assert "not registered" in stderr

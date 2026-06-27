@@ -24,7 +24,6 @@ from typing import Any, ClassVar
 import pytest
 from fastapi.testclient import TestClient
 
-import selfevals.api.run_launcher as run_launcher
 from selfevals.api.app import build_app
 from selfevals.api.broker import reset_for_tests
 from selfevals.api.recorder_sink import BrokerSpanSink
@@ -96,9 +95,12 @@ def _poll_state(c: TestClient, exp_id: str, *, timeout: float = 15.0) -> str:
     return state
 
 
-def test_run_thread_feeds_the_broker(db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_thread_feeds_the_broker(
+    db_url: str, synchronous_run_queue: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _SpySink.instances.clear()
-    monkeypatch.setattr(run_launcher, "BrokerSpanSink", _SpySink)
+    # The sharded worker builds the span sink (it runs the cases); patch it there.
+    monkeypatch.setattr("selfevals.worker.scenario_runner.BrokerSpanSink", _SpySink)
 
     app = build_app(db_path=db_url)
     with TestClient(app) as client:
@@ -109,35 +111,38 @@ def test_run_thread_feeds_the_broker(db_url: str, monkeypatch: pytest.MonkeyPatc
         exp_id = res.json()["experiment_id"]
         assert _poll_state(client, exp_id) == "completed"
 
-    # The run thread built exactly one sink and drove its full lifecycle.
-    assert len(_SpySink.instances) == 1
-    sink = _SpySink.instances[0]
+    # The worker built at least one sink and drove its lifecycle (one per drain
+    # batch — sharding may claim cases in several batches).
+    assert _SpySink.instances, "the worker never built a span sink"
+    started = [s for inst in _SpySink.instances for s in inst.started]
+    finished = [s for inst in _SpySink.instances for s in inst.finished]
 
     # The channel opened (the "live" pill would light) and closed cleanly.
-    assert sink.started, "on_trace_started never fired — the run thread never opened a channel"
-    assert sink.finished, "on_trace_finished never fired — the channel never closed"
-    assert all(state == "completed" for _, _, state in sink.finished)
+    assert started, "on_trace_started never fired — no channel opened"
+    assert finished, "on_trace_finished never fired — the channel never closed"
+    assert all(state == "completed" for _, _, state in finished)
 
     # Every started/finished run_id matches a real ephemeral repetition run.
-    started_runs = {run for _, run in sink.started}
-    finished_runs = {run for _, run, _ in sink.finished}
+    started_runs = {run for _, run in started}
+    finished_runs = {run for _, run, _ in finished}
     assert started_runs == finished_runs
 
     # Real spans flowed, each in the SpanSummary shape the FE renders.
-    assert sink.spans, "no spans were published to the broker during the run"
-    for view in sink.spans:
+    spans = [v for inst in _SpySink.instances for v in inst.spans]
+    assert spans, "no spans were published to the broker during the run"
+    for view in spans:
         assert set(view) == _SUMMARY_KEYS
-    assert {s["kind"] for s in sink.spans} & {"agent_turn", "llm_call"}
+    assert {s["kind"] for s in spans} & {"agent_turn", "llm_call"}
 
 
 def test_live_stream_delivers_a_span_over_http(
-    db_url: str, monkeypatch: pytest.MonkeyPatch
+    db_url: str, synchronous_run_queue: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The full browser path: subscribe to /stream for a run_id captured from
     the live sink, and confirm a `span` event arrives over the wire (not just
     the snapshot). This is the exact contract the FE EventSource consumes."""
     _SpySink.instances.clear()
-    monkeypatch.setattr(run_launcher, "BrokerSpanSink", _SpySink)
+    monkeypatch.setattr("selfevals.worker.scenario_runner.BrokerSpanSink", _SpySink)
 
     app = build_app(db_path=db_url)
     with TestClient(app) as client:
@@ -149,8 +154,8 @@ def test_live_stream_delivers_a_span_over_http(
         # trace is persisted; a late subscriber gets the snapshot + complete.
         assert _poll_state(client, exp_id) == "completed"
 
-        assert _SpySink.instances, "run thread never built a sink"
-        run_ids = {run for _, run in _SpySink.instances[0].started}
+        assert _SpySink.instances, "the worker never built a span sink"
+        run_ids = {run for inst in _SpySink.instances for _, run in inst.started}
         assert run_ids
         run_id = next(iter(run_ids))
 

@@ -6,6 +6,7 @@ import logging
 import socket
 import time
 from dataclasses import dataclass
+from uuid import uuid4
 
 from selfevals.api.run_launcher import execute_run_job
 from selfevals.api.run_queue import RedisRunJobQueue
@@ -25,7 +26,11 @@ class RunWorkerConfig:
 
 def run_worker(config: RunWorkerConfig) -> int:
     queue = RedisRunJobQueue(config.redis_url)
-    consumer = config.consumer or f"{socket.gethostname()}:{id(config)}"
+    # A distinct consumer name per worker is what keeps two workers from sharing
+    # an xreadgroup slot. The previous `id(config)` was reused after GC freed an
+    # earlier config at the same address — two workers could collide. A uuid4 is
+    # unconditionally unique.
+    consumer = config.consumer or f"{socket.gethostname()}:{uuid4().hex[:12]}"
     # One boot line so a worker/API Redis-DB mismatch (e.g. API on /15, worker
     # on /0) is visible immediately instead of presenting as a silently stuck
     # run. Credentials are stripped from both URLs.

@@ -386,13 +386,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "run",
         help_text="Run an experiment spec end-to-end (YAML).",
         description=(
-            "Load a YAML experiment spec, resolve its agent entrypoint, "
-            "run every case through the configured proposer/grader, "
-            "persist iterations to SQLite (unless --no-persist), and "
-            "print a report."
+            "Load a YAML experiment spec, enqueue it as a sharded run, and wait "
+            "for a worker to drive it to completion before printing the report. "
+            "Needs Redis + a worker (locally: `docker compose up -d`)."
         ),
         examples=[
-            "selfevals run evals/experiments/example_pingpong.yaml --no-persist",
+            "selfevals run evals/experiments/example_pingpong.yaml",
             "selfevals run evals/experiments/example_pingpong.yaml --reps 3 --format json",
         ],
     )
@@ -428,9 +427,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Report format printed at the end of the run.",
     )
     p_run.add_argument(
-        "--no-persist",
-        action="store_true",
-        help="Do not write iterations/decisions to the SQLite db.",
+        "--timeout",
+        type=float,
+        default=600.0,
+        help="Max seconds to wait for the run to finish (default 600).",
     )
     p_run.add_argument(
         "--persist-traces",

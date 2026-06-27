@@ -20,6 +20,8 @@ from typing import TYPE_CHECKING
 
 from selfevals._internal.ids import new_prefixed_id
 from selfevals._internal.time import utc_now
+from selfevals.api.broker import get_broker
+from selfevals.api.recorder_sink import BrokerSpanSink
 from selfevals.api.run_jobs import DEFAULT_LEASE_SECONDS, get_run_job
 from selfevals.optimization.scenario_outcomes import case_outcome_to_fields
 from selfevals.repo.loader import deserialize_experiment_spec
@@ -29,6 +31,7 @@ from selfevals.schemas.job import ScenarioJob
 from selfevals.storage.factory import open_storage
 
 if TYPE_CHECKING:
+    from selfevals.optimization.coordinator import IterationDrain
     from selfevals.optimization.loop import OptimizationLoop
     from selfevals.storage.interface import StorageInterface, WorkspaceScope
 
@@ -37,7 +40,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_BATCH = 4
 
 
-def drain_self(storage_url: str, workspace_id: str) -> object:
+def drain_self(storage_url: str, workspace_id: str) -> IterationDrain:
     """Build a coordinator ``drain`` callback that runs scenario jobs in-process.
 
     The coordinator hands each iteration's scenario jobs to whoever can claim
@@ -97,10 +100,16 @@ def run_scenario_jobs_once(
         spec = deserialize_experiment_spec(run_job.spec_payload)
         scope = storage.open(workspace_id)
         payload_router = payload_router_for_db(storage_url, workspace_id)
+        # Publish spans to the process broker, same as the launcher: a single
+        # worker / inline drain shares the API's in-process broker so /stream
+        # sees live spans. Across processes the broker is a no-op until the Redis
+        # broker is wired (Fase 6) — traces still persist either way.
+        span_sink = BrokerSpanSink(get_broker())
         loop = build_loop(
             spec,
             scope=scope,
             repetitions_per_case=run_job.reps,
+            span_sink=span_sink,
             payload_router=payload_router,
         )
         try:

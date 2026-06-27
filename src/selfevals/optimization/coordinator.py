@@ -107,7 +107,15 @@ class RunCoordinator(OptimizationLoop):
             reliability_metrics=self._experiment.reliability.metrics,
             primary_grader=self._experiment.target.primary_grader,
         )
-        return aggregate, [], {}, []
+        # Collect the run_ids of traces the workers persisted this iteration so
+        # the IterationRecord's `trace_run_ids` resolves (the trace viewer + the
+        # /traces endpoint rely on it). case_runs stay empty — they live in
+        # storage now, and the reporter rehydrates them on demand.
+        traces = self._storage.traces_for_experiment_iteration(
+            self._experiment.workspace_id, self._experiment.id, iteration
+        )
+        persisted_run_ids = [t.run.run_id for t in traces]
+        return aggregate, [], {}, persisted_run_ids
 
     async def _await_barrier(self, iteration: int) -> None:
         """Poll until no scenario job for this iteration is still in flight."""

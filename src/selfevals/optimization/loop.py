@@ -218,6 +218,12 @@ class OptimizationLoop:
             parameter_overrides=parameter_overrides,
             grade_concurrency=self._grade_concurrency,
         )
+        # Persist each rep's trace per `run.persist_traces`, exactly as the
+        # in-process path does — the worker owns this case's traces, and the
+        # reporter / `analyze pull` read failure_reasons from them. Without this a
+        # sharded run would lose all trace-derived diagnostics.
+        for rep, grades in zip(case_run.repetitions, grades_per_rep, strict=True):
+            self._maybe_persist_trace(rep, grades)
         if case.is_conversation():
             outcome_run, outcome_grades = collapse_conversation_turns(case_run, grades_per_rep)
         else:
