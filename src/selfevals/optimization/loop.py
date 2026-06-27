@@ -191,6 +191,48 @@ class OptimizationLoop:
         caller can run them as a separate gate; the loop never evaluates them."""
         return list(self._holdout_cases)
 
+    async def run_scenario(
+        self,
+        case: EvalCase,
+        *,
+        iteration: int,
+        parameter_overrides: dict[str, object] | None,
+    ) -> tuple[CaseRun, CaseOutcome]:
+        """Execute + grade ONE case and roll it into a CaseOutcome.
+
+        The sharded worker's entry point: it builds a loop via ``build_loop`` to
+        get a correctly-wired executor + graders, then drives one scenario at a
+        time through here instead of the full iteration bucle. Uses the exact
+        ``execute_and_grade_case`` + ``Aggregator.case_outcome`` path the loop
+        uses, including the conversation-turn collapse, so a sharded outcome is
+        byte-identical to the in-process one.
+        """
+        case_run, grades_per_rep = await execute_and_grade_case(
+            case,
+            executor=self._executor,
+            multi_turn_executor=self._multi_turn_executor,
+            graders=self._graders,
+            repetitions=self._reps,
+            experiment_id=self._experiment.id,
+            iteration=iteration,
+            parameter_overrides=parameter_overrides,
+            grade_concurrency=self._grade_concurrency,
+        )
+        if case.is_conversation():
+            outcome_run, outcome_grades = collapse_conversation_turns(case_run, grades_per_rep)
+        else:
+            outcome_run, outcome_grades = case_run, grades_per_rep
+        outcome = Aggregator.case_outcome(case, outcome_run, outcome_grades)
+        return case_run, outcome
+
+    def close_executor(self) -> None:
+        """Close the executor (stops the embedded OTLP receiver, if any).
+
+        ``run()`` does this in its ``finally``; the sharded worker drives
+        ``run_scenario`` directly without ``run()``, so it must close explicitly.
+        """
+        self._executor.close()
+
     async def run(self) -> OptimizationResult:
         """Run the optimization loop, always closing the executor afterward.
 
@@ -353,6 +395,14 @@ class OptimizationLoop:
     async def _run_iteration(
         self, proposal: Proposal, *, iteration: int
     ) -> tuple[IterationAggregate, list[CaseRun], dict[str, list[list[GradeResult]]], list[str]]:
+        """Execute one iteration's cases and aggregate them.
+
+        This is the hook the shared iteration bucle (``_run_iterations``) calls.
+        ``OptimizationLoop`` runs the cases in-process here; ``RunCoordinator``
+        overrides it to seed scenario jobs, await the barrier, and aggregate from
+        persisted ``scenario_outcomes`` instead. The bucle itself —
+        proposer/decision/convergence — is identical for both, so it lives once.
+        """
         case_runs: list[CaseRun] = []
         per_case_grades: dict[str, list[list[GradeResult]]] = {}
         case_outcomes: list[CaseOutcome] = []
