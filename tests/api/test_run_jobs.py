@@ -150,6 +150,29 @@ def test_heartbeat_renews_lease_without_version_bump(db_url: str, monkeypatch: A
         storage.close()
 
 
+def test_get_run_job_propagates_workspace_mismatch(db_url: str, monkeypatch: Any) -> None:
+    """A job that exists under another workspace is a real fault, not a missing
+    job — `get_run_job` must surface it, not swallow it as None (TECHNICAL_DEBT
+    gap #16). A genuinely-absent job is still None."""
+    from selfevals.api.run_jobs import get_run_job
+    from selfevals.storage.errors import WorkspaceMismatchError
+
+    job_id = _seed_running_job(db_url, monkeypatch)
+    storage = open_storage(db_url)
+    try:
+        # Absent job → None.
+        assert get_run_job(storage, workspace_id=WS, job_id="job_does_not_exist") is None
+        # Same id, wrong workspace → the storage fault propagates.
+        other_ws = "ws_01HAAAAAAAAAAAAAAAAAAAAAAA"
+        try:
+            get_run_job(storage, workspace_id=other_ws, job_id=job_id)
+            raise AssertionError("expected WorkspaceMismatchError to propagate")
+        except WorkspaceMismatchError:
+            pass
+    finally:
+        storage.close()
+
+
 def test_heartbeat_is_noop_on_terminal_job(db_url: str, monkeypatch: Any) -> None:
     """Once a job is terminal the heartbeat must do nothing — this closes the
     sweeper-vs-heartbeat race (the status guard lives in the UPDATE's WHERE)."""

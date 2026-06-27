@@ -12,6 +12,7 @@ from selfevals.repo.loader import ExperimentSpec, serialize_experiment_spec
 from selfevals.schemas.enums import ExperimentState
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.job import RunJob, RunJobStatus
+from selfevals.storage.errors import EntityNotFoundError
 from selfevals.storage.interface import ListFilter, StorageInterface, WorkspaceScope
 
 DEFAULT_MAX_ATTEMPTS = 3
@@ -47,10 +48,14 @@ def create_run_job(
 def get_run_job(
     storage: StorageInterface, *, workspace_id: str, job_id: str
 ) -> RunJob | None:
+    # Only a genuinely-absent job is None. A WorkspaceMismatchError (job exists
+    # under another workspace) or any other storage error is a real fault — the
+    # sweeper and launcher rely on this, so swallowing those as "not found" would
+    # silently mask corruption (see TECHNICAL_DEBT.md gap #16).
     with storage.open(workspace_id) as scope:
         try:
             job = scope.get_entity(RunJob, job_id)
-        except Exception:
+        except EntityNotFoundError:
             return None
     assert isinstance(job, RunJob)
     return job
@@ -110,7 +115,10 @@ def lease_run_job(
     with storage.open(workspace_id) as scope:
         try:
             job = scope.get_entity(RunJob, job_id)
-        except Exception:
+        except EntityNotFoundError:
+            # A missing job is unleasable (already acked/cleaned); anything else
+            # (workspace mismatch, storage fault) must surface, not present as an
+            # empty lease (see TECHNICAL_DEBT.md gap #16).
             yield None
             return
         assert isinstance(job, RunJob)
