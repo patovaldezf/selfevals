@@ -1,0 +1,69 @@
+# Multi-turn conversational example: drives the same Anthropic-backed agent
+# (examples/hello_llm/agent.py) over scripted multi-turn support conversations,
+# so each case produces one trace per turn sharing a `thread_id`. This is what
+# populates the web thread viewer (/[workspace]/threads/[thread]) with real data.
+#
+# Run (real LLM if ANTHROPIC_API_KEY is set, deterministic fake otherwise):
+#
+#   uv run selfevals run examples/hello_chat/experiment.yaml --workspace <ws> \
+#     --persist-traces all
+#
+# The judge is examples.hello_llm.agent:judge (same fall-back contract).
+
+workspace: ws_01HZZZZZZZZZZZZZZZZZZZZZZZ
+
+experiment:
+  name: hello_chat multi-turn support
+  goal: empathetic, actionable multi-turn support replies
+  mode: handoff
+  taxonomy:
+    target_features:
+      - support.empathetic_reply
+    dataset_types:
+      - capability
+  datasets:
+    optimization: { id: ds_hello_chat, version: 1 }
+  target:
+    primary: { name: pass@1, operator: ">=", value: 0.5 }
+  editable:
+    prompt: false
+    model_params: true
+  frozen:
+    fleet: { id: flt_hello_chat }
+    agents:
+      - { id: ag_hello_chat }
+    datasets:
+      - { id: ds_hello_chat }
+  proposer:
+    strategy: grid
+  search_space:
+    model_params:
+      temperature: [0.0, 0.7]
+  run:
+    # `sandbox: mock` is the routing mode; it does NOT force a fake LLM.
+    # The agent calls Anthropic for real whenever ANTHROPIC_API_KEY is set
+    # (and falls back to a deterministic fake otherwise).
+    sandbox: mock
+    max_iterations: 2
+    persist_traces: all
+    convergence:
+      min_delta: 1.0e-6
+      patience: 10
+  reliability:
+    metrics:
+      - pass@1
+
+dataset:
+  cases_path: ./cases.jsonl
+
+agent:
+  entrypoint: examples.hello_llm.agent:run
+
+graders:
+  - type: llm_judge
+    name: rubric_judge
+    rubric: |
+      The agent must (1) acknowledge the customer's concern and
+      (2) carry the conversation forward with a concrete next step.
+      Reply pass if both are present, fail otherwise.
+    judge_entrypoint: examples.hello_llm.agent:judge

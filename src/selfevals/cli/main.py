@@ -17,6 +17,7 @@ from selfevals.cli import (
     baseline_commands,
     commands,
     dataset_commands,
+    demo_commands,
     migrate_commands,
 )
 from selfevals.cli._help import make_subparser
@@ -59,6 +60,34 @@ def _build_parser() -> argparse.ArgumentParser:
     p_init.add_argument("--name", help="Display name (default: slug).")
     p_init.add_argument("--user", default="local", help="Owner user id.")
     p_init.set_defaults(func=commands.cmd_init)
+
+    p_demo = make_subparser(
+        sub,
+        "demo",
+        help_text="Seed a real, end-to-end demo workspace (real LLM calls).",
+        description=(
+            "One command that seeds the `demo` workspace, runs two real example "
+            "experiments through the Anthropic-backed agent (single-shot + "
+            "multi-turn), runs a real pairwise tournament, and ingests human "
+            "verdicts — so `selfevals serve` shows every web view with real data. "
+            "Calls the real LLM when ANTHROPIC_API_KEY is set; falls back to a "
+            "deterministic fake otherwise. Run from the repo root (examples/ must "
+            "be importable). Idempotent on the workspace slug."
+        ),
+        examples=[
+            "selfevals demo",
+            "selfevals demo --slug demo --fresh",
+        ],
+    )
+    p_demo.add_argument("--slug", default="demo", help="Workspace slug (default: demo).")
+    p_demo.add_argument("--name", help="Display name (default: slug).")
+    p_demo.add_argument("--user", default="local", help="Owner user id.")
+    p_demo.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Signal intent to start clean (point --db at a fresh file).",
+    )
+    p_demo.set_defaults(func=demo_commands.cmd_demo)
 
     p_migrate = make_subparser(
         sub,

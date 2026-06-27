@@ -1,11 +1,16 @@
 <!--
-  Pairwise panel: read-only view of an experiment's pairwise judgments.
+  Pairwise panel: view + drive an experiment's pairwise judgments.
 
-  Three sections, all GET (no writes here — running a tournament needs a
-  judge entrypoint and belongs in a follow-up):
+  Read sections (GET):
     1. Judge calibration — LLM-vs-human agreement, overall + per rubric version.
     2. Tournaments — the ranking (Elo / Bradley-Terry) of the latest run.
     3. Verdicts — the raw pairwise preferences, filterable by judge kind.
+
+  Write actions (POST), each behind a modal that draws its candidates from the
+  experiment's own best-iteration replies (`experimentResults`):
+    - Run tournament — rank N candidate replies via an LLM judge entrypoint.
+    - Add human verdict — capture a human A/B preference, which is what makes the
+      LLM↔human calibration above non-trivial.
 
   Self-contained and lazy: the parent renders it only when the tab is open,
   and we fetch on mount. A request token guards against out-of-order
@@ -18,8 +23,14 @@
     ApiError,
     type PairwiseCalibration,
     type PairwiseVerdict,
+    type ScenarioResult,
     type Tournament
   } from '$lib/api/client';
+  import { toast } from '$lib/stores/toasts';
+  import Modal from '$lib/components/ui/Modal.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
+  import TextField from '$lib/components/ui/TextField.svelte';
+  import Select from '$lib/components/ui/Select.svelte';
 
   export let workspaceId: string;
   export let experimentId: string;
@@ -29,6 +40,129 @@
   let verdicts: PairwiseVerdict[] = [];
   let loading = true;
   let error: string | null = null;
+
+  // --- Candidate replies (shared by both modals) ---
+  // One per best-iteration case that produced text. Loaded lazily the first
+  // time the user opens either modal; cached afterwards.
+  type Candidate = { id: string; output_text: string; trace_id: string | null };
+  let candidates: Candidate[] = [];
+  let candidatesLoaded = false;
+  let candidatesLoading = false;
+
+  async function ensureCandidates(): Promise<void> {
+    if (candidatesLoaded || candidatesLoading) return;
+    candidatesLoading = true;
+    try {
+      const res = await api.experimentResults(workspaceId, experimentId);
+      candidates = res.cases
+        .map((c: ScenarioResult) => ({
+          id: c.case_id,
+          output_text: c.detected?.content ?? '',
+          trace_id: c.trace_id ?? null
+        }))
+        .filter((c) => c.output_text.length > 0);
+      candidatesLoaded = true;
+    } catch (e) {
+      toast.error(
+        'Could not load candidate replies',
+        e instanceof ApiError ? e.detail : String(e)
+      );
+    } finally {
+      candidatesLoading = false;
+    }
+  }
+
+  // --- Run tournament modal ---
+  let showRunModal = false;
+  let runJudge = 'examples.hello_llm.agent:judge_pairwise';
+  let runRubric =
+    'Prefer the reply that is more empathetic, more concrete, and clearly offers an actionable next step.';
+  let runStrategy = 'all_pairs';
+  let runMethod = 'elo';
+  let runComparisons = '2';
+  let runSubmitting = false;
+
+  async function openRunModal(): Promise<void> {
+    showRunModal = true;
+    await ensureCandidates();
+  }
+
+  async function submitTournament(): Promise<void> {
+    if (candidates.length < 2 || runSubmitting) return;
+    runSubmitting = true;
+    try {
+      await api.runTournament(workspaceId, experimentId, {
+        candidates,
+        judge_entrypoint: runJudge.trim(),
+        rubric: runRubric.trim(),
+        strategy: runStrategy,
+        method: runMethod,
+        comparisons_per_candidate: Number(runComparisons) || 2
+      });
+      toast.success('Tournament complete', `${candidates.length} candidates ranked`);
+      showRunModal = false;
+      await load();
+    } catch (e) {
+      toast.error('Tournament failed', e instanceof ApiError ? e.detail : String(e));
+    } finally {
+      runSubmitting = false;
+    }
+  }
+
+  // --- Add human verdict modal ---
+  let showVerdictModal = false;
+  let vAId = '';
+  let vBId = '';
+  let vPreferred: 'a' | 'b' | 'tie' = 'a';
+  let vMargin = '0.5';
+  let vRationale = '';
+  let vJudgeId = 'local';
+  let vSubmitting = false;
+
+  $: candidateOptions = candidates.map((c) => ({
+    value: c.id,
+    label: `${c.id} — ${c.output_text.slice(0, 40)}${c.output_text.length > 40 ? '…' : ''}`
+  }));
+
+  async function openVerdictModal(): Promise<void> {
+    showVerdictModal = true;
+    await ensureCandidates();
+    // Seed sensible defaults once candidates are in hand.
+    if (candidates.length >= 2 && !vAId) {
+      vAId = candidates[0].id;
+      vBId = candidates[1].id;
+    }
+  }
+
+  async function submitVerdict(): Promise<void> {
+    if (!vAId || !vBId || vAId === vBId || vSubmitting) return;
+    const a = candidates.find((c) => c.id === vAId);
+    const b = candidates.find((c) => c.id === vBId);
+    if (!a || !b) return;
+    vSubmitting = true;
+    try {
+      await api.ingestVerdicts(workspaceId, experimentId, [
+        {
+          a_ref: { kind: 'agent_output', trace_id: a.trace_id, case_id: a.id },
+          b_ref: { kind: 'agent_output', trace_id: b.trace_id, case_id: b.id },
+          preferred: vPreferred,
+          margin: vPreferred === 'tie' ? 0 : Number(vMargin) || 0,
+          rationale: vRationale.trim() || null,
+          judge_kind: 'human',
+          judge_id: vJudgeId.trim() || 'local',
+          case_id: a.id
+        }
+      ]);
+      toast.success('Human verdict recorded');
+      showVerdictModal = false;
+      vRationale = '';
+      await load();
+    } catch (e) {
+      toast.error('Could not record verdict', e instanceof ApiError ? e.detail : String(e));
+    } finally {
+      vSubmitting = false;
+    }
+  }
 
   // Judge-kind filter for the verdicts list (client-side re-fetch).
   let judgeFilter: '' | 'llm' | 'human' = '';
@@ -150,12 +284,17 @@
 
     <!-- 2. Tournament ranking -->
     <section>
-      <h3 class="text-xs uppercase tracking-wide text-text-3 mb-3">
-        Tournament ranking
-        {#if tournaments.length > 0}
-          <span class="font-mono normal-case text-text-3" data-numeric>· {tournaments.length}</span>
-        {/if}
-      </h3>
+      <div class="flex items-baseline justify-between mb-3">
+        <h3 class="text-xs uppercase tracking-wide text-text-3">
+          Tournament ranking
+          {#if tournaments.length > 0}
+            <span class="font-mono normal-case text-text-3" data-numeric
+              >· {tournaments.length}</span
+            >
+          {/if}
+        </h3>
+        <Button size="sm" variant="secondary" on:click={openRunModal}>Run tournament</Button>
+      </div>
       {#if latestTournament}
         <div class="rounded-lg border border-border bg-surface overflow-hidden">
           <div
@@ -205,15 +344,18 @@
           Verdicts
           <span class="font-mono normal-case text-text-3" data-numeric>· {verdicts.length}</span>
         </h3>
-        <select
-          bind:value={judgeFilter}
-          class="text-xs border border-border rounded bg-surface px-2 py-1 text-text-2"
-          aria-label="Filter by judge kind"
-        >
-          <option value="">All judges</option>
-          <option value="llm">LLM</option>
-          <option value="human">Human</option>
-        </select>
+        <div class="flex items-center gap-2">
+          <select
+            bind:value={judgeFilter}
+            class="text-xs border border-border rounded bg-surface px-2 py-1 text-text-2"
+            aria-label="Filter by judge kind"
+          >
+            <option value="">All judges</option>
+            <option value="llm">LLM</option>
+            <option value="human">Human</option>
+          </select>
+          <Button size="sm" variant="secondary" on:click={openVerdictModal}>Add human verdict</Button>
+        </div>
       </div>
       {#if verdicts.length > 0}
         <div class="rounded-lg border border-border bg-surface overflow-hidden">
@@ -251,3 +393,124 @@
     </section>
   </div>
 {/if}
+
+<!-- Run tournament -->
+<Modal
+  open={showRunModal}
+  title="Run pairwise tournament"
+  size="md"
+  dismissible={!runSubmitting}
+  on:close={() => (showRunModal = false)}
+>
+  {#if candidatesLoading}
+    <p class="text-sm text-text-3">Loading candidate replies…</p>
+  {:else if candidates.length < 2}
+    <p class="text-sm text-text-3">
+      Need at least two best-iteration replies with text to rank. This experiment
+      produced {candidates.length}.
+    </p>
+  {:else}
+    <p class="mb-4 text-sm text-text-2">
+      Rank <span class="font-mono text-text-1">{candidates.length}</span> candidate replies
+      (the best iteration's output per case) with an LLM judge.
+    </p>
+    <div class="space-y-3">
+      <TextField
+        label="Judge entrypoint"
+        bind:value={runJudge}
+        mono
+        hint="Dotted path mod:fn to a pairwise judge ({'{'}preferred, margin, reason{'}'})."
+      />
+      <TextField label="Rubric" bind:value={runRubric} multiline rows={3} />
+      <div class="grid grid-cols-3 gap-3">
+        <Select
+          label="Strategy"
+          bind:value={runStrategy}
+          options={[
+            { value: 'all_pairs', label: 'All pairs' },
+            { value: 'swiss', label: 'Swiss' },
+            { value: 'sampled', label: 'Sampled' }
+          ]}
+        />
+        <Select
+          label="Method"
+          bind:value={runMethod}
+          options={[
+            { value: 'elo', label: 'Elo' },
+            { value: 'bradley-terry', label: 'Bradley–Terry' }
+          ]}
+        />
+        <TextField label="Comparisons / cand." type="number" bind:value={runComparisons} />
+      </div>
+    </div>
+  {/if}
+  <svelte:fragment slot="footer">
+    <Button variant="ghost" disabled={runSubmitting} on:click={() => (showRunModal = false)}>
+      Cancel
+    </Button>
+    <Button
+      variant="primary"
+      loading={runSubmitting}
+      disabled={candidates.length < 2 || runSubmitting}
+      on:click={submitTournament}
+    >
+      Run
+    </Button>
+  </svelte:fragment>
+</Modal>
+
+<!-- Add human verdict -->
+<Modal
+  open={showVerdictModal}
+  title="Add human verdict"
+  size="md"
+  dismissible={!vSubmitting}
+  on:close={() => (showVerdictModal = false)}
+>
+  {#if candidatesLoading}
+    <p class="text-sm text-text-3">Loading candidate replies…</p>
+  {:else if candidates.length < 2}
+    <p class="text-sm text-text-3">
+      Need at least two replies with text to compare. This experiment produced {candidates.length}.
+    </p>
+  {:else}
+    <p class="mb-4 text-sm text-text-2">
+      Record your A/B preference on a pair. This is what calibrates the LLM judge
+      against human taste.
+    </p>
+    <div class="space-y-3">
+      <Select label="Response A" bind:value={vAId} options={candidateOptions} />
+      <Select label="Response B" bind:value={vBId} options={candidateOptions} />
+      {#if vAId && vAId === vBId}
+        <p class="text-xs text-danger">Pick two different responses.</p>
+      {/if}
+      <Select
+        label="Preferred"
+        bind:value={vPreferred}
+        options={[
+          { value: 'a', label: 'A is better' },
+          { value: 'b', label: 'B is better' },
+          { value: 'tie', label: 'Tie' }
+        ]}
+      />
+      {#if vPreferred !== 'tie'}
+        <TextField label="Margin (0–1)" type="number" bind:value={vMargin} />
+      {/if}
+      <TextField label="Rationale" bind:value={vRationale} multiline rows={2} />
+      <TextField label="Your judge id" bind:value={vJudgeId} mono />
+    </div>
+  {/if}
+  <svelte:fragment slot="footer">
+    <Button variant="ghost" disabled={vSubmitting} on:click={() => (showVerdictModal = false)}>
+      Cancel
+    </Button>
+    <Button
+      variant="primary"
+      loading={vSubmitting}
+      disabled={!vAId || !vBId || vAId === vBId || vSubmitting}
+      on:click={submitVerdict}
+    >
+      Save verdict
+    </Button>
+  </svelte:fragment>
+</Modal>

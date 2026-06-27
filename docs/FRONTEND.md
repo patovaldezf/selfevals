@@ -13,7 +13,7 @@
 > funcionando. Stack decidido en [`docs/web/decisions.md`](web/decisions.md). El backend que
 > el FE espeja evoluciona según [`docs/ROADMAP.md`](ROADMAP.md).
 
-Fecha: 2026-05-27.
+Fecha: 2026-06-27 (actualizado: pairwise read+write shipped, harness `selfevals demo`).
 
 ---
 
@@ -175,17 +175,17 @@ Base `/api/`, sin prefijo de versión. CORS para `localhost:5173`. Header `X-Sel
 Routing por archivos de SvelteKit. Cliente tipado en `lib/api/client.ts`; SSE helper en
 `lib/api/sse.ts` (`openTraceStream(ws, runId, handlers)`).
 
-| Ruta                                    | Estado                  | Qué hace                                                                                                                                                                                                                                                                                                                                                                                                   |
-| --------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`                                     | ✅ funcional            | Lista de workspaces; error si la API no responde.                                                                                                                                                                                                                                                                                                                                                          |
-| `/[workspace]`                          | ✅ funcional            | Detalle: tabla de experimentos con sparkline de tendencia, chips (exp count, recent_health, anchor points), recientes. Secciones skeleton "failure clusters (soon)" + datasets.                                                                                                                                                                                                                            |
-| `/[workspace]/experiments`              | 🟡 scaffolded           | Lista completa de experimentos.                                                                                                                                                                                                                                                                                                                                                                            |
+| Ruta                                    | Estado                  | Qué hace                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                                     | ✅ funcional            | Lista de workspaces; error si la API no responde.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `/[workspace]`                          | ✅ funcional            | Detalle: tabla de experimentos con sparkline de tendencia, chips (exp count, recent_health, anchor points), recientes. Secciones skeleton "failure clusters (soon)" + datasets.                                                                                                                                                                                                                                                                                                                                                                                      |
+| `/[workspace]/experiments`              | 🟡 scaffolded           | Lista completa de experimentos.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `/[workspace]/experiments/[experiment]` | ✅ funcional            | Tabs: **Iterations** (tabla hypothesis/params/metric/delta/decision/rationale), **Results** (por-case vía `ScenarioResult`), **Compare** (diff server-rendered vía `GET .../compare?a&b` — params/métricas/failure-modes/funnel + recomendación), **Funnel** (drill-down por iteración vía `GET .../iterations/{id}/funnel`, render recursivo con `FunnelNode.svelte`), **Pairwise** (`PairwisePanel.svelte`: calibración LLM↔human + ranking Elo/BT + verdicts filtrables, lazy GET), **Decisions** (audit trail). Sidebar al clickear iteración: detalle completo. |
-| `/[workspace]/anchor-set`               | 🟡 skeletal             | Vista longitudinal de anchor points.                                                                                                                                                                                                                                                                                                                                                                       |
-| `/[workspace]/threads/[thread]`         | ✅ funcional            | Thread viewer: conversación multi-turno vía `GET .../threads/{thread_id}`, un turn por trace ordenado por thread_position; cada turn es un `ScenarioResult` y lleva label + started_at + el message clasificado + grader_results + link al trace.                                                                                                                                                          |
-| `/[workspace]/traces/[trace]`           | ✅ funcional + **live** | Inspector de trace. Sidebar izq: árbol de spans jerárquico. Main: detalle del span seleccionado con facetas kind-specific. **SSE**: actualiza el árbol en vivo, pill "live" mientras el stream está activo.                                                                                                                                                                                                |
-| `/[workspace]/clusters`                 | ❌ stub                 | Placeholder; necesita failure-clusters API (§7).                                                                                                                                                                                                                                                                                                                                                           |
-| `/[workspace]/datasets`                 | ❌ stub                 | Placeholder; necesita datasets + cases API (§7).                                                                                                                                                                                                                                                                                                                                                           |
+| `/[workspace]/anchor-set`               | 🟡 skeletal             | Vista longitudinal de anchor points.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `/[workspace]/threads/[thread]`         | ✅ funcional            | Thread viewer: conversación multi-turno vía `GET .../threads/{thread_id}`, un turn por trace ordenado por thread_position; cada turn es un `ScenarioResult` y lleva label + started_at + el message clasificado + grader_results + link al trace.                                                                                                                                                                                                                                                                                                                    |
+| `/[workspace]/traces/[trace]`           | ✅ funcional + **live** | Inspector de trace. Sidebar izq: árbol de spans jerárquico. Main: detalle del span seleccionado con facetas kind-specific. **SSE**: actualiza el árbol en vivo, pill "live" mientras el stream está activo.                                                                                                                                                                                                                                                                                                                                                          |
+| `/[workspace]/clusters`                 | ❌ stub                 | Placeholder; necesita failure-clusters API (§7).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `/[workspace]/datasets`                 | ❌ stub                 | Placeholder; necesita datasets + cases API (§7).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 ### Componentes existentes
 
@@ -237,16 +237,20 @@ grader_result) y `grader_results[]`. La ruta web la renderiza turn-by-turn con l
 trace. Cuando exista #2 (executor real) + #15 (simulador), distinguir turnos
 `user_simulator` de usuario real (tag en provider_metadata).
 
-### 5.4 Judge panel / calibración · 🟡 parcial (pairwise SHIPPED)
+### 5.4 Judge panel / calibración · 🟢 pairwise SHIPPED (read + write)
 
 **Ya shipped (pairwise):** tab **Pairwise** en experiment detail (`PairwisePanel.svelte`):
 calibración LLM↔human (agreement_rate global + por rubric_version vía
 `GET .../verdicts/calibration`), ranking de torneo Elo/Bradley-Terry
 (`GET .../tournaments`), y lista de verdicts filtrable por judge kind
-(`GET .../verdicts`). Solo lectura (los GET); lanzar torneo (`POST .../tournaments`,
-necesita resolver `judge_entrypoint`) queda para una segunda iteración. Cliente en
-`web/src/lib/api/client.ts` (`listVerdicts`/`verdictCalibration`/`ingestVerdicts`/
-`listTournaments`/`runTournament`).
+(`GET .../verdicts`). **El lado de escritura también está shipped**: un modal
+**Run tournament** que arma candidatos desde las réplicas de la mejor iteración
+(`experimentResults` → `detected.content`) y llama `POST .../tournaments` con un
+`judge_entrypoint` pairwise, y un modal **Add human verdict** que captura una
+preferencia A/B humana vía `POST .../verdicts/ingest` (lo que hace que la
+calibración LLM↔human sea no-trivial). Cliente en `web/src/lib/api/client.ts`
+(`listVerdicts`/`verdictCalibration`/`ingestVerdicts`/`listTournaments`/`runTournament`).
+Data real de extremo a extremo se siembra con `selfevals demo` (ver §6.1).
 
 **Falta (panel consensus):** dentro del trace viewer (cuando el grader es panel) +
 ruta nueva `/[workspace]/judges`.
@@ -320,6 +324,32 @@ Plan original — un `selfevals serve` que montara en un solo proceso:
 **Contrato propuesto:** `selfevals serve --host --port --db [--web-dist path] [--no-web]`.
 Arranca API + (opcional) web + OTLP receiver + broker en un event loop. El loop de
 optimización se integra cuando existan los endpoints de mutación (§7.1).
+
+### 6.1 `selfevals demo` — dogfood e2e con data real
+
+Para validar la web de extremo a extremo sin armar data a mano, hay un comando
+delgado que siembra un workspace completo con **datos 100% reales** (llamadas LLM
+reales cuando `ANTHROPIC_API_KEY` está set; fallback determinista offline):
+
+```bash
+selfevals demo --slug demo          # idempotente; corre desde el repo root
+selfevals serve                     # abre API + web; elige el workspace `demo`
+```
+
+Qué deja (`cli/demo_commands.py`, orquestación pura — reusa `seed_workspace`, el
+path de `run`, `run_pairwise_tournament`, `ingest_pairwise_verdicts`):
+
+- workspace `demo` + taxonomía de failure modes,
+- `examples/hello_llm` (single-shot, grid de temperature) → experiment + iteraciones
+  - traces + cases,
+- `examples/hello_chat` (multi-turno) → traces por-turno con `thread_id`, lo que
+  **puebla el thread viewer** (`/[workspace]/threads/[thread]`),
+- un **tournament pairwise real** (judge `examples.hello_llm.agent:judge_pairwise`)
+  sobre las réplicas del agente, + **verdicts humanos** con un desacuerdo deliberado
+  para que la calibración LLM↔human muestre un `agreement_rate` real < 100%.
+
+Es el camino canónico para QA visual de cada vista (§5) con data que se ve como la
+de producción, no fixtures.
 
 ---
 
