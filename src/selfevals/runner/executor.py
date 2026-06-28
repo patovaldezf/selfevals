@@ -177,6 +177,18 @@ class Executor:
             self._otlp_handle.stop()
             self._otlp_handle = None
 
+    async def aclose(self) -> None:
+        """Async teardown: stop the receiver and release adapter resources.
+
+        The Redis-backed rate limiter holds an async client that must be closed
+        from inside the event loop (the loop's `finally` is async), or
+        `filterwarnings=error` trips on a leaked connection. The in-process
+        adapter has no `aclose`, so this is a no-op there. Idempotent."""
+        self.close()
+        adapter_close = getattr(self._adapter, "aclose", None)
+        if callable(adapter_close):
+            await adapter_close()
+
     async def run_case(
         self,
         case: EvalCase,

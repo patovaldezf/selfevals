@@ -75,7 +75,7 @@ from selfevals.runner.executor import Executor
 from selfevals.runner.otlp_receiver import start_receiver
 from selfevals.runner.retry import RetryingAdapter, RetryPolicy
 from selfevals.runner.sandbox import SandboxPolicy
-from selfevals.runner.throttle import AsyncTokenBucket, RateLimitedAdapter
+from selfevals.runner.throttle import AsyncTokenBucket, RateLimitedAdapter, TokenBucket
 from selfevals.schemas._base import EntityRef
 from selfevals.schemas.dataset import Dataset, SplitAllocation
 from selfevals.schemas.enums import ProposerStrategy
@@ -197,15 +197,54 @@ def _model_ref(decl: AgentModelDecl | None) -> ModelRef | None:
     return ModelRef(provider=decl.provider, name=decl.name)
 
 
-def _wrap_resilience(adapter: AgentAdapter, run: RunSpec) -> AgentAdapter:
+def _provider_of(agent: AgentSpec) -> str | None:
+    """The provider declared on the agent's model, or None (embedded agents)."""
+    model = getattr(agent, "model", None)
+    if model is None:
+        return None
+    return getattr(model, "provider", None)
+
+
+def _rate_limit_key(spec: ExperimentSpec) -> str:
+    """Stable, fleet-shared key for this run's token bucket.
+
+    Keyed by (workspace, provider) so every worker of every experiment that
+    targets the same provider in the same workspace draws from ONE global quota
+    — which is how provider rate limits are actually billed. Keying by
+    experiment alone would let two concurrent experiments each get the full RPM
+    and blow the real limit; keying by provider alone would leak across tenants.
+    Falls back to the experiment id when the agent declares no provider
+    (embedded agents), so such runs still get a per-experiment global cap rather
+    than colliding on a shared 'unknown' key."""
+    provider = _provider_of(spec.agent)
+    if provider is None:
+        return f"selfevals:ratelimit:{spec.workspace_id}:exp:{spec.experiment.id}"
+    return f"selfevals:ratelimit:{spec.workspace_id}:provider:{provider}"
+
+
+def _wrap_resilience(
+    adapter: AgentAdapter,
+    run: RunSpec,
+    *,
+    redis_url: str | None = None,
+    bucket_key: str | None = None,
+) -> AgentAdapter:
     """Wrap the adapter with retry (inner) and rate-limit (outer) per `run`.
 
     Order matters: the throttle is outermost so every physical request — first
     try or retry — passes the bucket; if retry sat outside, a backoff storm could
     bypass the limit and re-trigger 429s. Retry defaults ON (`max_retries=2`);
     rate-limit is OFF unless `requests_per_minute` is set (we can't guess the
-    user's provider tier). One bucket per run → shared across every case (the
-    executor holds this single adapter)."""
+    user's provider tier).
+
+    The bucket is GLOBAL (Redis-backed) when `redis_url` and `bucket_key` are
+    threaded in — which only happens on the distributed worker path, where N
+    workers must share one quota. Otherwise it's in-process (`AsyncTokenBucket`),
+    shared across every case of this one run (the executor holds this single
+    adapter). The local CLI path passes neither, so it never touches Redis — a
+    structural guarantee, not an env-var accident. Two runs sharing a Redis key
+    may declare different `rpm`; that's accepted for v1 (rate goes as ARGV per
+    call, so the current call's rate wins)."""
     if run.retry.max_retries > 0:
         adapter = RetryingAdapter(
             adapter,
@@ -221,9 +260,19 @@ def _wrap_resilience(adapter: AgentAdapter, run: RunSpec) -> AgentAdapter:
     if rpm is not None:
         rate_per_sec = rpm / 60.0
         capacity = float(run.rate_limit.burst) if run.rate_limit.burst else max(1.0, rate_per_sec)
-        adapter = RateLimitedAdapter(
-            adapter, AsyncTokenBucket(rate_per_sec=rate_per_sec, capacity=capacity)
-        )
+        bucket: TokenBucket
+        if redis_url is not None and bucket_key is not None:
+            from selfevals.runner.redis_throttle import RedisTokenBucket
+
+            bucket = RedisTokenBucket(
+                redis_url=redis_url,
+                key=bucket_key,
+                rate_per_sec=rate_per_sec,
+                capacity=capacity,
+            )
+        else:
+            bucket = AsyncTokenBucket(rate_per_sec=rate_per_sec, capacity=capacity)
+        adapter = RateLimitedAdapter(adapter, bucket)
     return adapter
 
 
@@ -824,6 +873,7 @@ def build_loop(
     repetitions_per_case: int = 1,
     span_sink: SpanSink | None = None,
     payload_router: PayloadRouter | None = None,
+    redis_url: str | None = None,
 ) -> OptimizationLoop:
     """Wire a validated spec into a runnable `OptimizationLoop`.
 
@@ -847,7 +897,12 @@ def build_loop(
     from selfevals.decision.matrix import DecisionMatrixEvaluator
 
     adapter = build_adapter(spec.agent)
-    adapter = _wrap_resilience(adapter, spec.experiment.run)
+    adapter = _wrap_resilience(
+        adapter,
+        spec.experiment.run,
+        redis_url=redis_url,
+        bucket_key=_rate_limit_key(spec) if redis_url else None,
+    )
     proposer = build_proposer(spec.experiment)
 
     # Resolve a `ref:` dataset before anything reads `spec.cases` (graders,

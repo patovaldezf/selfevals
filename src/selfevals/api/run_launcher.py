@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -37,7 +38,7 @@ from selfevals.api.run_jobs import (
     mark_run_job_running,
     mark_run_job_succeeded,
 )
-from selfevals.api.run_queue import configured_run_queue
+from selfevals.api.run_queue import REDIS_URL_ENV, configured_run_queue
 from selfevals.api.schemas import RunExperimentRequest, RunExperimentResponse
 from selfevals.cli import _friendly
 from selfevals.repo.loader import (
@@ -247,6 +248,7 @@ def execute_run_job(
     job_id: str,
     owner: str,
     queue: RunJobQueue | None = None,
+    redis_url: str | None = None,
 ) -> bool:
     """Background worker: own storage + own event loop. Never blocks FastAPI.
 
@@ -262,6 +264,11 @@ def execute_run_job(
     The broker is a process-wide singleton; if `serve` never bound a loop (e.g.
     a bare run with no SSE consumers) the sink degrades to a silent no-op.
     """
+    # This is genuinely the distributed path (worker / API background thread), so
+    # the global Redis rate-limiter applies. Resolve the url from the env when the
+    # caller didn't pass one; None keeps the in-process bucket (e.g. tests).
+    if redis_url is None:
+        redis_url = os.environ.get(REDIS_URL_ENV)
     storage = open_storage(storage_url)
     with lease_run_job(storage, workspace_id=workspace_id, job_id=job_id, owner=owner) as job:
         if job is None:
@@ -286,6 +293,7 @@ def execute_run_job(
                 repetitions_per_case=job.reps,
                 span_sink=span_sink,
                 payload_router=payload_router,
+                redis_url=redis_url,
             )
             with _lease_heartbeat(
                 storage_url=storage_url,

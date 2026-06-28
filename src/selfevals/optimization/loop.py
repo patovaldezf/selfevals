@@ -194,13 +194,14 @@ class OptimizationLoop:
         """Run the optimization loop, always closing the executor afterward.
 
         The `finally` stops the embedded OTLP receiver (if the executor started
-        one) on every exit path — success, early-stop, or exception — so a
-        long-lived `selfevals serve` doesn't leak receiver threads/ports across
-        runs."""
+        one) and releases adapter resources (the Redis rate limiter's client) on
+        every exit path — success, early-stop, or exception — so a long-lived
+        `selfevals serve` doesn't leak receiver threads/ports or connections
+        across runs."""
         try:
             return await self._run_iterations()
         finally:
-            self._executor.close()
+            await self._executor.aclose()
 
     async def _run_iterations(self) -> OptimizationResult:
         if self._experiment.state == ExperimentState.DRAFT:

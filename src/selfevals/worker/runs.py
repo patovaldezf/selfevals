@@ -47,6 +47,7 @@ def run_worker(config: RunWorkerConfig) -> int:
                 job_id=message.job_id,
                 owner=consumer,
                 queue=queue,
+                redis_url=config.redis_url,
             )
             queue.ack(message.message_id)
             handled = True
@@ -60,6 +61,7 @@ def run_worker(config: RunWorkerConfig) -> int:
                 job_id=message.job_id,
                 owner=consumer,
                 queue=queue,
+                redis_url=config.redis_url,
             )
             queue.ack(message.message_id)
             handled = True
