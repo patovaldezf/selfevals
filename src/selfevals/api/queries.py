@@ -62,6 +62,7 @@ from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.iteration import DecisionRecord, IterationRecord
 from selfevals.schemas.trace import LLMCallSpan, ToolCallSpan, Trace
 from selfevals.schemas.workspace import Workspace
+from selfevals.storage.errors import EntityNotFoundError
 from selfevals.storage.interface import ListFilter, StorageInterface
 from selfevals.trace.span_view import span_view
 
@@ -101,7 +102,7 @@ def workspace_detail(storage: StorageInterface, *, workspace_id: str) -> Workspa
                 )
                 if isinstance(it, IterationRecord)
             ]
-    except Exception:
+    except EntityNotFoundError:
         return None
     keep_count = sum(
         1
@@ -178,7 +179,7 @@ def experiment_detail(
     with storage.open(workspace_id) as scope:
         try:
             exp = scope.get_entity(Experiment, experiment_id)
-        except Exception:
+        except EntityNotFoundError:
             return None
         assert isinstance(exp, Experiment)
         iterations = _experiment_iterations(scope, exp.id)
@@ -287,7 +288,7 @@ def experiment_results(
     with storage.open(workspace_id) as scope:
         try:
             exp = scope.get_entity(Experiment, experiment_id)
-        except Exception:
+        except EntityNotFoundError:
             return None
         assert isinstance(exp, Experiment)
         iterations = _experiment_iterations(scope, experiment_id)
@@ -498,7 +499,7 @@ def iteration_detail(
     with storage.open(workspace_id) as scope:
         try:
             it = scope.get_entity(IterationRecord, iteration_id)
-        except Exception:
+        except EntityNotFoundError:
             return None
         assert isinstance(it, IterationRecord)
         decisions = _experiment_decisions(scope, it.experiment_id)
@@ -529,7 +530,7 @@ def load_iteration_funnel(
     with storage.open(workspace_id) as scope:
         try:
             it = scope.get_entity(IterationRecord, iteration_id)
-        except Exception:
+        except EntityNotFoundError:
             return None
         assert isinstance(it, IterationRecord)
     funnel = it.metrics.funnel if it.metrics is not None else {}
@@ -564,7 +565,7 @@ def load_compare(
         try:
             a = scope.get_entity(IterationRecord, a_id)
             b = scope.get_entity(IterationRecord, b_id)
-        except Exception:
+        except EntityNotFoundError:
             return None
     assert isinstance(a, IterationRecord)
     assert isinstance(b, IterationRecord)
@@ -633,7 +634,7 @@ def load_trace(storage: StorageInterface, *, workspace_id: str, trace_id: str) -
                 exp = scope.get_entity(Experiment, trace.run.experiment_id)
                 if isinstance(exp, Experiment):
                     experiment_name = exp.name
-            except Exception:
+            except EntityNotFoundError:
                 experiment_name = None
     return TraceResponse(
         id=trace.id,
@@ -686,7 +687,7 @@ def load_thread(
             for cid in case_ids:
                 try:
                     entity = scope.get_entity(EvalCase, cid)
-                except Exception:
+                except EntityNotFoundError:
                     continue
                 if isinstance(entity, EvalCase):
                     cases[cid] = entity
@@ -866,7 +867,7 @@ def dataset_detail(
     with storage.open(workspace_id) as scope:
         try:
             ds = scope.get_entity(Dataset, dataset_id)
-        except Exception:
+        except EntityNotFoundError:
             return None
         assert isinstance(ds, Dataset)
         ref_ids = {ref.id for ref in ds.cases}
