@@ -8,7 +8,6 @@ code. Errors that should produce a clean `error: <msg>` line raise
 from __future__ import annotations
 
 import argparse
-import asyncio
 import sys
 from collections.abc import Sequence
 from importlib import resources
@@ -434,11 +433,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         from selfevals.schemas._base import EntityRef
 
         # Override the spec's dataset source with a reference; build_loop resolves
-        # its cases + split from storage. A ref needs persistence.
-        if args.no_persist:
-            raise CommandError(
-                "--dataset needs persistence to resolve; drop --no-persist"
-            )
+        # its cases + split from storage (sharded runs always persist).
         spec = replace(
             spec,
             dataset_source=RefDatasetSource(ref=EntityRef(id=dataset_id)),
@@ -459,48 +454,94 @@ def cmd_run(args: argparse.Namespace) -> int:
         if env_policy is not None:
             spec.experiment.run.persist_traces = env_policy
 
-    storage = _storage(args) if not args.no_persist else None
-    scope = None
+    # Sharded execution is the only path: `run` enqueues a coordinator run-job
+    # and a worker (or N workers) drains its scenario jobs.
+    from selfevals.api.run_jobs import create_run_job
+    from selfevals.api.run_queue import configured_run_queue
+
+    storage = _storage(args)
     try:
-        payload_router = None
-        if storage is not None:
-            ensure_workspace(storage, spec)
-            scope = storage.open(spec.workspace_id)
-            # Filesystem object store (SELFEVALS_OBJECTS_DIR, default ./objects),
-            # so large trace payloads (prompts/responses) offload to a pointer the
-            # `/payloads` endpoint resolves. Ephemeral `--no-persist` runs skip it
-            # (inline only).
+        ensure_workspace(storage, spec)
+        with storage.open(spec.workspace_id) as scope:
+            # Build the loop first: it validates the spec (unknown graders, bad
+            # adapters) and persists the experiment + eval_cases. A spec error is
+            # a spec error whether or not Redis is up, so it must surface before
+            # the infra requirement below.
             payload_router = payload_router_for_db(resolve_storage_url(args.db), spec.workspace_id)
-        # `build_loop` owns adapter/proposer/grader wiring and persists the
-        # experiment via `scope` — the same canonical path the HTTP
-        # `experiments/run` endpoint uses, so the two never drift.
-        loop = build_loop(
-            spec,
-            scope=scope,
-            repetitions_per_case=args.reps,
-            payload_router=payload_router,
-        )
-        result = asyncio.run(loop.run())
-        # Auto-register the dataset's regression baseline on its FIRST run. This
-        # lives here (not in the loop) to stay decoupled: the loop owns
-        # iterations; the baseline is a CI concern hung off the completed run.
-        # Idempotent (no-op if the dataset is already baselined) and defensive
-        # (a storage failure is logged, never fails the run).
-        if scope is not None:
+            build_loop(
+                spec, scope=scope, repetitions_per_case=args.reps, payload_router=payload_router
+            ).close_executor()
+
+        # Only now require the queue: a valid spec still needs Redis + a worker.
+        queue = configured_run_queue()
+        if queue is None:
+            raise CommandError(
+                "`selfevals run` shards execution and needs Redis + a worker. "
+                "Set SELFEVALS_REDIS_URL and start one with `selfevals worker runs` "
+                "(locally: `docker compose up -d` brings up Postgres, Redis, and a worker)."
+            )
+        job = create_run_job(storage, spec=spec, reps=args.reps)
+        queue.enqueue(job)
+
+        # Block until the worker drives the run to a terminal state, then rebuild
+        # the result from persisted records (same path as `cmd_report`).
+        result = _await_run_result(storage, spec, job.id, timeout_s=args.timeout)
+        with storage.open(spec.workspace_id) as scope:
             from selfevals.runner.baseline import maybe_autoset_baseline
 
             maybe_autoset_baseline(scope, spec, result)
     finally:
-        if scope is not None:
-            scope.close()
-        if storage is not None:
-            storage.close()
+        storage.close()
 
     if args.format == "json":
         print(render_json(result))
     else:
         print(render_markdown(result))
     return 0
+
+
+def _await_run_result(
+    storage: StorageInterface,
+    spec: object,
+    job_id: str,
+    *,
+    timeout_s: float,
+    poll_s: float = 0.5,
+) -> OptimizationResult:
+    """Poll the run-job until terminal, then reconstruct the OptimizationResult.
+
+    Raises CommandError if the job fails/dead-letters or the timeout elapses —
+    the CLI's contract is a clean one-line error, never a hang or a traceback.
+    """
+    import time
+
+    from selfevals.api.run_jobs import get_run_job
+    from selfevals.repo.loader import ExperimentSpec
+    from selfevals.schemas.job import RunJobStatus
+
+    assert isinstance(spec, ExperimentSpec)
+    deadline = time.monotonic() + timeout_s
+    while True:
+        job = get_run_job(storage, workspace_id=spec.workspace_id, job_id=job_id)
+        if job is None:
+            raise CommandError(f"run job {job_id} vanished from storage")
+        if job.status in (RunJobStatus.SUCCEEDED, RunJobStatus.CANCELLED):
+            break
+        if job.status in (RunJobStatus.FAILED, RunJobStatus.DEAD_LETTERED):
+            raise CommandError(f"run failed: {job.last_error or 'unknown error'}")
+        if time.monotonic() > deadline:
+            raise CommandError(
+                f"run did not finish within {timeout_s:g}s (status={job.status}); "
+                "is a worker consuming the queue?"
+            )
+        time.sleep(poll_s)
+
+    with storage.open(spec.workspace_id) as scope:
+        exp = _require_entity(scope, Experiment, spec.experiment.id)
+        assert isinstance(exp, Experiment)
+        iterations = _experiment_iterations(scope, exp.id)
+        decisions = _experiment_decisions(scope, exp.id)
+        return _reconstruct_result(scope, exp, iterations, decisions)
 
 
 def _ensure_cwd_on_path() -> None:

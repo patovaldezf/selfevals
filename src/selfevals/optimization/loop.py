@@ -21,17 +21,15 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Iterable
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from inspect import isawaitable
 from typing import TYPE_CHECKING
 
 from selfevals._internal.ids import new_prefixed_id
 from selfevals.analysis.staging import AnalysisStagingRecord
 from selfevals.graders.base import (
-    BreakdownNode,
     GradeLabel,
     Grader,
-    GraderContext,
     GradeResult,
 )
 from selfevals.optimization.aggregator import (
@@ -47,6 +45,10 @@ from selfevals.optimization.proposers import (
     SearchSpaceExhaustedError,
 )
 from selfevals.optimization.sampling import select_optimization_set
+from selfevals.optimization.scenario_exec import (
+    collapse_conversation_turns,
+    execute_and_grade_case,
+)
 from selfevals.runner.executor import CaseRun, RepetitionResult
 from selfevals.runner.multiturn import MultiTurnExecutor
 from selfevals.schemas.enums import DecisionOutcome, ExperimentState, IterationState
@@ -62,7 +64,6 @@ from selfevals.schemas.iteration import (
     Proposal,
     ProposerInputs,
 )
-from selfevals.schemas.trace import GraderResult
 
 if TYPE_CHECKING:
     from selfevals.analysis.hypothesis import HypothesisRecord
@@ -189,6 +190,54 @@ class OptimizationLoop:
         """Cases held out of the optimization loop (spec §11). Returned so a
         caller can run them as a separate gate; the loop never evaluates them."""
         return list(self._holdout_cases)
+
+    async def run_scenario(
+        self,
+        case: EvalCase,
+        *,
+        iteration: int,
+        parameter_overrides: dict[str, object] | None,
+    ) -> tuple[CaseRun, CaseOutcome]:
+        """Execute + grade ONE case and roll it into a CaseOutcome.
+
+        The sharded worker's entry point: it builds a loop via ``build_loop`` to
+        get a correctly-wired executor + graders, then drives one scenario at a
+        time through here instead of the full iteration bucle. Uses the exact
+        ``execute_and_grade_case`` + ``Aggregator.case_outcome`` path the loop
+        uses, including the conversation-turn collapse, so a sharded outcome is
+        byte-identical to the in-process one.
+        """
+        case_run, grades_per_rep = await execute_and_grade_case(
+            case,
+            executor=self._executor,
+            multi_turn_executor=self._multi_turn_executor,
+            graders=self._graders,
+            repetitions=self._reps,
+            experiment_id=self._experiment.id,
+            iteration=iteration,
+            parameter_overrides=parameter_overrides,
+            grade_concurrency=self._grade_concurrency,
+        )
+        # Persist each rep's trace per `run.persist_traces`, exactly as the
+        # in-process path does — the worker owns this case's traces, and the
+        # reporter / `analyze pull` read failure_reasons from them. Without this a
+        # sharded run would lose all trace-derived diagnostics.
+        for rep, grades in zip(case_run.repetitions, grades_per_rep, strict=True):
+            self._maybe_persist_trace(rep, grades)
+        if case.is_conversation():
+            outcome_run, outcome_grades = collapse_conversation_turns(case_run, grades_per_rep)
+        else:
+            outcome_run, outcome_grades = case_run, grades_per_rep
+        outcome = Aggregator.case_outcome(case, outcome_run, outcome_grades)
+        return case_run, outcome
+
+    def close_executor(self) -> None:
+        """Close the executor (stops the embedded OTLP receiver, if any).
+
+        ``run()`` does this in its ``finally``; the sharded worker drives
+        ``run_scenario`` directly without ``run()``, so it must close explicitly.
+        """
+        self._executor.close()
 
     async def run(self) -> OptimizationResult:
         """Run the optimization loop, always closing the executor afterward.
@@ -352,6 +401,14 @@ class OptimizationLoop:
     async def _run_iteration(
         self, proposal: Proposal, *, iteration: int
     ) -> tuple[IterationAggregate, list[CaseRun], dict[str, list[list[GradeResult]]], list[str]]:
+        """Execute one iteration's cases and aggregate them.
+
+        This is the hook the shared iteration bucle (``_run_iterations``) calls.
+        ``OptimizationLoop`` runs the cases in-process here; ``RunCoordinator``
+        overrides it to seed scenario jobs, await the barrier, and aggregate from
+        persisted ``scenario_outcomes`` instead. The bucle itself —
+        proposer/decision/convergence — is identical for both, so it lives once.
+        """
         case_runs: list[CaseRun] = []
         per_case_grades: dict[str, list[list[GradeResult]]] = {}
         case_outcomes: list[CaseOutcome] = []
@@ -359,64 +416,27 @@ class OptimizationLoop:
         # case/rep order. Only these go onto the IterationRecord so the FE's
         # `/traces/{run_id}` never 404s on an announced-but-unstored trace.
         persisted_run_ids: list[str] = []
-        sem = asyncio.Semaphore(self._grade_concurrency)
-
-        async def _graded(grader: Grader, ctx: GraderContext) -> GradeResult:
-            async with sem:
-                return await grader.grade(ctx)
 
         # Fan out cases concurrently, bounded by the case-level semaphore. The
-        # previous `for case in self._cases: await ...` ran cases strictly in
-        # series — the dominant bottleneck at scale, since each case's adapter
-        # call is the slow I/O. `_run_one_case` does only the awaitable work
-        # (execute + grade + stamp); persistence and list assembly happen
-        # afterwards in deterministic case order, so storage writes stay
-        # single-threaded and `case_runs`/`persisted_run_ids` keep their order.
+        # per-case execute+grade body lives in `scenario_exec.execute_and_grade_case`
+        # so the sharded worker runs the exact same path. Persistence and list
+        # assembly happen afterwards in deterministic case order, so storage
+        # writes stay single-threaded and the lists keep their order.
         case_sem = asyncio.Semaphore(self._case_concurrency)
 
         async def _run_one_case(case: EvalCase) -> tuple[CaseRun, list[list[GradeResult]]]:
             async with case_sem:
-                # Conversation cases run turn-by-turn (one trace per turn, all
-                # sharing a thread_id); everything else takes the single-shot path.
-                runner = self._multi_turn_executor if case.is_conversation() else self._executor
-                case_run = await runner.run_case(
+                return await execute_and_grade_case(
                     case,
+                    executor=self._executor,
+                    multi_turn_executor=self._multi_turn_executor,
+                    graders=self._graders,
                     repetitions=self._reps,
                     experiment_id=self._experiment.id,
                     iteration=iteration,
                     parameter_overrides=proposal.parameters,
+                    grade_concurrency=self._grade_concurrency,
                 )
-                active_graders = _graders_for_case(self._graders, case)
-                # Grade every (rep, grader) pair concurrently, bounded by the
-                # grade semaphore. gather preserves order, so the flat result
-                # splits back into grades_per_rep with reps in order and grades
-                # in active_graders order.
-                grade_tasks = [
-                    _graded(g, GraderContext(case=case, trace=rep.trace, response=rep.response))
-                    for rep in case_run.repetitions
-                    for g in active_graders
-                ]
-                flat_grades = await asyncio.gather(*grade_tasks)
-                width = len(active_graders)
-                grades_per_rep: list[list[GradeResult]] = [
-                    list(flat_grades[i * width : (i + 1) * width])
-                    for i in range(len(case_run.repetitions))
-                ]
-                # Stamp the grader results onto each rep's trace so they ride
-                # along in-memory on `case_runs` (the reporter and any consumer
-                # of IterationOutcome can read `rep.trace.grader_results`
-                # directly, including each grader's free-text reason).
-                # RepetitionResult is frozen, so rebuild it; CaseRun is rebuilt.
-                stamped_reps = [
-                    replace(
-                        rep,
-                        trace=rep.trace.model_copy(
-                            update={"grader_results": [_to_trace_grader_result(g) for g in grades]}
-                        ),
-                    )
-                    for rep, grades in zip(case_run.repetitions, grades_per_rep, strict=True)
-                ]
-                return replace(case_run, repetitions=stamped_reps), grades_per_rep
 
         # gather preserves input order → `results[i]` corresponds to
         # `self._cases[i]`, keeping every downstream list in case order.
@@ -437,7 +457,7 @@ class OptimizationLoop:
             # authoritative, earlier turns advisory in a per-turn funnel) so the
             # aggregator counts threads as repetitions, not turns.
             if case.is_conversation():
-                outcome_run, outcome_grades = _collapse_conversation_turns(case_run, grades_per_rep)
+                outcome_run, outcome_grades = collapse_conversation_turns(case_run, grades_per_rep)
             else:
                 outcome_run, outcome_grades = case_run, grades_per_rep
             case_outcomes.append(Aggregator.case_outcome(case, outcome_run, outcome_grades))
@@ -602,116 +622,6 @@ class OptimizationLoop:
                 self._scope.put_entity(hyp)
 
 
-def _collapse_conversation_turns(
-    case_run: CaseRun,
-    grades_per_turn: list[list[GradeResult]],
-) -> tuple[CaseRun, list[list[GradeResult]]]:
-    """Collapse per-turn results of a conversation case into per-thread ones.
-
-    A conversation `CaseRun` holds one `RepetitionResult` per turn, with each
-    trace's `run.thread_id` identifying its thread (= one logical repetition)
-    and `run.thread_position` its turn index. This groups the turns by thread
-    and, for each thread, produces a single synthetic repetition + grade:
-
-    - the representative trace is the final turn's trace (output-state
-      authoritative, matching "grade output-state, trajectory diagnostic");
-    - the synthetic grade takes the final turn's label/score, and gets a
-      `breakdown` rooted at `conversation` with one advisory (weight=0) child
-      `turn_{i}` per turn carrying that turn's label/score, so the aggregator's
-      funnel rollup surfaces a per-turn drill-down without affecting metrics.
-
-    Threads are ordered by first appearance so results stay deterministic.
-    """
-    order: list[str] = []
-    by_thread: dict[str, list[tuple[RepetitionResult, list[GradeResult]]]] = {}
-    for rep, grades in zip(case_run.repetitions, grades_per_turn, strict=True):
-        thread_id = rep.trace.run.thread_id or rep.trace.id
-        if thread_id not in by_thread:
-            by_thread[thread_id] = []
-            order.append(thread_id)
-        by_thread[thread_id].append((rep, grades))
-
-    collapsed_reps: list[RepetitionResult] = []
-    collapsed_grades: list[list[GradeResult]] = []
-    for rep_index, thread_id in enumerate(order):
-        turns = sorted(
-            by_thread[thread_id],
-            key=lambda pair: pair[0].trace.run.thread_position or 0,
-        )
-        final_rep, final_grades = turns[-1]
-        # One synthetic grade per grader on the final turn, each carrying a
-        # per-turn funnel breakdown.
-        synthetic: list[GradeResult] = []
-        for g_index, final_grade in enumerate(final_grades):
-            children = []
-            for position, (_, turn_grades) in enumerate(turns):
-                turn_grade = turn_grades[g_index] if g_index < len(turn_grades) else None
-                # Preserve the grader's own breakdown (e.g. the deterministic
-                # per-rule funnel) under each turn, so a conversation case keeps
-                # its rule-level drill-down instead of collapsing to a bare
-                # pass/fail per turn. The grade's breakdown already roots at the
-                # grader (`deterministic` → `must_include` → ...); we graft its
-                # children directly under `turn_N` to avoid a redundant level.
-                grader_children = (
-                    list(turn_grade.breakdown.children)
-                    if turn_grade is not None and turn_grade.breakdown is not None
-                    else []
-                )
-                children.append(
-                    BreakdownNode(
-                        key=f"turn_{position}",
-                        label=turn_grade.label if turn_grade is not None else None,
-                        score=turn_grade.score if turn_grade is not None else None,
-                        weight=0.0,
-                        reason="per-turn diagnostic (advisory)",
-                        children=grader_children,
-                    )
-                )
-            synthetic.append(
-                replace(
-                    final_grade,
-                    breakdown=BreakdownNode(
-                        key="conversation",
-                        label=final_grade.label,
-                        score=final_grade.score,
-                        children=children,
-                    ),
-                )
-            )
-        collapsed_reps.append(
-            RepetitionResult(
-                repetition=rep_index,
-                trace=final_rep.trace,
-                response=final_rep.response,
-                error=next((r.error for r, _ in turns if r.error is not None), None),
-            )
-        )
-        collapsed_grades.append(synthetic)
-
-    return CaseRun(case_id=case_run.case_id, repetitions=collapsed_reps), collapsed_grades
-
-
-def _to_trace_grader_result(grade: GradeResult) -> GraderResult:
-    """Project the loop's `GradeResult` onto the trace's `GraderResult`.
-
-    Carries the fields error analysis needs — grader, label, score, confidence,
-    failure_modes — plus the free-text `reason`, which is inlined directly. A
-    grader reason is small text, so it persists alongside the result; the
-    trace's `reason_pointer` is reserved for large payloads the loop doesn't
-    produce. The optional funnel `breakdown` is serialized to a plain dict so it
-    persists alongside the result (additive; never changes the label/score).
-    """
-    return GraderResult(
-        grader=grade.grader,
-        label=str(grade.label),
-        score=grade.score,
-        reason=grade.reason,
-        confidence=grade.confidence,
-        failure_modes=list(grade.failure_modes),
-        breakdown=grade.breakdown.to_dict() if grade.breakdown is not None else None,
-    )
-
-
 def _dominant_modes(failure_mode_counts: dict[str, int]) -> list[str]:
     """Mode identities ordered by frequency (desc), ties broken by id.
 
@@ -720,25 +630,6 @@ def _dominant_modes(failure_mode_counts: dict[str, int]) -> list[str]:
     were tagged. See docs/spec/error_analysis_design.md §7.
     """
     return [mode for mode, _ in sorted(failure_mode_counts.items(), key=lambda kv: (-kv[1], kv[0]))]
-
-
-def _graders_for_case(graders: list[Grader], case: EvalCase) -> list[Grader]:
-    """Filter `graders` by `case.graders` if the case opts in.
-
-    When the case lists no graders (default), every grader applies — the
-    pre-existing contract. When the case lists names, only matching
-    graders run. This lets one experiment combine a deterministic grader
-    with an LLM judge whose rubric is meaningful for only a subset of
-    cases, without the judge contaminating unrelated cases.
-    """
-    if not case.graders:
-        return graders
-    wanted = set(case.graders)
-    filtered = [g for g in graders if getattr(g, "name", None) in wanted]
-    # If the case lists names but none match a registered grader, fall back
-    # to the full list — this matches the prior behaviour (everything runs)
-    # rather than silently producing zero grades.
-    return filtered or graders
 
 
 def _early_stop_enabled(override: bool | None, proposer: Proposer) -> bool:

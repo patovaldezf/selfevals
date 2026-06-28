@@ -16,6 +16,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from psycopg.types.json import Jsonb
+
 from selfevals.schemas.eval_case import EvalCase
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.trace import Trace
@@ -280,3 +282,274 @@ def touch_run_job_lease(
             (owner, lease_expires_at, lease_expires_at, job_id, workspace_id),
         )
         return bool(cur.rowcount > 0)
+
+
+# -- scenario jobs: atomic claim / plan / barrier ---------------------------
+#
+# These bypass the per-workspace get/put contract on purpose. The claim is a
+# `SELECT ... FOR UPDATE SKIP LOCKED` + `UPDATE` that MUST run in one explicit
+# transaction (the storage's `transaction()` ctx manager wraps it). put_entity's
+# version-CAS takes no row lock, so it cannot give us claim atomicity; the row
+# lock + SKIP LOCKED is what lets N workers drain a frontier without ever
+# double-claiming a row.
+
+
+def claim_scenario_jobs(
+    conn: Any,
+    *,
+    run_job_id: str,
+    iteration: int,
+    worker_id: str,
+    lease_until: datetime,
+    batch: int,
+) -> list[Any]:
+    """Atomically claim up to ``batch`` pending scenario jobs for one iteration.
+
+    Caller MUST hold an open transaction (see ``PostgresStorage.claim_scenario_jobs``).
+    Locks the pending frontier with ``FOR UPDATE SKIP LOCKED`` so concurrent
+    workers take disjoint rows, flips them to ``claimed``, bumps ``attempt``, and
+    returns the rebuilt entities. Empty list when nothing is claimable.
+    """
+    # The mapper owns the column tuple + row rebuild; import them to keep one source.
+    from selfevals.storage.postgres.mappers.scenario_job import (
+        _SCENARIO_COLUMNS,
+        _row_to_scenario_job,
+    )
+
+    cols = ", ".join(_SCENARIO_COLUMNS)
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            UPDATE scenario_jobs SET
+                status = 'claimed',
+                worker_id = %s,
+                lease_until = %s,
+                attempt = attempt + 1,
+                updated_at = %s
+            WHERE id IN (
+                SELECT id FROM scenario_jobs
+                WHERE run_job_id = %s AND iteration = %s AND status = 'pending'
+                ORDER BY id
+                FOR UPDATE SKIP LOCKED
+                LIMIT %s
+            )
+            RETURNING {cols}
+            """,
+            (worker_id, lease_until, lease_until, run_job_id, iteration, batch),
+        )
+        return [_row_to_scenario_job(tuple(row)) for row in cur.fetchall()]
+
+
+def insert_scenario_jobs(conn: Any, jobs: list[Any]) -> int:
+    """Batch-insert scenario jobs, idempotent on ``(run_job_id, iteration, case_id)``.
+
+    Re-planning the same iteration (e.g. a coordinator restarted by the sweeper)
+    must not duplicate work, so a conflict on the UNIQUE tuple is a no-op. Returns
+    how many rows were newly inserted.
+    """
+    if not jobs:
+        return 0
+    from selfevals.storage.postgres.mappers.base import shared_values
+    from selfevals.storage.postgres.mappers.scenario_job import _SCENARIO_COLUMNS
+
+    cols = ", ".join(_SCENARIO_COLUMNS)
+    placeholders = "(" + ", ".join(["%s"] * len(_SCENARIO_COLUMNS)) + ")"
+    rows: list[Any] = []
+    params: list[Any] = []
+    for e in jobs:
+        params.extend(
+            [
+                *shared_values(e),
+                e.run_job_id,
+                e.experiment_id,
+                e.iteration,
+                e.case_id,
+                e.reps,
+                e.status.value,
+                e.attempt,
+                e.max_attempts,
+                e.lease_until,
+                e.worker_id,
+                e.error,
+                Jsonb(e.parameter_overrides),
+                e.started_at,
+                e.finished_at,
+            ]
+        )
+        rows.append(placeholders)
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            INSERT INTO scenario_jobs ({cols})
+            VALUES {", ".join(rows)}
+            ON CONFLICT (run_job_id, iteration, case_id) DO NOTHING
+            """,
+            params,
+        )
+        return int(cur.rowcount)
+
+
+def barrier_counts(conn: Any, *, run_job_id: str, iteration: int) -> dict[str, int]:
+    """Count scenario jobs by status for one iteration (the coordinator barrier).
+
+    Rides ``idx_scenario_jobs_barrier``. The coordinator polls this until
+    ``pending + claimed + running == 0`` — i.e. every case reached a terminal
+    state — before aggregating the iteration.
+    """
+    rows = _fetchall(
+        conn,
+        """
+        SELECT status, COUNT(1)::int FROM scenario_jobs
+        WHERE run_job_id = %s AND iteration = %s
+        GROUP BY status
+        """,
+        [run_job_id, iteration],
+    )
+    return {str(status): int(count) for status, count in rows}
+
+
+def finalize_scenario_job(
+    conn: Any,
+    *,
+    job_id: str,
+    status: str,
+    error: str | None,
+    finished_at: datetime,
+) -> None:
+    """Write a scenario job's terminal (or retry) state via direct SQL.
+
+    Like the run-job heartbeat, this skips put_entity's version-CAS: the worker's
+    in-memory copy is stale by design and a CAS would spuriously conflict. The
+    status is computed by ``ScenarioJob.mark_*`` on the worker's copy; here we
+    only persist the columns.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE scenario_jobs
+            SET status = %s, error = %s, worker_id = NULL, lease_until = NULL,
+                finished_at = CASE WHEN %s = 'pending' THEN finished_at ELSE %s END,
+                updated_at = %s
+            WHERE id = %s
+            """,
+            (status, error, status, finished_at, finished_at, job_id),
+        )
+
+
+def touch_scenario_job_lease(
+    conn: Any, *, job_id: str, worker_id: str, lease_until: datetime
+) -> bool:
+    """Heartbeat a claimed/running scenario job's lease (direct, unversioned)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE scenario_jobs
+            SET lease_until = %s, worker_id = %s, updated_at = %s
+            WHERE id = %s AND status IN ('claimed', 'running')
+            """,
+            (lease_until, worker_id, lease_until, job_id),
+        )
+        return bool(cur.rowcount > 0)
+
+
+def expired_scenario_job_leases(
+    conn: Any, *, now: datetime, limit: int = 100
+) -> list[tuple[str, str]]:
+    """Cross-run ``(workspace_id, scenario_job_id)`` whose worker died mid-case."""
+    return [
+        (str(ws_id), str(sid))
+        for ws_id, sid in _fetchall(
+            conn,
+            """
+            SELECT workspace_id, id FROM scenario_jobs
+            WHERE status IN ('claimed', 'running')
+              AND lease_until IS NOT NULL
+              AND lease_until < %s
+            ORDER BY lease_until ASC
+            LIMIT %s
+            """,
+            [now, limit],
+        )
+    ]
+
+
+# -- scenario outcomes: the relational form of a CaseOutcome ----------------
+
+_OUTCOME_FIELD_COLUMNS: tuple[str, ...] = (
+    "case_id",
+    "labels",
+    "scores",
+    "per_grader_labels",
+    "failure_modes",
+    "breakdowns",
+    "failure_weights",
+    "critical_failure_modes",
+    "cost_usd",
+    "duration_ms",
+    "llm_call_count",
+    "cache_hit_count",
+)
+_OUTCOME_JSONB = frozenset(
+    {"labels", "scores", "per_grader_labels", "failure_modes", "breakdowns",
+     "failure_weights", "critical_failure_modes"}
+)
+
+
+def write_scenario_outcome(
+    conn: Any,
+    *,
+    outcome_id: str,
+    workspace_id: str,
+    run_job_id: str,
+    scenario_job_id: str,
+    experiment_id: str,
+    iteration: int,
+    fields: dict[str, Any],
+    now: datetime,
+) -> None:
+    """Upsert one scenario_outcomes row from a flattened CaseOutcome.
+
+    Idempotent on (run_job_id, iteration, case_id) so a re-run of the same
+    scenario job overwrites rather than duplicates. JSONB columns are wrapped;
+    scalars pass through.
+    """
+    cols = ["id", "workspace_id", "version", "created_at", "updated_at",
+            "run_job_id", "scenario_job_id", "experiment_id", "iteration",
+            *_OUTCOME_FIELD_COLUMNS]
+    values: list[Any] = [
+        outcome_id, workspace_id, 1, now, now,
+        run_job_id, scenario_job_id, experiment_id, iteration,
+    ]
+    for col in _OUTCOME_FIELD_COLUMNS:
+        v = fields[col]
+        values.append(Jsonb(v) if col in _OUTCOME_JSONB else v)
+    placeholders = ", ".join(["%s"] * len(cols))
+    updates = ", ".join(
+        f"{c} = EXCLUDED.{c}" for c in cols if c not in ("id", "created_at")
+    )
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            INSERT INTO scenario_outcomes ({", ".join(cols)})
+            VALUES ({placeholders})
+            ON CONFLICT (run_job_id, iteration, case_id) DO UPDATE SET {updates}
+            """,
+            values,
+        )
+
+
+def scenario_outcomes_for_iteration(
+    conn: Any, *, run_job_id: str, iteration: int
+) -> list[dict[str, Any]]:
+    """Read the persisted CaseOutcome fields for one iteration, in case order."""
+    cols = ", ".join(_OUTCOME_FIELD_COLUMNS)
+    rows = _fetchall(
+        conn,
+        f"""
+        SELECT {cols} FROM scenario_outcomes
+        WHERE run_job_id = %s AND iteration = %s
+        ORDER BY case_id ASC
+        """,
+        [run_job_id, iteration],
+    )
+    return [dict(zip(_OUTCOME_FIELD_COLUMNS, row, strict=True)) for row in rows]

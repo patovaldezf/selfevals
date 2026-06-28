@@ -105,3 +105,39 @@ def _close_event_loop(request: pytest.FixtureRequest) -> Iterator[None]:
         return
     loop.close()
     gc.collect()
+
+
+@pytest.fixture
+def synchronous_run_queue(monkeypatch: pytest.MonkeyPatch, db_url: str) -> None:
+    """Make `selfevals run` (and the API launch) execute the run synchronously.
+
+    Production shards: `run` enqueues a coordinator run-job and a worker drains
+    it. A test has no Redis/worker, so this fixture swaps the queue for one whose
+    `enqueue` runs the job inline through the real `execute_run_job` — the same
+    sharded coordinator + self-drain path, just synchronous and in-process. So a
+    CLI/API test exercises the genuine sharded pipeline end to end and returns a
+    finished run, without standing up infrastructure.
+    """
+    from selfevals.api import run_launcher
+    from selfevals.schemas.job import RunJob
+
+    class _InlineQueue:
+        def enqueue(self, job: RunJob) -> None:
+            run_launcher.execute_run_job(
+                storage_url=db_url,
+                workspace_id=job.workspace_id,
+                job_id=job.id,
+                owner="test-inline",
+            )
+
+        def requeue(self, job: RunJob) -> None:
+            self.enqueue(job)
+
+        def active_consumers(self) -> int:
+            return 1
+
+    queue = _InlineQueue()
+    # cmd_run imports configured_run_queue locally and the launcher imports it at
+    # module load, so patch both the source and the launcher's bound reference.
+    monkeypatch.setattr("selfevals.api.run_queue.configured_run_queue", lambda: queue)
+    monkeypatch.setattr("selfevals.api.run_launcher.configured_run_queue", lambda: queue)

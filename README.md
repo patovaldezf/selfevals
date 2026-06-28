@@ -75,16 +75,20 @@ Optional extras:
 pip install 'selfevals[redis]'   # live events + run-job queue
 ```
 
-Storage is **Postgres-only** (`psycopg` ships in the core dependencies). Bring up
-the local Postgres + Redis runtime profile and point the tools at it:
+Storage is **Postgres-only** and execution is **sharded**: every run is enqueued
+as a coordinator job and a worker drains its per-case scenario jobs. So `run`
+needs Postgres + Redis + at least one worker. `docker compose up -d` brings up
+all three (Postgres, Redis, and a `worker`):
 
 ```bash
-docker compose up -d postgres redis
-cp .env.example .env            # local defaults: PG :5433, Redis :6380
+docker compose up -d           # Postgres :5433, Redis :6380, + a worker
+cp .env.example .env            # local defaults point the CLI at those ports
 set -a && source .env && set +a
-selfevals serve --no-web
-selfevals worker runs
+selfevals serve --no-web        # optional: the API + dashboard
 ```
+
+Scale workers with `docker compose up -d --scale worker=N`; the `FOR UPDATE SKIP
+LOCKED` claim splits each iteration's cases across them with no double-runs.
 
 `SELFEVALS_STORAGE_URL` (required) points at the Postgres container. `SELFEVALS_REDIS_URL`
 points at the local Redis container on `localhost:6380`. Migrating from a legacy
@@ -104,7 +108,7 @@ No API key. No model call. Runs the bundled pingpong eval.
 ```bash
 pip install selfevals
 selfevals examples copy pingpong
-selfevals run evals/experiments/example_pingpong.yaml --no-persist --max-iterations 2
+selfevals run evals/experiments/example_pingpong.yaml --max-iterations 2
 ```
 
 Expected shape:
@@ -126,7 +130,7 @@ kitchen-sink example — also offline, no key:
 
 ```bash
 selfevals examples copy showcase
-selfevals run evals/experiments/example_showcase.yaml --no-persist
+selfevals run evals/experiments/example_showcase.yaml
 ```
 
 To persist runs and inspect them later:
@@ -304,7 +308,7 @@ JSON output is stable and documented in
 [docs/json_report_schema.md](docs/json_report_schema.md).
 
 ```bash
-selfevals run evals/experiments/my_eval.yaml --format json --no-persist
+selfevals run evals/experiments/my_eval.yaml --format json
 ```
 
 ## API And Dashboard
@@ -404,7 +408,7 @@ Package smoke:
 
 ```bash
 uv run selfevals --version
-uv run selfevals run src/selfevals/examples/evals/experiments/example_pingpong.yaml --no-persist --max-iterations 2
+uv run selfevals run src/selfevals/examples/evals/experiments/example_pingpong.yaml --max-iterations 2
 ```
 
 ## Status
