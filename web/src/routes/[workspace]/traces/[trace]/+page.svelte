@@ -2,6 +2,10 @@
   import CopyableId from '$lib/components/CopyableId.svelte';
   import PointerField from '$lib/components/PointerField.svelte';
   import SpanTreeFlat from '$lib/components/SpanTreeFlat.svelte';
+  import Badge from '$lib/components/ui/Badge.svelte';
+  import StatusDot from '$lib/components/ui/StatusDot.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
+  import Icon from '$lib/components/ui/Icon.svelte';
   import { api, ApiError } from '$lib/api/client';
   import { factsFor } from '$lib/spans/facts';
   import { styleForKind } from '$lib/spans/kindStyle';
@@ -15,6 +19,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { page } from '$app/stores';
   import type { PageData } from './$types';
+  import { ArrowRight, AlertCircle, FlaskConical, X } from 'lucide-svelte';
 
   export let data: PageData;
 
@@ -103,6 +108,15 @@
     ];
   }
 
+  // Is a span a failure? Mirrors the tree's logic so the detail pane can flag it.
+  function spanError(s: SpanSummary): string | null {
+    if (typeof s.detail.error === 'string') return s.detail.error;
+    const fs = s.detail.final_state as { status?: string; error?: string } | undefined;
+    if (fs?.error) return fs.error;
+    if (s.kind === 'error') return (s.detail.message as string | undefined) ?? 'error';
+    return null;
+  }
+
   $: tree = (() => {
     const byParent = new Map<string | null, SpanSummary[]>();
     for (const s of spans) {
@@ -115,6 +129,9 @@
     }
     return byParent;
   })();
+
+  // The trace as a whole failed if the run ended in a non-completed state.
+  $: traceFailed = ['error', 'failed', 'aborted', 'cancelled'].includes(finalState?.toLowerCase());
 
   onMount(() => {
     const workspaceId = $page.params.workspace;
@@ -221,145 +238,146 @@
   <title>{traceTitle} · selfevals</title>
 </svelte:head>
 
-<div class="grid grid-cols-[420px_1fr] min-h-screen">
-  <aside class="border-r border-border bg-surface px-5 py-7 overflow-y-auto">
-    <div class="text-xs text-text-3 uppercase tracking-wide mb-1">Trace</div>
+<div class="viewer">
+  <aside class="sidebar">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href={`/${$page.params.workspace}`}>workspace</a>
+      <span aria-hidden="true">/</span>
+      <span>trace</span>
+    </nav>
+
     {#if data.trace.experiment_name && data.trace.experiment_id}
-      <h1 class="text-lg font-semibold tracking-tight mb-1">
-        <a
-          href={`/${$page.params.workspace}/experiments/${data.trace.experiment_id}`}
-          class="hover:text-text-1"
-        >
+      <h1 class="title">
+        <a href={`/${$page.params.workspace}/experiments/${data.trace.experiment_id}`}>
           {data.trace.experiment_name}
         </a>
       </h1>
       {#if data.trace.iteration !== null}
-        <div class="text-text-3 text-xs mb-4">Iteration #{data.trace.iteration}</div>
-      {:else}
-        <div class="mb-4"></div>
+        <div class="subtitle">Iteration #{data.trace.iteration}</div>
       {/if}
     {:else}
-      <h1 class="text-lg font-semibold tracking-tight mb-4">{traceTitle}</h1>
+      <h1 class="title">{traceTitle}</h1>
     {/if}
-    <dl class="space-y-2 text-xs mb-6">
-      <div class="flex justify-between items-center">
-        <dt class="text-text-3">final state</dt>
-        <dd class="font-mono flex items-center gap-2">
-          {#if live}
-            <span
-              class="inline-block h-1.5 w-1.5 rounded-full bg-success animate-pulse"
-              aria-label="live"
-            ></span>
-            <span class="text-success">live</span>
-          {:else}
-            {finalState}
-          {/if}
-        </dd>
-      </div>
-      {#if data.trace.iteration !== null}
-        <div class="flex justify-between">
-          <dt class="text-text-3">iteration</dt>
-          <dd class="font-mono" data-numeric>#{data.trace.iteration}</dd>
-        </div>
+
+    <div class="state-row">
+      {#if live}
+        <span class="state-pill">
+          <StatusDot state="running" />
+          <span class="state-label">live</span>
+        </span>
+      {:else}
+        <span class="state-pill">
+          <StatusDot state={finalState} />
+          <span class="state-label">{finalState}</span>
+        </span>
       {/if}
+      <span class="spans-count" data-numeric>{spans.length} spans</span>
+    </div>
+
+    <dl class="meta">
       {#if data.trace.thread_id}
-        <div class="flex justify-between items-start gap-2">
-          <dt class="text-text-3 pt-0.5">thread</dt>
-          <dd class="flex flex-col items-end gap-1 min-w-0">
+        <div class="meta-row meta-row-col">
+          <dt>thread</dt>
+          <dd>
             <a
+              class="thread-link"
               href={`/${$page.params.workspace}/threads/${data.trace.thread_id}`}
-              class="group inline-flex items-center gap-1.5 text-text-2 hover:text-text-1 transition-colors"
             >
               <span>View conversation</span>
-              <span class="text-text-3 group-hover:text-text-1 shrink-0" aria-hidden="true">→</span>
+              <Icon icon={ArrowRight} size={13} />
             </a>
             <CopyableId id={data.trace.thread_id} label="thread id" />
             {#if data.trace.thread_position !== null}
-              <span class="font-mono text-text-3" data-numeric
-                >turn {data.trace.thread_position}</span
-              >
+              <span class="turn" data-numeric>turn {data.trace.thread_position}</span>
             {/if}
           </dd>
         </div>
       {/if}
-      <div class="flex justify-between">
-        <dt class="text-text-3">spans</dt>
-        <dd class="font-mono" data-numeric>{spans.length}</dd>
-      </div>
-      <div class="flex justify-between items-center gap-2">
-        <dt class="text-text-3">run id</dt>
-        <dd class="min-w-0"><CopyableId id={data.trace.run_id} label="run id" /></dd>
+      <div class="meta-row">
+        <dt>run id</dt>
+        <dd><CopyableId id={data.trace.run_id} label="run id" /></dd>
       </div>
       {#if data.trace.experiment_id}
-        <div class="flex justify-between items-center gap-2">
-          <dt class="text-text-3">experiment id</dt>
-          <dd class="min-w-0">
-            <CopyableId id={data.trace.experiment_id} label="experiment id" />
-          </dd>
+        <div class="meta-row">
+          <dt>experiment id</dt>
+          <dd><CopyableId id={data.trace.experiment_id} label="experiment id" /></dd>
         </div>
       {/if}
     </dl>
 
-    <button
-      type="button"
-      class="w-full rounded-md border border-border bg-surface-2 px-3 py-2.5 text-sm text-text-1 hover:bg-bg transition-colors mb-6"
-      on:click={openPromote}
-    >
-      Promote to regression case
-    </button>
+    <div class="promote-cta">
+      <Button variant="brand" size="sm" on:click={openPromote}>
+        <Icon icon={FlaskConical} size={14} />
+        Promote to regression case
+      </Button>
+      <p class="promote-hint">Turn this run into permanent test coverage.</p>
+    </div>
 
-    <div
-      class="text-xs uppercase tracking-wide text-text-3 mb-2 flex items-baseline justify-between"
-    >
+    <div class="tree-head">
       <span>Spans</span>
-      <span class="text-text-3 font-mono normal-case" data-numeric>{spans.length}</span>
+      <span class="tree-hint">↑↓ / j k to move</span>
     </div>
     <SpanTreeFlat {tree} {selected} setSelected={(s) => (selected = s)} />
   </aside>
 
-  <main class="px-10 py-10 overflow-y-auto">
+  <main class="detail">
+    {#if traceFailed && !selected}
+      <!-- The trace failed: lead with that before the user picks a span. -->
+      <div class="trace-error">
+        <Icon icon={AlertCircle} size={16} />
+        <div>
+          <div class="trace-error-title">This run ended in <strong>{finalState}</strong></div>
+          <div class="trace-error-sub">Open the red spans in the tree to see where it broke.</div>
+        </div>
+      </div>
+    {/if}
+
     {#if selected}
       {@const selectedStyle = styleForKind(selected.kind)}
       {@const selectedFacts = factsFor(selected)}
-      <div class="flex items-center gap-2 text-xs text-text-3 mb-1">
-        <span
-          class="inline-block text-[14px] leading-none"
-          style:color={selectedStyle.color}
-          aria-hidden="true">{selectedStyle.glyph}</span
-        >
-        <span class="font-mono uppercase tracking-wide">{selectedStyle.label}</span>
+      {@const err = spanError(selected)}
+      <div class="detail-eyebrow">
+        <span class="detail-kind" style:color={selectedStyle.color}>
+          <Icon icon={selectedStyle.icon} size={14} strokeWidth={2} />
+          <span class="detail-kind-label">{selectedStyle.label}</span>
+        </span>
         <span aria-hidden="true">·</span>
-        <span class="font-mono" data-numeric>{selected.duration_ms}ms</span>
+        <span class="mono" data-numeric>{selected.duration_ms}ms</span>
         {#each selectedFacts as f (f.key)}
           <span aria-hidden="true">·</span>
-          <span class="font-mono" data-numeric title={f.title ?? f.key}>{f.value}</span>
+          <span class="mono" data-numeric title={f.title ?? f.key}>{f.value}</span>
         {/each}
       </div>
-      <h2 class="text-xl font-semibold mb-6">{selected.name}</h2>
+      <h2 class="detail-name">{selected.name}</h2>
+
+      {#if err}
+        <div class="span-error">
+          <Icon icon={AlertCircle} size={15} />
+          <span class="span-error-text">{err}</span>
+        </div>
+      {/if}
 
       {#if selected.kind === 'llm_call'}
-        <section class="grid grid-cols-3 gap-4 mb-6">
+        <section class="facets">
           {#each llmFacets(selected) as item}
-            <div class="rounded-lg border border-border bg-surface px-4 py-3">
-              <div class="text-xs uppercase tracking-wide text-text-3 mb-1">{item.label}</div>
-              <div class="font-mono text-sm truncate">{item.value ?? '—'}</div>
+            <div class="facet">
+              <div class="facet-label">{item.label}</div>
+              <div class="facet-value mono">{item.value ?? '—'}</div>
             </div>
           {/each}
         </section>
       {/if}
 
       {#if pointerFields.length > 0}
-        <section class="mb-6 rounded-lg border border-border bg-surface px-5 py-4">
-          <div
-            class="text-xs uppercase tracking-wide text-text-3 mb-3 flex items-baseline justify-between"
-          >
+        <section class="payloads">
+          <div class="payloads-head">
             <span>Payloads</span>
             {#if !hasAnyPointer}
-              <span class="text-text-3 normal-case italic">none captured for this span</span>
+              <span class="payloads-none">none captured for this span</span>
             {/if}
           </div>
           {#if hasAnyPointer}
-            <div class="space-y-4">
+            <div class="payloads-list">
               {#each pointerFields as f (f.field)}
                 {#if f.pointer}
                   <PointerField label={f.label} pointer={f.pointer} hash={f.hash} />
@@ -370,153 +388,580 @@
         </section>
       {/if}
 
-      <details class="group">
-        <summary
-          class="text-xs uppercase tracking-wide text-text-3 cursor-pointer hover:text-text-1 mb-2 list-none flex items-center gap-1.5"
-        >
-          <span class="group-open:rotate-90 transition-transform" aria-hidden="true">›</span>
+      <details class="raw">
+        <summary>
+          <Icon icon={ArrowRight} size={12} />
           Raw detail
         </summary>
-        <pre
-          class="font-mono text-xs bg-surface border border-border rounded-lg p-5 overflow-x-auto">{JSON.stringify(
-            selected.detail,
-            null,
-            2
-          )}</pre>
+        <pre class="raw-pre">{JSON.stringify(selected.detail, null, 2)}</pre>
       </details>
-    {:else}
-      <div class="text-text-3 text-sm">Select a span to inspect.</div>
+    {:else if !traceFailed}
+      <div class="empty">Select a span to inspect.</div>
     {/if}
   </main>
 </div>
 
 {#if promoteOpen}
-  <div class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6 py-8">
-    <section
-      class="w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-lg border border-border bg-bg shadow-xl"
-    >
-      <div class="flex items-center justify-between gap-4 border-b border-border px-5 py-4">
+  <div class="scrim" on:click={() => (promoteOpen = false)} aria-hidden="true"></div>
+  <div class="promote-positioner">
+    <div class="promote" role="dialog" aria-modal="true" aria-label="Promote to regression case">
+      <div class="promote-bar">
         <div>
-          <div class="text-xs uppercase tracking-wide text-text-3">Regression case</div>
-          <h2 class="text-lg font-semibold">Promote this trace</h2>
+          <div class="promote-eyebrow">Regression case</div>
+          <h2 class="promote-title">Promote this trace</h2>
         </div>
-        <button
-          type="button"
-          class="text-text-3 hover:text-text-1 text-sm"
-          on:click={() => (promoteOpen = false)}
-        >
-          Close
+        <button type="button" class="promote-close" on:click={() => (promoteOpen = false)}>
+          <Icon icon={X} size={16} />
         </button>
       </div>
 
-      <div class="grid grid-cols-[1fr_320px] min-h-0 max-h-[calc(90vh-73px)]">
-        <div class="p-5 overflow-y-auto">
+      <div class="promote-body">
+        <div class="promote-editor">
           {#if promoteLoading}
-            <div class="text-text-3 text-sm py-20 text-center">Building case draft...</div>
+            <div class="promote-loading">Building case draft…</div>
           {:else}
-            <label class="block">
-              <span class="text-xs uppercase tracking-wide text-text-3">Editable EvalCase JSON</span
-              >
-              <textarea
-                class="mt-2 h-[58vh] w-full resize-none rounded border border-border bg-surface p-4 font-mono text-xs text-text-1 outline-none focus:ring-2 focus:ring-text-1"
-                bind:value={promoteDraftText}
-                spellcheck="false"
-              ></textarea>
+            <label class="promote-field">
+              <span class="promote-field-label">Editable EvalCase JSON</span>
+              <textarea bind:value={promoteDraftText} spellcheck="false"></textarea>
             </label>
           {/if}
         </div>
 
-        <aside class="border-l border-border bg-surface px-5 py-5 overflow-y-auto">
-          <div class="space-y-5">
-            <div>
-              <label class="text-xs uppercase tracking-wide text-text-3" for="dataset-target">
-                Target dataset
-              </label>
-              <select
-                id="dataset-target"
-                class="mt-2 w-full rounded border border-border bg-bg px-2 py-2 text-sm"
-                bind:value={selectedDatasetId}
-                disabled={promoteLoading || promoteSaving}
-              >
-                <option value="__new">Create new regression dataset</option>
-                {#each regressionDatasets as ds}
-                  <option value={ds.id}>
-                    {ds.name} · {ds.status} · {ds.case_count} cases
-                  </option>
-                {/each}
-              </select>
-            </div>
-
-            {#if selectedDatasetId === '__new'}
-              <label class="block">
-                <span class="text-xs uppercase tracking-wide text-text-3">New dataset name</span>
-                <input
-                  class="mt-2 w-full rounded border border-border bg-bg px-3 py-2 text-sm"
-                  bind:value={newDatasetName}
-                  disabled={promoteSaving}
-                />
-              </label>
-            {/if}
-
-            <div class="rounded border border-border bg-bg px-3 py-3 text-xs text-text-2">
-              The draft keeps the original expected answer. Review it before saving; this becomes
-              regression coverage.
-            </div>
-
-            {#if promoteError}
-              <div
-                class="rounded border px-3 py-3 text-xs"
-                style:border-color="var(--color-danger)"
-                style:color="var(--color-danger)"
-              >
-                {promoteError}
-              </div>
-            {/if}
-
-            <button
-              type="button"
-              class="w-full rounded bg-text-1 px-3 py-2.5 text-sm font-medium text-bg disabled:opacity-50"
+        <aside class="promote-side">
+          <div class="promote-field">
+            <label class="promote-field-label" for="dataset-target">Target dataset</label>
+            <select
+              id="dataset-target"
+              bind:value={selectedDatasetId}
               disabled={promoteLoading || promoteSaving}
-              on:click={savePromotion}
             >
-              {promoteSaving ? 'Saving...' : 'Save regression case'}
-            </button>
-
-            {#if promoteResult}
-              <div class="space-y-3 border-t border-border pt-4">
-                <div class="text-sm font-medium">Saved</div>
-                <div class="space-y-1 text-xs">
-                  <div class="flex justify-between gap-2">
-                    <span class="text-text-3">dataset</span>
-                    <CopyableId id={promoteResult.dataset.id} label="dataset id" />
-                  </div>
-                  <div class="flex justify-between gap-2">
-                    <span class="text-text-3">case</span>
-                    <CopyableId id={promoteResult.case_id} label="case id" />
-                  </div>
-                  {#if promoteResult.created_new_dataset}
-                    <div class="text-text-3">Created a new active dataset.</div>
-                  {/if}
-                </div>
-                {#if runCommand}
-                  <div>
-                    <div class="text-xs uppercase tracking-wide text-text-3 mb-1">Run</div>
-                    <pre
-                      class="whitespace-pre-wrap break-words rounded bg-bg border border-border p-2 font-mono text-[11px]">{runCommand}</pre>
-                  </div>
-                {/if}
-                {#if gateCommand}
-                  <div>
-                    <div class="text-xs uppercase tracking-wide text-text-3 mb-1">Gate</div>
-                    <pre
-                      class="whitespace-pre-wrap break-words rounded bg-bg border border-border p-2 font-mono text-[11px]">{gateCommand}</pre>
-                  </div>
-                {/if}
-              </div>
-            {/if}
+              <option value="__new">Create new regression dataset</option>
+              {#each regressionDatasets as ds}
+                <option value={ds.id}>{ds.name} · {ds.status} · {ds.case_count} cases</option>
+              {/each}
+            </select>
           </div>
+
+          {#if selectedDatasetId === '__new'}
+            <label class="promote-field">
+              <span class="promote-field-label">New dataset name</span>
+              <input bind:value={newDatasetName} disabled={promoteSaving} />
+            </label>
+          {/if}
+
+          <div class="promote-note">
+            The draft keeps the original expected answer. Review it before saving; this becomes
+            regression coverage.
+          </div>
+
+          {#if promoteError}
+            <div class="promote-err">{promoteError}</div>
+          {/if}
+
+          <Button
+            variant="brand"
+            on:click={savePromotion}
+            disabled={promoteLoading || promoteSaving}
+            loading={promoteSaving}
+          >
+            {promoteSaving ? 'Saving…' : 'Save regression case'}
+          </Button>
+
+          {#if promoteResult}
+            <div class="promote-saved">
+              <div class="promote-saved-title">Saved</div>
+              <div class="promote-saved-row">
+                <span>dataset</span>
+                <CopyableId id={promoteResult.dataset.id} label="dataset id" />
+              </div>
+              <div class="promote-saved-row">
+                <span>case</span>
+                <CopyableId id={promoteResult.case_id} label="case id" />
+              </div>
+              {#if promoteResult.created_new_dataset}
+                <div class="promote-saved-note">Created a new active dataset.</div>
+              {/if}
+              {#if runCommand}
+                <div class="promote-cmd">
+                  <div class="promote-cmd-label">Run</div>
+                  <pre>{runCommand}</pre>
+                </div>
+              {/if}
+              {#if gateCommand}
+                <div class="promote-cmd">
+                  <div class="promote-cmd-label">Gate</div>
+                  <pre>{gateCommand}</pre>
+                </div>
+              {/if}
+            </div>
+          {/if}
         </aside>
       </div>
-    </section>
+    </div>
   </div>
 {/if}
+
+<style>
+  .viewer {
+    display: grid;
+    grid-template-columns: 440px 1fr;
+    min-height: 100vh;
+  }
+  .sidebar {
+    border-right: 1px solid var(--color-border);
+    background: var(--color-surface);
+    padding: 1.5rem 1.25rem;
+    overflow-y: auto;
+  }
+  .crumbs {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+    margin-bottom: 0.75rem;
+  }
+  .crumbs a:hover {
+    color: var(--color-text-1);
+  }
+  .title {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: var(--leading-snug);
+  }
+  .title a:hover {
+    color: var(--color-text-2);
+  }
+  .subtitle {
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+    margin-top: 0.2rem;
+  }
+  .state-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0.9rem 0 1.1rem;
+  }
+  .state-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.25rem 0.6rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
+  }
+  .state-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-2);
+    text-transform: capitalize;
+  }
+  .spans-count {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+  }
+  .meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    margin-bottom: 1.25rem;
+  }
+  .meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .meta-row-col {
+    align-items: flex-start;
+  }
+  .meta-row dt {
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+  }
+  .meta-row-col dd {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.35rem;
+    min-width: 0;
+  }
+  .thread-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--color-text-2);
+    font-size: var(--text-xs);
+    transition: color var(--dur-fast) var(--ease-out);
+  }
+  .thread-link:hover {
+    color: var(--color-text-1);
+  }
+  .turn {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--color-text-3);
+  }
+  .promote-cta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 0.9rem 0;
+    margin-bottom: 0.5rem;
+    border-top: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .promote-hint {
+    font-size: var(--text-2xs);
+    color: var(--color-text-3);
+  }
+  .tree-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin: 1rem 0 0.5rem;
+  }
+  .tree-head > span:first-child {
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-3);
+  }
+  .tree-hint {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--color-text-3);
+  }
+  .detail {
+    padding: 2.5rem;
+    overflow-y: auto;
+  }
+  .trace-error {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.9rem 1.1rem;
+    border: 1px solid color-mix(in srgb, var(--color-bad) 30%, var(--color-border));
+    border-radius: var(--radius-lg);
+    background: var(--color-bad-subtle);
+    color: var(--color-bad);
+    margin-bottom: 1.5rem;
+  }
+  .trace-error-title {
+    font-size: var(--text-sm);
+    color: var(--color-text-1);
+  }
+  .trace-error-sub {
+    font-size: var(--text-xs);
+    color: var(--color-text-2);
+    margin-top: 0.15rem;
+  }
+  .detail-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+    margin-bottom: 0.4rem;
+  }
+  .detail-kind {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .detail-kind-label {
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .detail-name {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+    word-break: break-word;
+  }
+  .span-error {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid color-mix(in srgb, var(--color-bad) 30%, var(--color-border));
+    border-radius: var(--radius-md);
+    background: var(--color-bad-subtle);
+    color: var(--color-bad);
+    margin-bottom: 1.5rem;
+  }
+  .span-error-text {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    word-break: break-word;
+  }
+  .facets {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .facet {
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    padding: 0.75rem 1rem;
+  }
+  .facet-label {
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-3);
+    margin-bottom: 0.25rem;
+  }
+  .facet-value {
+    font-size: var(--text-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .payloads {
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.2rem;
+    margin-bottom: 1.5rem;
+  }
+  .payloads-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-3);
+    margin-bottom: 0.9rem;
+  }
+  .payloads-none {
+    text-transform: none;
+    font-style: italic;
+  }
+  .payloads-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+  }
+  .raw summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-3);
+    cursor: pointer;
+    list-style: none;
+    margin-bottom: 0.5rem;
+  }
+  .raw summary:hover {
+    color: var(--color-text-1);
+  }
+  .raw summary :global(svg) {
+    transition: transform var(--dur-fast) var(--ease-out);
+  }
+  .raw[open] summary :global(svg) {
+    transform: rotate(90deg);
+  }
+  .raw-pre {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+    overflow-x: auto;
+  }
+  .empty {
+    color: var(--color-text-3);
+    font-size: var(--text-sm);
+  }
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Promote modal */
+  .scrim {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 10, 10, 0.4);
+    z-index: 50;
+  }
+  .promote-positioner {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    pointer-events: none;
+  }
+  .promote {
+    pointer-events: auto;
+    width: 100%;
+    max-width: 64rem;
+    max-height: 90vh;
+    overflow: hidden;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-3);
+    display: flex;
+    flex-direction: column;
+  }
+  .promote-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border-bottom: 1px solid var(--color-border);
+    padding: 0.9rem 1.25rem;
+  }
+  .promote-eyebrow {
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-3);
+  }
+  .promote-title {
+    font-size: var(--text-md);
+    font-weight: 600;
+  }
+  .promote-close {
+    color: var(--color-text-3);
+    transition: color var(--dur-fast) var(--ease-out);
+  }
+  .promote-close:hover {
+    color: var(--color-text-1);
+  }
+  .promote-body {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    min-height: 0;
+    flex: 1;
+  }
+  .promote-editor {
+    padding: 1.25rem;
+    overflow-y: auto;
+  }
+  .promote-loading {
+    color: var(--color-text-3);
+    font-size: var(--text-sm);
+    text-align: center;
+    padding: 5rem 0;
+  }
+  .promote-field {
+    display: block;
+  }
+  .promote-field-label {
+    display: block;
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-3);
+    margin-bottom: 0.5rem;
+  }
+  .promote-editor textarea {
+    width: 100%;
+    height: 56vh;
+    resize: none;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    border-radius: var(--radius-md);
+    padding: 1rem;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-1);
+    outline: none;
+  }
+  .promote-editor textarea:focus {
+    box-shadow: 0 0 0 2px var(--color-brand-subtle);
+    border-color: var(--color-brand);
+  }
+  .promote-side {
+    border-left: 1px solid var(--color-border);
+    background: var(--color-surface);
+    padding: 1.25rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+  }
+  .promote-side select,
+  .promote-side input {
+    width: 100%;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    border-radius: var(--radius-md);
+    padding: 0.5rem;
+    font-size: var(--text-sm);
+    color: var(--color-text-1);
+  }
+  .promote-note {
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    border-radius: var(--radius-md);
+    padding: 0.7rem 0.8rem;
+    font-size: var(--text-xs);
+    color: var(--color-text-2);
+    line-height: var(--leading-snug);
+  }
+  .promote-err {
+    border: 1px solid var(--color-bad);
+    color: var(--color-bad);
+    border-radius: var(--radius-md);
+    padding: 0.7rem 0.8rem;
+    font-size: var(--text-xs);
+  }
+  .promote-saved {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    border-top: 1px solid var(--color-border);
+    padding-top: 1rem;
+  }
+  .promote-saved-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+  .promote-saved-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+  }
+  .promote-saved-note {
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+  }
+  .promote-cmd-label {
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-3);
+    margin-bottom: 0.25rem;
+  }
+  .promote-cmd pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+  }
+</style>
