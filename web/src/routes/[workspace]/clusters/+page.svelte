@@ -1,13 +1,17 @@
 <script lang="ts">
   /**
    * Failure clusters (§J.6): failing traces grouped by failure mode, ranked by
-   * frequency. v1 clusters by the stable taxonomy slug — each row links to the
-   * mode in the taxonomy and expands to example traces that drill straight into
-   * the trace viewer. Replaces the former mock placeholder.
+   * frequency. Triage-first layout — the most painful mode sits on top with the
+   * reddest bar, so a glance tells you where to dig. Each row expands to example
+   * traces that drill straight into the trace viewer.
    */
-  import EmptyState from '$lib/components/EmptyState.svelte';
   import type { LayoutData } from '../$types';
   import type { PageData } from './$types';
+  import Badge from '$lib/components/ui/Badge.svelte';
+  import Icon from '$lib/components/ui/Icon.svelte';
+  import EmptyState from '$lib/components/EmptyState.svelte';
+  import { levelColor, levelSubtle, type ThresholdLevel } from '$lib/viz/thresholds';
+  import { Layers, ChevronRight, ArrowRight } from 'lucide-svelte';
 
   export let data: PageData & LayoutData;
 
@@ -20,12 +24,20 @@
     open = { ...open, [slug]: !open[slug] };
   }
 
-  const STATUS_TONE: Record<string, string> = {
-    candidate: 'tone-candidate',
-    official: 'tone-official',
-    retired: 'tone-retired',
-    unknown: 'tone-unknown'
-  };
+  // Severity of a cluster by how often it bites. A failure mode hitting a large
+  // share of traces is a fire (red); a long tail is amber; rare is quiet. The
+  // bands are deliberately coarse — this is triage, not a precise gauge.
+  function severity(rate: number): ThresholdLevel {
+    if (rate >= 0.25) return 'bad';
+    if (rate >= 0.1) return 'warn';
+    return 'neutral';
+  }
+
+  // Map the taxonomy status to a Badge tone (Badge already knows the colours).
+  function statusTone(status: string): 'candidate' | 'official' | 'retired' | 'neutral' {
+    if (status === 'candidate' || status === 'official' || status === 'retired') return status;
+    return 'neutral';
+  }
 
   function pct(rate: number): string {
     return `${(rate * 100).toFixed(1)}%`;
@@ -36,66 +48,78 @@
   <title>Clusters · {data.workspace.name}</title>
 </svelte:head>
 
-<div class="px-12 py-10 max-w-5xl mx-auto">
-  <header class="mb-8">
-    <h1 class="text-2xl font-semibold tracking-tight">Failure clusters</h1>
-    <p class="text-text-2 mt-1.5 text-sm">
+<div class="page">
+  <header class="head">
+    <h1>Failure clusters</h1>
+    <p class="sub">
       Failing traces grouped by failure mode, ranked by how often they bite. Open a cluster to drill
       into the traces behind it.
     </p>
   </header>
 
   {#if !clusters.ok}
-    <div class="rounded-lg border border-border bg-surface px-6 py-8 text-center text-text-2">
-      Couldn't load clusters. {clusters.error}
-    </div>
+    <div class="card notice">Couldn't load clusters. {clusters.error}</div>
   {:else if clusters.value.items.length === 0}
     <EmptyState
+      icon="◇"
       title="No failures clustered yet"
       description="Once runs produce failing traces tagged with failure modes, they group here by mode. Run an experiment, then come back."
     />
   {:else}
-    <div class="mb-4 text-xs text-text-3 font-mono" data-numeric>
+    <div class="summary mono" data-numeric>
       {clusters.value.total} failing grades across {clusters.value.items.length} cluster{clusters
         .value.items.length === 1
         ? ''
         : 's'}
     </div>
 
-    <div class="space-y-2">
+    <div class="list">
       {#each clusters.value.items as c (c.failure_mode)}
-        <div class="cluster">
-          <button
-            class="row"
-            on:click={() => toggle(c.failure_mode)}
-            aria-expanded={open[c.failure_mode] ?? false}
-          >
-            <span class="caret" aria-hidden="true">{open[c.failure_mode] ? '▾' : '▸'}</span>
-            <span class="min-w-0 flex-1">
+        {@const lvl = severity(c.rate)}
+        {@const isOpen = open[c.failure_mode] ?? false}
+        <div class="cluster card">
+          <button class="row" on:click={() => toggle(c.failure_mode)} aria-expanded={isOpen}>
+            <span class="caret" class:open={isOpen} aria-hidden="true">
+              <Icon icon={ChevronRight} size={15} />
+            </span>
+            <span class="title-cell">
               <span class="name">{c.title ?? c.failure_mode}</span>
-              {#if c.title}<span class="slug font-mono">{c.failure_mode}</span>{/if}
+              {#if c.title}<span class="slug mono">{c.failure_mode}</span>{/if}
             </span>
-            <span class="status-pill {STATUS_TONE[c.status] ?? 'tone-unknown'}">{c.status}</span>
+            <Badge tone={statusTone(c.status)} size="sm">{c.status}</Badge>
             <span class="bar-wrap" aria-hidden="true">
-              <span class="bar" style="width: {Math.max(4, c.rate * 100)}%"></span>
+              <span
+                class="bar"
+                style="width: {Math.max(4, c.rate * 100)}%; background: {levelColor(lvl)};"
+              ></span>
             </span>
-            <span class="count font-mono" data-numeric>{c.count}</span>
-            <span class="rate font-mono text-text-3" data-numeric>{pct(c.rate)}</span>
+            <span class="count mono" data-numeric>{c.count}</span>
+            <span
+              class="rate mono"
+              data-numeric
+              style="color: {lvl === 'neutral' ? 'var(--color-text-3)' : levelColor(lvl)};"
+            >
+              {pct(c.rate)}
+            </span>
           </button>
 
-          {#if open[c.failure_mode]}
+          {#if isOpen}
             <div class="examples">
               {#if c.failure_mode_id}
-                <a class="taxo-link" href={`/${workspaceId}/failure-modes`}>View in taxonomy →</a>
+                <a class="taxo-link" href={`/${workspaceId}/failure-modes`}>
+                  View in taxonomy
+                  <Icon icon={ArrowRight} size={13} />
+                </a>
               {:else}
-                <span class="taxo-link text-text-3">Not in taxonomy yet (candidate)</span>
+                <span class="taxo-link dim">Not in taxonomy yet (candidate)</span>
               {/if}
               {#if c.examples.length}
                 <ul>
                   {#each c.examples as ex}
                     <li>
-                      <a class="trace-link font-mono" href={`/${workspaceId}/traces/${ex.run_id}`}>
-                        {ex.run_id} →
+                      <a class="trace-link mono" href={`/${workspaceId}/traces/${ex.run_id}`}>
+                        {ex.run_id}
+                        <Icon icon={ArrowRight} size={12} />
                       </a>
                     </li>
                   {/each}
@@ -115,10 +139,47 @@
 </div>
 
 <style>
-  .cluster {
+  .page {
+    padding: 2.5rem 3rem;
+    max-width: 64rem;
+    margin: 0 auto;
+  }
+  .head {
+    margin-bottom: 1.5rem;
+  }
+  h1 {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .sub {
+    color: var(--color-text-2);
+    margin-top: 0.4rem;
+    font-size: var(--text-sm);
+    max-width: 42rem;
+  }
+  .card {
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
     background: var(--color-surface);
+    border-radius: var(--radius-lg);
+  }
+  .notice {
+    padding: 2rem 1.5rem;
+    text-align: center;
+    color: var(--color-text-2);
+    font-size: var(--text-sm);
+  }
+  .summary {
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+    margin-bottom: 0.9rem;
+  }
+  .list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .cluster {
     overflow: hidden;
   }
   .row {
@@ -128,46 +189,40 @@
     width: 100%;
     padding: 0.7rem 0.9rem;
     text-align: left;
-    transition: background 0.12s ease;
+    transition: background-color var(--dur-fast) var(--ease-out);
   }
   .row:hover {
     background: var(--color-surface-2);
   }
   .caret {
+    display: inline-flex;
     color: var(--color-text-3);
-    font-size: 0.7rem;
-    width: 0.8rem;
+    transition: transform var(--dur-base) var(--ease-out);
+  }
+  .caret.open {
+    transform: rotate(90deg);
+  }
+  .title-cell {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
   }
   .name {
     font-weight: 500;
-    font-size: 0.875rem;
+    font-size: var(--text-sm);
+    color: var(--color-text-1);
   }
   .slug {
-    margin-left: 0.5rem;
-    font-size: 0.7rem;
+    font-size: var(--text-2xs);
     color: var(--color-text-3);
   }
-  .status-pill {
-    flex-shrink: 0;
-    display: inline-block;
-    padding: 0.1rem 0.5rem;
-    border-radius: var(--radius-sm);
-    font-size: 11px;
-    font-weight: 500;
-    text-transform: capitalize;
-    background: var(--color-surface-2);
-    color: var(--color-text-2);
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
   }
-  .tone-candidate {
-    color: var(--color-warning);
-    background: color-mix(in srgb, var(--color-warning) 12%, transparent);
-  }
-  .tone-official {
-    color: var(--color-success);
-    background: color-mix(in srgb, var(--color-success) 12%, transparent);
-  }
-  .tone-retired,
-  .tone-unknown {
+  .dim {
     color: var(--color-text-3);
   }
   .bar-wrap {
@@ -182,28 +237,31 @@
     display: block;
     height: 100%;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--color-danger) 55%, transparent);
+    transition: width var(--dur-slow) var(--ease-out);
   }
   .count {
     flex-shrink: 0;
     width: 2.5rem;
     text-align: right;
-    font-size: 0.8rem;
+    font-size: var(--text-sm);
+    color: var(--color-text-1);
   }
   .rate {
     flex-shrink: 0;
     width: 3.5rem;
     text-align: right;
-    font-size: 0.75rem;
+    font-size: var(--text-xs);
   }
   .examples {
-    padding: 0.5rem 0.9rem 0.8rem 2.45rem;
+    padding: 0.5rem 0.9rem 0.8rem 2.5rem;
     border-top: 1px solid var(--color-border);
-    background: color-mix(in srgb, var(--color-surface-2) 50%, transparent);
+    background: var(--color-surface-2);
   }
   .taxo-link {
-    display: inline-block;
-    font-size: 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: var(--text-xs);
     margin-bottom: 0.4rem;
   }
   a.taxo-link {
@@ -212,7 +270,6 @@
   }
   a.taxo-link:hover {
     color: var(--color-text-1);
-    text-decoration: underline;
   }
   .examples ul {
     display: flex;
@@ -220,7 +277,10 @@
     gap: 0.2rem;
   }
   .trace-link {
-    font-size: 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: var(--text-xs);
     color: var(--color-text-2);
     text-underline-offset: 2px;
   }
@@ -229,7 +289,7 @@
     text-decoration: underline;
   }
   .more {
-    font-size: 0.7rem;
+    font-size: var(--text-2xs);
     color: var(--color-text-3);
     margin-top: 0.3rem;
   }

@@ -3,8 +3,6 @@
   import CopyableId from '$lib/components/CopyableId.svelte';
   import DecisionBadge from '$lib/components/DecisionBadge.svelte';
   import FunnelNode from '$lib/components/FunnelNode.svelte';
-  import MetricChip from '$lib/components/MetricChip.svelte';
-  import Sparkline from '$lib/components/Sparkline.svelte';
   import { api, ApiError } from '$lib/api/client';
   import { openTraceStream, type StreamHandle } from '$lib/api/sse';
   import type {
@@ -22,6 +20,16 @@
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
   import BaselinePanel from '$lib/components/BaselinePanel.svelte';
   import PairwisePanel from '$lib/components/PairwisePanel.svelte';
+  import Tabs from '$lib/components/ui/Tabs.svelte';
+  import Badge from '$lib/components/ui/Badge.svelte';
+  import StatusDot from '$lib/components/ui/StatusDot.svelte';
+  import { LineChart, StatRing } from '$lib/components/charts';
+  import {
+    directionFromOperator,
+    thresholdLevel,
+    levelColor,
+    deltaLevel
+  } from '$lib/viz/thresholds';
 
   export let data: PageData;
 
@@ -62,6 +70,20 @@
   $: trendValues = iterations
     .map((it) => it.primary_metric_value)
     .filter((v): v is number => v !== null);
+
+  // The optimization story: primary metric per iteration, in run order, as
+  // chart points (x = iteration index). This is the "accuracy climbing" line —
+  // coloured against the experiment's own target so the threshold line shows
+  // exactly where "good enough" sits.
+  $: targetDirection = directionFromOperator(summary.primary_target.operator);
+  $: accuracyPoints = iterations
+    .filter((it) => it.primary_metric_value !== null)
+    .map((it) => ({ x: it.iteration, y: it.primary_metric_value as number }));
+  $: bestValue = best?.primary_metric_value ?? null;
+  $: bestLevel = thresholdLevel(bestValue, {
+    target: summary.primary_target.value,
+    direction: targetDirection
+  });
 
   // --- Live run state: cancel + poll -------------------------------------
   // While a run is queued/running we poll the experiment so iterations and
@@ -161,15 +183,6 @@
     detachLive();
   }
   onDestroy(stopLiveLookup);
-
-  const STATE_TONE: Record<string, string> = {
-    running: 'state-running',
-    queued: 'state-queued',
-    draft: 'state-queued',
-    completed: 'state-done',
-    aborted: 'state-aborted',
-    failed: 'state-aborted'
-  };
 
   // Compare tab (B3): the diff is computed server-side (one math source
   // shared with the CLI). The FE picks A and B, fetches the structured
@@ -358,9 +371,9 @@
       </div>
     </div>
     <div class="flex shrink-0 items-center gap-3">
-      <span class="state-badge {STATE_TONE[summary.state] ?? 'state-queued'}">
-        {#if isActive}<span class="pulse" aria-hidden="true"></span>{/if}
-        {summary.state}
+      <span class="state-pill">
+        <StatusDot state={summary.state} />
+        <span class="state-pill-label">{summary.state}</span>
       </span>
       <Button
         variant="secondary"
@@ -390,47 +403,65 @@
     </div>
   {/if}
 
-  <section class="grid grid-cols-4 gap-4 mb-10">
-    <MetricChip
-      label="Best primary"
-      value={best?.primary_metric_value ?? null}
-      unit={summary.primary_metric}
-    />
-    <MetricChip
-      label="Target"
-      value={`${summary.primary_target.operator} ${summary.primary_target.value}`}
-      format="plain"
-    />
-    <MetricChip
-      label="Iterations"
-      value={`${summary.iteration_count}/${summary.max_iterations}`}
-      format="plain"
-    />
-    <div class="rounded-lg border border-border bg-surface px-4 py-3.5 flex items-center gap-3">
-      <div class="flex-1">
-        <div class="text-xs uppercase tracking-wide text-text-3 mb-1">Trend</div>
-        <div class="font-mono text-sm text-text-2" data-numeric>
-          {trendValues.length} pts
+  <!-- The optimization at a glance: the line is the primary metric climbing
+       across iterations, with the target drawn in; the ring is where the best
+       iteration landed against that target. Green/amber/red is derived, never
+       hardcoded — the same threshold language as everywhere else. -->
+  <section class="analytics mb-10">
+    <div class="analytics-chart card">
+      <div class="analytics-head">
+        <div>
+          <div class="analytics-eyebrow">Primary metric over iterations</div>
+          <div class="analytics-metric mono">{summary.primary_metric}</div>
+        </div>
+        <div class="analytics-target mono">
+          target {summary.primary_target.operator}
+          {summary.primary_target.value}
         </div>
       </div>
-      <Sparkline values={trendValues} width={88} height={36} />
+      {#if accuracyPoints.length > 0}
+        <LineChart
+          points={accuracyPoints}
+          height={150}
+          format="percent"
+          threshold={{ target: summary.primary_target.value, direction: targetDirection }}
+        />
+      {:else}
+        <div class="analytics-empty">No completed iterations yet.</div>
+      {/if}
+    </div>
+
+    <div class="analytics-side">
+      <div class="card analytics-ring">
+        <StatRing
+          value={bestValue}
+          threshold={{ target: summary.primary_target.value, direction: targetDirection }}
+          label="Best"
+          size={84}
+        />
+      </div>
+      <div class="card analytics-stat">
+        <span class="analytics-stat-label">Iterations</span>
+        <span class="analytics-stat-value mono" data-numeric>
+          {summary.iteration_count}<span class="analytics-stat-of">/{summary.max_iterations}</span>
+        </span>
+      </div>
     </div>
   </section>
 
-  <div class="border-b border-border mb-6">
-    <div class="flex gap-6 text-sm">
-      {#each [{ id: 'iterations', label: `Iterations · ${iterations.length}` }, { id: 'results', label: 'Results' }, { id: 'compare', label: 'Compare' }, { id: 'funnel', label: 'Funnel' }, { id: 'pairwise', label: 'Pairwise' }, { id: 'decisions', label: `Decisions · ${data.decisions.length}` }] as t}
-        <button
-          type="button"
-          class="-mb-px py-2.5 border-b-2 transition-colors {tab === t.id
-            ? 'border-text-1 text-text-1 font-medium'
-            : 'border-transparent text-text-3 hover:text-text-1'}"
-          on:click={() => setTab(t.id)}
-        >
-          {t.label}
-        </button>
-      {/each}
-    </div>
+  <div class="mb-6">
+    <Tabs
+      tabs={[
+        { id: 'iterations', label: `Iterations · ${iterations.length}` },
+        { id: 'results', label: 'Results' },
+        { id: 'compare', label: 'Compare' },
+        { id: 'funnel', label: 'Funnel' },
+        { id: 'pairwise', label: 'Pairwise' },
+        { id: 'decisions', label: `Decisions · ${data.decisions.length}` }
+      ]}
+      active={tab}
+      on:change={(e) => setTab(e.detail)}
+    />
   </div>
 
   {#if tab === 'iterations'}
@@ -477,16 +508,21 @@
                   </div>
                 {/if}
               </td>
-              <td class="px-4 py-3 text-right font-mono" data-numeric>
+              <td
+                class="px-4 py-3 text-right font-mono"
+                style:color={levelColor(
+                  thresholdLevel(it.primary_metric_value, {
+                    target: summary.primary_target.value,
+                    direction: targetDirection
+                  })
+                )}
+                data-numeric
+              >
                 {fmtNumber(it.primary_metric_value)}
               </td>
               <td
                 class="px-4 py-3 text-right font-mono text-xs"
-                style:color={it.delta_vs_best && it.delta_vs_best > 0
-                  ? 'var(--color-success)'
-                  : it.delta_vs_best && it.delta_vs_best < 0
-                    ? 'var(--color-danger)'
-                    : 'var(--color-text-3)'}
+                style:color={levelColor(deltaLevel(it.delta_vs_best, targetDirection))}
                 data-numeric
               >
                 {fmtDelta(it.delta_vs_best)}
@@ -1001,41 +1037,101 @@
 />
 
 <style>
-  .state-badge {
+  .state-pill {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
-    padding: 0.25rem 0.6rem;
+    gap: 0.45rem;
+    padding: 0.3rem 0.65rem;
     border-radius: var(--radius-md);
-    font-size: 12px;
-    font-weight: 500;
-    text-transform: capitalize;
     border: 1px solid var(--color-border);
+    background: var(--color-surface);
   }
-  .state-running {
-    color: var(--color-success);
-    border-color: color-mix(in srgb, var(--color-success) 35%, transparent);
-    background: color-mix(in srgb, var(--color-success) 8%, transparent);
-  }
-  .state-queued {
-    color: var(--color-warning);
-    border-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
-    background: color-mix(in srgb, var(--color-warning) 8%, transparent);
-  }
-  .state-done {
+  .state-pill-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
     color: var(--color-text-2);
+    text-transform: capitalize;
   }
-  .state-aborted {
-    color: var(--color-danger);
-    border-color: color-mix(in srgb, var(--color-danger) 35%, transparent);
-    background: color-mix(in srgb, var(--color-danger) 8%, transparent);
+
+  /* Analytics row: the climbing-metric chart takes the lead width, the ring +
+     iteration count sit beside it. This is the first thing the eye lands on. */
+  .analytics {
+    display: grid;
+    grid-template-columns: 1fr 200px;
+    gap: 1rem;
   }
-  .pulse {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: currentColor;
-    animation: pulse 1.6s ease-in-out infinite;
+  .card {
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+  }
+  .analytics-chart {
+    padding: 1rem 1.2rem 0.6rem;
+    min-width: 0;
+  }
+  .analytics-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+  }
+  .analytics-eyebrow {
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-3);
+  }
+  .analytics-metric {
+    font-size: var(--text-sm);
+    color: var(--color-text-1);
+    margin-top: 0.15rem;
+  }
+  .analytics-target {
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+  }
+  .analytics-empty {
+    padding: 2.5rem 0;
+    text-align: center;
+    font-size: var(--text-sm);
+    color: var(--color-text-3);
+  }
+  .analytics-side {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .analytics-ring {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.8rem;
+    flex: 1;
+  }
+  .analytics-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.8rem 1rem;
+  }
+  .analytics-stat-label {
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-3);
+  }
+  .analytics-stat-value {
+    font-size: var(--text-xl);
+    font-weight: 500;
+    line-height: 1;
+  }
+  .analytics-stat-of {
+    color: var(--color-text-3);
+    font-size: var(--text-md);
+  }
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
   }
   @keyframes pulse {
     0%,
@@ -1047,9 +1143,6 @@
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .pulse {
-      animation: none;
-    }
     .live-dot {
       animation: none;
     }
