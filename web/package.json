@@ -43,6 +43,7 @@
     "@fontsource/inter": "^5.0.18",
     "@fontsource/jetbrains-mono": "^5.0.20",
     "@tanstack/svelte-query": "^5.51.21",
+    "lucide-svelte": "^1.0.1",
     "yaml": "^2.9.0"
   },
   "overrides": {

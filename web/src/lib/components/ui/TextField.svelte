@@ -75,8 +75,8 @@
   }
   .field:focus {
     outline: none;
-    border-color: var(--color-accent);
-    box-shadow: 0 0 0 3px rgba(31, 31, 31, 0.08);
+    border-color: var(--color-brand);
+    box-shadow: 0 0 0 3px var(--color-brand-subtle);
   }
   .field:disabled {
     opacity: 0.6;
