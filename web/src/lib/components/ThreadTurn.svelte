@@ -13,6 +13,8 @@
 -->
 <script lang="ts">
   import GradeChip from '$lib/components/GradeChip.svelte';
+  import Icon from '$lib/components/ui/Icon.svelte';
+  import { ArrowRight, ChevronRight } from 'lucide-svelte';
   import type { ScenarioResult } from '$lib/api/client';
 
   export let turn: ScenarioResult;
@@ -70,10 +72,10 @@
       {#if traceHref}
         <a
           href={traceHref}
-          class="group inline-flex items-center gap-1.5 text-xs text-text-3 hover:text-text-1 transition-colors"
+          class="group inline-flex items-center gap-1 text-xs text-text-3 hover:text-text-1 transition-colors"
         >
           <span>Open trace</span>
-          <span class="shrink-0" aria-hidden="true">→</span>
+          <Icon icon={ArrowRight} size={13} />
         </a>
       {/if}
     </div>
@@ -87,7 +89,9 @@
         <summary
           class="flex list-none items-center gap-1.5 text-xs uppercase tracking-wide text-text-3 hover:text-text-1 cursor-pointer"
         >
-          <span class="group-open:rotate-90 transition-transform" aria-hidden="true">›</span>
+          <span class="group-open:rotate-90 transition-transform" aria-hidden="true"
+            ><Icon icon={ChevronRight} size={13} /></span
+          >
           Grader results
           <span class="font-mono normal-case text-text-3" data-numeric
             >· {graderResults.length}</span

@@ -7,7 +7,8 @@
   import Button from '$lib/components/ui/Button.svelte';
   import Modal from '$lib/components/ui/Modal.svelte';
   import TextField from '$lib/components/ui/TextField.svelte';
-  import EmptyState from '$lib/components/EmptyState.svelte';
+  import Icon from '$lib/components/ui/Icon.svelte';
+  import { LayoutDashboard, ArrowRight, Sparkles, Terminal } from 'lucide-svelte';
 
   export let data: PageData;
 
@@ -71,72 +72,87 @@
 </svelte:head>
 
 <AppShell>
-  <div class="max-w-5xl mx-auto px-12 py-16">
-    <header class="mb-12 flex items-end justify-between gap-4">
+  <div class="page">
+    <header class="head">
       <div>
-        <h1 class="text-3xl font-semibold tracking-tight">Workspaces</h1>
-        <p class="text-text-2 mt-2 text-sm">
-          Every experiment belongs to a workspace. Pick one to dive in.
-        </p>
+        <h1>Workspaces</h1>
+        <p class="sub">Every experiment belongs to a workspace. Pick one to dive in.</p>
       </div>
       {#if !data.error}
-        <Button variant="primary" on:click={openCreate}>New workspace</Button>
+        <Button variant="brand" on:click={openCreate}>New workspace</Button>
       {/if}
     </header>
 
     {#if data.error}
-      <div class="rounded-lg border border-border bg-surface px-6 py-8 text-sm text-text-2">
-        <div class="font-medium text-text-1 mb-1">Backend unreachable</div>
-        <div class="font-mono text-xs text-text-3 mb-3">{data.error}</div>
-        <p>
+      <div class="card error-card">
+        <div class="error-title">Backend unreachable</div>
+        <div class="error-detail mono">{data.error}</div>
+        <p class="error-help">
           Start the API:
-          <code class="font-mono text-xs px-1.5 py-0.5 rounded bg-surface-2"
-            >uv run selfevals-api</code
-          >.
+          <code class="mono">uv run selfevals serve</code>.
         </p>
       </div>
     {:else if data.workspaces.length === 0}
-      <EmptyState
-        icon="◳"
-        title="No workspaces yet"
-        description="A workspace holds your experiments, datasets and failure-mode taxonomy. Create your first one to get started."
-      >
-        <svelte:fragment slot="action">
-          <Button variant="primary" on:click={openCreate}>New workspace</Button>
-        </svelte:fragment>
-      </EmptyState>
+      <!-- First-run onboarding: explain what selfevals is before asking for a
+           workspace, so a new user isn't staring at an empty "No X yet". -->
+      <div class="onboard">
+        <div class="onboard-mark">
+          <Icon icon={Sparkles} size={26} />
+        </div>
+        <h2>Welcome to selfevals</h2>
+        <p class="onboard-lede">
+          A self-improving eval framework for AI agents. Define a target, point it at a dataset, and
+          a proposer loop runs experiments — grading, optimizing and reporting each iteration until
+          it beats your bar.
+        </p>
+        <div class="onboard-steps">
+          <div class="onboard-step">
+            <span class="onboard-step-n mono">1</span>
+            <span>Create a workspace to hold your experiments, datasets and failure modes.</span>
+          </div>
+          <div class="onboard-step">
+            <span class="onboard-step-n mono">2</span>
+            <span>Upload a dataset of eval cases, or run a spec with inline cases.</span>
+          </div>
+          <div class="onboard-step">
+            <span class="onboard-step-n mono">3</span>
+            <span>Launch a run and watch the metric climb, iteration by iteration.</span>
+          </div>
+        </div>
+        <Button variant="brand" on:click={openCreate}>Create your first workspace</Button>
+        <p class="onboard-cli">
+          <Icon icon={Terminal} size={13} />
+          <span>or from the CLI: <code class="mono">uv run selfevals workspace create</code></span>
+        </p>
+      </div>
     {:else}
-      <ul class="divide-y divide-border border border-border rounded-lg overflow-hidden bg-surface">
-        {#each data.workspaces as ws}
-          <li>
-            <a
-              href={`/${ws.id}`}
-              class="flex items-center justify-between px-6 py-5 hover:bg-surface-2 transition-colors"
-            >
-              <div class="min-w-0">
-                <div class="flex items-baseline gap-2">
-                  <span class="font-medium">{ws.name}</span>
-                  <span class="font-mono text-xs text-text-3">{ws.slug}</span>
-                </div>
-                <div class="text-sm text-text-3 mt-1 truncate">
-                  {ws.description ?? `${ws.experiment_count} experiments`}
-                </div>
-              </div>
-              <div class="flex items-center gap-8 text-sm">
-                <div class="text-right">
-                  <div class="text-text-3 text-xs">last run</div>
-                  <div class="font-mono text-text-2">{relativeTime(ws.last_run_at)}</div>
-                </div>
-                <div class="text-right">
-                  <div class="text-text-3 text-xs">experiments</div>
-                  <div class="font-mono text-text-1" data-numeric>{ws.experiment_count}</div>
-                </div>
-                <span class="text-text-3" aria-hidden="true">→</span>
-              </div>
-            </a>
-          </li>
-        {/each}
-      </ul>
+      <div class="card table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="l">Workspace</th>
+              <th class="l">Description</th>
+              <th class="r">Last run</th>
+              <th class="r">Experiments</th>
+              <th class="r"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each data.workspaces as ws (ws.id)}
+              <tr on:click={() => goto(`/${ws.id}`)}>
+                <td>
+                  <span class="ws-name">{ws.name}</span>
+                  <span class="ws-slug mono">{ws.slug}</span>
+                </td>
+                <td class="ws-desc dim">{ws.description ?? '—'}</td>
+                <td class="r mono dim sm">{relativeTime(ws.last_run_at)}</td>
+                <td class="r mono" data-numeric>{ws.experiment_count}</td>
+                <td class="r"><Icon icon={ArrowRight} size={15} class="row-arrow" /></td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
     {/if}
   </div>
 </AppShell>
@@ -161,13 +177,220 @@
       rows={3}
     />
     {#if formError}
-      <p class="text-sm text-danger">{formError}</p>
+      <p class="form-error">{formError}</p>
     {/if}
   </form>
   <svelte:fragment slot="footer">
     <Button variant="ghost" on:click={() => (showCreate = false)}>Cancel</Button>
-    <Button variant="primary" loading={saving} disabled={!canSubmit} on:click={createWorkspace}>
+    <Button variant="brand" loading={saving} disabled={!canSubmit} on:click={createWorkspace}>
       Create workspace
     </Button>
   </svelte:fragment>
 </Modal>
+
+<style>
+  .page {
+    padding: 4rem 3rem;
+    max-width: 64rem;
+    margin: 0 auto;
+  }
+  .head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 2.5rem;
+  }
+  h1 {
+    font-size: var(--text-2xl);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: var(--leading-tight);
+  }
+  .sub {
+    color: var(--color-text-2);
+    margin-top: 0.5rem;
+    font-size: var(--text-sm);
+  }
+  .card {
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+  }
+  .table-wrap {
+    overflow: hidden;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+  }
+  thead {
+    background: var(--color-surface-2);
+  }
+  th {
+    font-weight: 500;
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-3);
+    padding: 0.6rem 0.9rem;
+  }
+  th.l {
+    text-align: left;
+  }
+  th.r {
+    text-align: right;
+  }
+  tbody tr {
+    border-top: 1px solid var(--color-border);
+    cursor: pointer;
+    transition: background-color var(--dur-fast) var(--ease-out);
+  }
+  tbody tr:hover {
+    background: var(--color-surface-2);
+  }
+  tbody tr:hover :global(.row-arrow) {
+    transform: translateX(2px);
+    color: var(--color-text-1);
+  }
+  td {
+    padding: 0.85rem 0.9rem;
+    vertical-align: middle;
+  }
+  td.r {
+    text-align: right;
+  }
+  td.mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--text-xs);
+  }
+  .dim {
+    color: var(--color-text-3);
+  }
+  td.sm {
+    font-size: var(--text-xs);
+  }
+  .ws-name {
+    font-weight: 500;
+    color: var(--color-text-1);
+  }
+  .ws-slug {
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+    margin-left: 0.5rem;
+  }
+  .ws-desc {
+    max-width: 24rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  :global(.row-arrow) {
+    color: var(--color-text-3);
+    transition:
+      transform var(--dur-fast) var(--ease-out),
+      color var(--dur-fast) var(--ease-out);
+  }
+
+  /* Onboarding */
+  .onboard {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.85rem;
+    padding: 3rem 2rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xl);
+    background: var(--color-surface);
+  }
+  .onboard-mark {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: var(--radius-lg);
+    background: var(--color-brand-subtle);
+    color: var(--color-brand);
+  }
+  .onboard h2 {
+    font-size: var(--text-lg);
+    font-weight: 600;
+  }
+  .onboard-lede {
+    max-width: 34rem;
+    color: var(--color-text-2);
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+  }
+  .onboard-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin: 0.5rem 0 1rem;
+    text-align: left;
+    width: 100%;
+    max-width: 30rem;
+  }
+  .onboard-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.7rem;
+    font-size: var(--text-sm);
+    color: var(--color-text-2);
+  }
+  .onboard-step-n {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--color-surface-2);
+    color: var(--color-text-1);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+  }
+  .onboard-cli {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+  }
+
+  .error-card {
+    padding: 1.5rem 1.75rem;
+  }
+  .error-title {
+    font-weight: 600;
+    color: var(--color-text-1);
+    margin-bottom: 0.35rem;
+  }
+  .error-detail {
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+    margin-bottom: 0.75rem;
+  }
+  .error-help {
+    font-size: var(--text-sm);
+    color: var(--color-text-2);
+  }
+  code.mono {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    padding: 0.1rem 0.4rem;
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+    color: var(--color-text-2);
+  }
+  .form-error {
+    font-size: var(--text-sm);
+    color: var(--color-danger);
+  }
+</style>
