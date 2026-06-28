@@ -85,6 +85,20 @@
     direction: targetDirection
   });
 
+  // When the Compare tab first opens, default to the most useful pair: the best
+  // iteration as B (candidate) vs the one before it as A (baseline). The user can
+  // still re-pick; this just lands them on the comparison they almost always want.
+  $: if (tab === 'compare' && compareA === null && compareB === null && best !== null) {
+    const bestIdx = iterations.findIndex((it) => it.id === best!.id);
+    if (bestIdx > 0) {
+      compareA = iterations[bestIdx - 1].id;
+      compareB = best.id;
+    } else if (iterations.length > 1) {
+      compareA = iterations[0].id;
+      compareB = iterations[1].id;
+    }
+  }
+
   // --- Live run state: cancel + poll -------------------------------------
   // While a run is queued/running we poll the experiment so iterations and
   // state climb without a manual refresh — same lightweight cadence as
@@ -322,11 +336,11 @@
     return `${sign}${fmtNumber(value, 3)}`;
   }
 
-  // Same convention as the iterations table Δ column (~line 187): green up,
-  // red down, neutral grey for zero/missing.
+  // Δ colour via the shared threshold language: improvement (in the metric's
+  // good direction) is green, regression red, neutral grey. Same green/amber/red
+  // vocabulary the charts and stat cards use.
   function deltaColor(value: number | null): string {
-    if (value === null || Math.abs(value) < 1e-9) return 'var(--color-text-3)';
-    return value > 0 ? 'var(--color-success)' : 'var(--color-danger)';
+    return levelColor(deltaLevel(value, targetDirection));
   }
 
   // Recommendation banner copy, derived from the server's verdict.
@@ -417,9 +431,7 @@
         {#if liveRunId}
           <span class="live-activity">
             <span class="live-activity-count mono" data-numeric>{liveSpanCount}</span>
-            <span class="live-activity-label"
-              >span{liveSpanCount === 1 ? '' : 's'}</span
-            >
+            <span class="live-activity-label">span{liveSpanCount === 1 ? '' : 's'}</span>
             {#if liveLastSpan}
               <span class="live-sep" aria-hidden="true">·</span>
               <span class="live-last">{liveLastSpan}</span>
@@ -526,7 +538,9 @@
               class:iter-best={isBest}
               role="button"
               tabindex="0"
-              aria-label="Open details for iteration #{it.iteration}{isBest ? ' (best so far)' : ''}"
+              aria-label="Open details for iteration #{it.iteration}{isBest
+                ? ' (best so far)'
+                : ''}"
               on:click={() => (openIteration = it)}
               on:keydown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -631,42 +645,33 @@
       {/if}
     </section>
   {:else if tab === 'compare'}
-    <div class="grid grid-cols-2 gap-6 mb-6">
-      <div class="rounded-lg border border-border bg-surface px-5 py-4">
-        <div class="flex items-center justify-between gap-3">
-          <span class="text-xs uppercase tracking-wide text-text-3">
-            Iteration A
-            <span class="text-text-3 normal-case ml-1">· baseline</span>
-          </span>
-          <select
-            class="font-mono text-xs px-2 py-1 rounded border border-border bg-bg"
-            aria-label="Pick iteration A"
-            bind:value={compareA}
-          >
-            <option value={null}>— pick —</option>
-            {#each iterations as it}
-              <option value={it.id}>#{it.iteration}</option>
-            {/each}
-          </select>
-        </div>
+    <div class="cmp-pickers mb-6">
+      <div class="cmp-pick">
+        <span class="cmp-pick-role">A · baseline</span>
+        <select class="cmp-select" aria-label="Pick iteration A" bind:value={compareA}>
+          <option value={null}>— pick —</option>
+          {#each iterations as it}
+            <option value={it.id}
+              >#{it.iteration}{it.primary_metric_value !== null
+                ? ` · ${(it.primary_metric_value * 100).toFixed(1)}%`
+                : ''}</option
+            >
+          {/each}
+        </select>
       </div>
-      <div class="rounded-lg border border-border bg-surface px-5 py-4">
-        <div class="flex items-center justify-between gap-3">
-          <span class="text-xs uppercase tracking-wide text-text-3">
-            Iteration B
-            <span class="text-text-3 normal-case ml-1">· candidate</span>
-          </span>
-          <select
-            class="font-mono text-xs px-2 py-1 rounded border border-border bg-bg"
-            aria-label="Pick iteration B"
-            bind:value={compareB}
-          >
-            <option value={null}>— pick —</option>
-            {#each iterations as it}
-              <option value={it.id}>#{it.iteration}</option>
-            {/each}
-          </select>
-        </div>
+      <div class="cmp-vs" aria-hidden="true">vs</div>
+      <div class="cmp-pick">
+        <span class="cmp-pick-role">B · candidate</span>
+        <select class="cmp-select" aria-label="Pick iteration B" bind:value={compareB}>
+          <option value={null}>— pick —</option>
+          {#each iterations as it}
+            <option value={it.id}
+              >#{it.iteration}{it.primary_metric_value !== null
+                ? ` · ${(it.primary_metric_value * 100).toFixed(1)}%`
+                : ''}</option
+            >
+          {/each}
+        </select>
       </div>
     </div>
 
@@ -1334,5 +1339,48 @@
     border-radius: 50%;
     background: var(--color-ok);
     flex-shrink: 0;
+  }
+
+  /* Compare pickers: A vs B side by side with their metric value inline, so the
+     choice is informed before the diff even loads. */
+  .cmp-pickers {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 0.9rem;
+    align-items: center;
+  }
+  .cmp-pick {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+  }
+  .cmp-pick-role {
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-3);
+  }
+  .cmp-select {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    padding: 0.4rem 0.55rem;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
+    color: var(--color-text-1);
+    cursor: pointer;
+  }
+  .cmp-select:focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 1px;
+  }
+  .cmp-vs {
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+    font-style: italic;
   }
 </style>
