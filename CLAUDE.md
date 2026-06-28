@@ -4,7 +4,7 @@
 
 Framework de evals AI-native auto-mejorante para agentes. Corre experimentos
 (search space x cases x reps) con grading concurrente, optimiza y reporta.
-Python >=3.12, uv, version 0.10.0. Layout `src/`, package `selfevals`.
+Python >=3.12, uv, version 0.13.0. Layout `src/`, package `selfevals`.
 Deps core mínimas (pydantic, pyyaml, httpx); extras opcionales por proveedor
 (`[anthropic]`, `[openai]`, `[telemetry]`, `[web]`...) que se lazy-importan.
 Repo: github.com/patovaldezf/selfevals.
@@ -16,7 +16,8 @@ Repo: github.com/patovaldezf/selfevals.
   parsea/valida shape — la construcción real de adapters ocurre en `cli/commands.py`.
 - Subpaquetes clave: `graders/` (registrados en `graders/registry.py`),
   `optimization/` (loop, proposers, sampling, aggregator), `runner/` (adapters
-  embedded/cli/http, executor, otlp), `storage/` (sqlite + migrations),
+  embedded/cli/http, executor, otlp), `storage/` (Postgres-only, migrations,
+  typed mappers, filesystem object store),
   `repo/loader.py`, `reporter/`, `analysis/`, `api/` (FastAPI, opcional), `cli/`.
 - **per-grader scoring** (v0.5.0): cada grader puntúa por separado.
 - **grid-exhaust**: el grid proposer agota combinaciones y lanza
@@ -80,9 +81,12 @@ CLI: `init`, `run`, `report`, `compare`, `estimate`, `analyze`, `experiment`,
 
 ## Riesgos / gotchas
 
-- Default DB: `./selfevals.sqlite` (con `-shm`/`-wal`); flag global `--db`.
+- Default storage: `SELFEVALS_STORAGE_URL` apuntando a Postgres. `.env.example`
+  trae defaults locales para `docker compose up -d postgres redis`.
 - El sdist tiene allow-list explícita en pyproject para no barrer `web/node_modules`
-  ni `*.sqlite`; al tocar packaging respeta `[tool.hatch.build...]`.
+  ni artefactos locales; al tocar packaging respeta `[tool.hatch.build...]`.
+- Antes de cerrar cambios, ejecuta `uv run python scripts/audit_technical_debt.py
+  --fail-on-regression`. No subas el baseline sin revisión humana.
 - Extras de proveedor degradan limpio (try/except con error "pip install
   selfevals[<provider>]"); no asumas que están instalados.
 - Aún no hay página de wiki para este proyecto (`../wiki/projects/` no la tiene).
