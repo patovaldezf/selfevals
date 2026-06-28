@@ -182,6 +182,13 @@ tournament runs off the loop on outputs already in hand.
   SvelteKit build. `selfevals demo` seeds a real, end-to-end workspace
   (real LLM calls when `ANTHROPIC_API_KEY` is set) so every web view
   has production-shaped data to dogfood against.
+- **Live trace streaming (SSE)** is in-process by default and scales to
+  multiple processes when `SELFEVALS_REDIS_URL` is set: `get_broker()`
+  picks the `RedisSpanBroker` (Redis Streams), so a distributed worker
+  in another process publishes spans (`XADD`) that the API's SSE handler
+  reads (`XREAD`). Late subscribers replay the stream (`last_id="0"`);
+  the FE dedupes by `span.id`. The Redis path fails open — a Redis blip
+  degrades the stream to best-effort, it never aborts the run.
 
 ### Telemetry and OTel
 

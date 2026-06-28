@@ -59,12 +59,17 @@ para run progress" como _out of scope v0_. **Ya están implementados** (`api/sse
 - **Web y API son servicios desacoplados.** El CLI orquesta los runs (`selfevals run`); la
   web lee resultados terminados y traces en vivo cuando un run está en curso y emite spans
   vía el broker.
-- **Live streaming es in-process** (no OTLP). El run lanzado por `POST .../experiments/run`
-  corre en un thread daemon; su `TraceRecorder` emite cada span a un `SpanSink` inyectado
-  (`api/recorder_sink.py:BrokerSpanSink`), que publica al `SpanBroker` vía
-  `call_soon_threadsafe`. El CLI usa un sink no-op (cero overhead). El receiver OTLP
-  (`runner/otlp_receiver.py` + `broker_bridge.py`) es un path _separado e incompleto_ para
-  agentes que exporten spans por el wire — `serve` no lo arranca hoy (ver `broker_bridge.py`).
+- **Live streaming: in-process por default, multi-proceso vía Redis** (no OTLP). El run
+  lanzado por `POST .../experiments/run` corre en un thread daemon; su `TraceRecorder` emite
+  cada span a un `SpanSink` inyectado (`api/recorder_sink.py:BrokerSpanSink`), que publica al
+  broker. Sin `SELFEVALS_REDIS_URL` el broker es el `SpanBroker` in-process (`asyncio.Queue`
+  + `call_soon_threadsafe`) y solo funciona si el publisher y el endpoint SSE viven en el
+  mismo proceso. Con `SELFEVALS_REDIS_URL` set, `get_broker()` elige el `RedisSpanBroker`
+  (Redis Streams `selfevals:spans:*`): el worker distribuido (otro proceso) hace `XADD` y el
+  SSE del API hace `XREAD`, así el stream cruza procesos. El Redis falla-open (un blip no
+  tumba el run; el stream degrada a best-effort). El CLI usa un sink no-op (cero overhead).
+  El receiver OTLP (`runner/otlp_receiver.py` + `broker_bridge.py`) es un path _separado e
+  incompleto_ para agentes que exporten spans por el wire — `serve` no lo arranca hoy.
 - **Aislamiento por workspace** estructural en el storage (`storage/interface.py` —
   `WorkspaceScope`). Sin auth en la capa de storage; el caller garantiza el `workspace_id`.
 - **API es read-write**: ~27 GET + ~14 POST/PUT/PATCH cubren el lifecycle
