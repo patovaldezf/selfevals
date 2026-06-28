@@ -14,6 +14,7 @@ export { default as StatRing } from './StatRing.svelte';
 export { default as Donut } from './Donut.svelte';
 export { default as Heatmap } from './Heatmap.svelte';
 export { default as DeltaStat } from './DeltaStat.svelte';
+export { default as CountUp } from './CountUp.svelte';
 
 export { formatValue, formatDelta, svgId, type ValueFormat } from './format';
 export type { Point, Series, Bar } from './types';

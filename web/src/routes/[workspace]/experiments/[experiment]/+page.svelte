@@ -23,7 +23,7 @@
   import Tabs from '$lib/components/ui/Tabs.svelte';
   import Badge from '$lib/components/ui/Badge.svelte';
   import StatusDot from '$lib/components/ui/StatusDot.svelte';
-  import { LineChart, StatRing } from '$lib/components/charts';
+  import { LineChart, StatRing, CountUp } from '$lib/components/charts';
   import {
     directionFromOperator,
     thresholdLevel,
@@ -388,18 +388,59 @@
     </div>
   </header>
 
-  {#if isActive && liveRunId}
-    <div class="live-banner mb-8">
-      <span class="live-dot" aria-hidden="true"></span>
-      <span class="text-sm">
-        <span class="font-medium">Live run</span>
-        <span class="text-text-2"
-          >· {liveSpanCount} span{liveSpanCount === 1 ? '' : 's'}{liveLastSpan
-            ? ` · ${liveLastSpan}`
-            : ''}</span
-        >
-      </span>
-      <a class="watch-link" href={`/${workspaceId}/traces/${liveRunId}`}>Watch live →</a>
+  {#if isActive}
+    <!-- Live header: the run is breathing. A pulsing dot, the iteration it's on,
+         the metric counting up as iterations land, and the agent's last action
+         streaming in from SSE. This is the "watch a run live" moment. -->
+    <div class="live mb-8" class:live-attached={liveRunId}>
+      <div class="live-main">
+        <span class="live-dot" aria-hidden="true"></span>
+        <span class="live-title">Run in progress</span>
+        <span class="live-sep" aria-hidden="true">·</span>
+        <span class="live-iter mono" data-numeric>
+          iteration {summary.iteration_count}<span class="live-iter-of"
+            >/{summary.max_iterations}</span
+          >
+        </span>
+        {#if bestValue !== null}
+          <span class="live-sep" aria-hidden="true">·</span>
+          <span class="live-metric">
+            <span class="live-metric-label">{summary.primary_metric}</span>
+            <span class="live-metric-val" style:color={levelColor(bestLevel)}>
+              <CountUp value={bestValue} format="percent" />
+            </span>
+          </span>
+        {/if}
+      </div>
+
+      <div class="live-foot">
+        {#if liveRunId}
+          <span class="live-activity">
+            <span class="live-activity-count mono" data-numeric>{liveSpanCount}</span>
+            <span class="live-activity-label"
+              >span{liveSpanCount === 1 ? '' : 's'}</span
+            >
+            {#if liveLastSpan}
+              <span class="live-sep" aria-hidden="true">·</span>
+              <span class="live-last">{liveLastSpan}</span>
+            {/if}
+          </span>
+          <a class="watch-link" href={`/${workspaceId}/traces/${liveRunId}`}>Watch live →</a>
+        {:else}
+          <span class="live-waiting">waiting for the run to emit spans…</span>
+        {/if}
+      </div>
+
+      <!-- Progress of the optimization loop across its iteration budget. -->
+      <div class="live-progress" aria-hidden="true">
+        <div
+          class="live-progress-fill"
+          style:width="{Math.min(
+            100,
+            (summary.iteration_count / Math.max(1, summary.max_iterations)) * 100
+          )}%"
+        ></div>
+      </div>
     </div>
   {/if}
 
@@ -479,11 +520,13 @@
         </thead>
         <tbody class="divide-y divide-border">
           {#each iterations as it}
+            {@const isBest = best !== null && it.id === best.id}
             <tr
-              class="hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-1 transition-colors cursor-pointer"
+              class="iter-row hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-1 transition-colors cursor-pointer"
+              class:iter-best={isBest}
               role="button"
               tabindex="0"
-              aria-label="Open details for iteration #{it.iteration}"
+              aria-label="Open details for iteration #{it.iteration}{isBest ? ' (best so far)' : ''}"
               on:click={() => (openIteration = it)}
               on:keydown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -492,7 +535,13 @@
                 }
               }}
             >
-              <td class="px-4 py-3 font-mono text-text-3 text-xs" data-numeric>{it.iteration}</td>
+              <td class="px-4 py-3 font-mono text-text-3 text-xs" data-numeric>
+                <span class="iter-num">
+                  {#if isBest}<span class="iter-best-mark" title="Best so far" aria-hidden="true"
+                    ></span>{/if}
+                  {it.iteration}
+                </span>
+              </td>
               <td class="px-4 py-3">
                 {#if Object.keys(it.proposed_parameters).length === 0}
                   <span class="text-text-3 text-xs">—</span>
@@ -1143,35 +1192,147 @@
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .live-dot {
+    .live-dot,
+    .live-dot::after {
       animation: none;
     }
   }
 
-  .live-banner {
+  /* Live header — brand-tinted, the one place the chromatic accent signals
+     "this is happening now". */
+  .live {
+    border: 1px solid color-mix(in srgb, var(--color-brand) 30%, var(--color-border));
+    border-radius: var(--radius-lg);
+    background: var(--color-brand-subtle);
+    overflow: hidden;
+  }
+  .live-main {
     display: flex;
     align-items: center;
-    gap: 0.7rem;
-    padding: 0.6rem 0.9rem;
-    border: 1px solid color-mix(in srgb, var(--color-success) 30%, var(--color-border));
-    border-radius: var(--radius-md);
-    background: color-mix(in srgb, var(--color-success) 7%, transparent);
+    gap: 0.55rem;
+    padding: 0.75rem 1rem 0.5rem;
   }
   .live-dot {
-    width: 7px;
-    height: 7px;
+    position: relative;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    background: var(--color-success);
-    animation: pulse 1.6s ease-in-out infinite;
+    background: var(--color-brand);
+    flex-shrink: 0;
+  }
+  /* A second expanding ring for a richer "live" pulse than a simple fade. */
+  .live-dot::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: var(--color-brand);
+    animation: live-ping 1.8s ease-out infinite;
+  }
+  @keyframes live-ping {
+    0% {
+      transform: scale(1);
+      opacity: 0.5;
+    }
+    100% {
+      transform: scale(3);
+      opacity: 0;
+    }
+  }
+  .live-title {
+    font-weight: 600;
+    font-size: var(--text-sm);
+    color: var(--color-text-1);
+  }
+  .live-sep {
+    color: var(--color-text-3);
+  }
+  .live-iter {
+    font-size: var(--text-xs);
+    color: var(--color-text-2);
+  }
+  .live-iter-of {
+    color: var(--color-text-3);
+  }
+  .live-metric {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.35rem;
+  }
+  .live-metric-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+  }
+  .live-metric-val {
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+  .live-foot {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0 1rem 0.7rem;
+  }
+  .live-activity {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: var(--text-xs);
+    color: var(--color-text-2);
+  }
+  .live-activity-count {
+    color: var(--color-text-1);
+    font-weight: 500;
+  }
+  .live-activity-label,
+  .live-last {
+    color: var(--color-text-3);
+  }
+  .live-waiting {
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+    font-style: italic;
   }
   .watch-link {
     margin-left: auto;
-    font-size: 0.8rem;
+    font-size: var(--text-xs);
     font-weight: 500;
-    color: var(--color-success);
+    color: var(--color-brand-strong);
     text-underline-offset: 2px;
   }
   .watch-link:hover {
     text-decoration: underline;
+  }
+  .live-progress {
+    height: 3px;
+    background: color-mix(in srgb, var(--color-brand) 15%, transparent);
+  }
+  .live-progress-fill {
+    height: 100%;
+    background: var(--color-brand);
+    transition: width var(--dur-slow) var(--ease-out);
+  }
+
+  /* The winning iteration gets a quiet left accent + dot so "which one is best"
+     is obvious at a glance while a run climbs. */
+  .iter-best {
+    background: var(--color-ok-subtle);
+    box-shadow: inset 2px 0 0 var(--color-ok);
+  }
+  .iter-best:hover {
+    background: color-mix(in srgb, var(--color-ok) 14%, transparent);
+  }
+  .iter-num {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .iter-best-mark {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--color-ok);
+    flex-shrink: 0;
   }
 </style>
