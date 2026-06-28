@@ -63,10 +63,7 @@
         .filter((c) => c.output_text.length > 0);
       candidatesLoaded = true;
     } catch (e) {
-      toast.error(
-        'Could not load candidate replies',
-        e instanceof ApiError ? e.detail : String(e)
-      );
+      toast.error('Could not load candidate replies', e instanceof ApiError ? e.detail : String(e));
     } finally {
       candidatesLoading = false;
     }
@@ -354,7 +351,9 @@
             <option value="llm">LLM</option>
             <option value="human">Human</option>
           </select>
-          <Button size="sm" variant="secondary" on:click={openVerdictModal}>Add human verdict</Button>
+          <Button size="sm" variant="secondary" on:click={openVerdictModal}
+            >Add human verdict</Button
+          >
         </div>
       </div>
       {#if verdicts.length > 0}
@@ -406,13 +405,12 @@
     <p class="text-sm text-text-3">Loading candidate replies…</p>
   {:else if candidates.length < 2}
     <p class="text-sm text-text-3">
-      Need at least two best-iteration replies with text to rank. This experiment
-      produced {candidates.length}.
+      Need at least two best-iteration replies with text to rank. This experiment produced {candidates.length}.
     </p>
   {:else}
     <p class="mb-4 text-sm text-text-2">
-      Rank <span class="font-mono text-text-1">{candidates.length}</span> candidate replies
-      (the best iteration's output per case) with an LLM judge.
+      Rank <span class="font-mono text-text-1">{candidates.length}</span> candidate replies (the best
+      iteration's output per case) with an LLM judge.
     </p>
     <div class="space-y-3">
       <TextField
@@ -475,8 +473,8 @@
     </p>
   {:else}
     <p class="mb-4 text-sm text-text-2">
-      Record your A/B preference on a pair. This is what calibrates the LLM judge
-      against human taste.
+      Record your A/B preference on a pair. This is what calibrates the LLM judge against human
+      taste.
     </p>
     <div class="space-y-3">
       <Select label="Response A" bind:value={vAId} options={candidateOptions} />

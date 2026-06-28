@@ -4,13 +4,14 @@
  * (no-ops without `window`); the actual class is set client-side on init.
  */
 import { writable } from 'svelte/store';
+import { safeGetItem, safeSetItem } from '$lib/browserStorage';
 
 export type Theme = 'light' | 'dark';
 const KEY = 'selfevals-theme';
 
 function readInitial(): Theme {
   if (typeof window === 'undefined') return 'light';
-  const stored = localStorage.getItem(KEY);
+  const stored = safeGetItem(KEY);
   if (stored === 'light' || stored === 'dark') return stored;
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
@@ -34,7 +35,7 @@ function createTheme() {
     toggle() {
       update((t) => {
         const next: Theme = t === 'dark' ? 'light' : 'dark';
-        if (typeof window !== 'undefined') localStorage.setItem(KEY, next);
+        safeSetItem(KEY, next);
         apply(next);
         return next;
       });
