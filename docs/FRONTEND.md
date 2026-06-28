@@ -48,7 +48,7 @@ para run progress" como _out of scope v0_. **Ya están implementados** (`api/sse
                                                       │ WorkspaceScope
                                                       ▼
                                          ┌──────────────────────────┐
-                                         │ SQLite + filesystem store │
+                                         │ Postgres + filesystem store│
                                          │ (storage/)                │
                                          └────────────┬─────────────┘
                                                       ▲ publish spans (SpanSummary)
@@ -67,14 +67,17 @@ para run progress" como _out of scope v0_. **Ya están implementados** (`api/sse
   agentes que exporten spans por el wire — `serve` no lo arranca hoy (ver `broker_bridge.py`).
 - **Aislamiento por workspace** estructural en el storage (`storage/interface.py` —
   `WorkspaceScope`). Sin auth en la capa de storage; el caller garantiza el `workspace_id`.
-- **API hoy es read-mostly**: ~12 GET + 1 POST (crear workspace). Toda la mutación del
-  lifecycle de experimentos pasa por el CLI.
+- **API es read-write**: ~27 GET + ~14 POST/PUT/PATCH cubren el lifecycle
+  (crear workspace/dataset, lanzar/cancelar runs, ingest de análisis, promote/
+  retire/merge/edit de failure modes, set baseline, regression-check, pairwise).
+  Lo que la web puede hacer, un agente lo puede hacer por `/api` o por el CLI.
 
 ### Cómo se arranca hoy
 
-`python -m selfevals.api` (uvicorn): `--host` (def 127.0.0.1), `--port` (def 8000),
-`--db` (def `./selfevals.sqlite`), `--reload`. Env `SELFEVALS_DB` como fallback.
-**No existe `selfevals serve`** (ver §6).
+`selfevals serve` monta la API + (cuando hay build) la UI SvelteKit en un proceso:
+`--host` (def 127.0.0.1), `--port` (def 8000), `--web-dist`, `--no-web`, `--reload`.
+El storage sale de `SELFEVALS_STORAGE_URL` / el flag global `--db <postgres-url>`.
+También existe `python -m selfevals.api` (solo API, mismo `--db`/env).
 
 ---
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Evaluate This Repo"
+  short_description: "Autonomous end-to-end eval bootstrap for a codebase."
+  default_prompt: "Use this when the user says 'set up evals for this project' and there is no harness yet — inspect the repo, decide what/how to evaluate, wire the agent, design a dataset, run, and propose next steps."

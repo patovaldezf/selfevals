@@ -1,4 +1,4 @@
-# Status — v0.12.0
+# Status — v0.13.0
 
 This file is the honest snapshot of what selfevals can and cannot do
 today. Updated on every release; the CHANGELOG records what _changed_,
@@ -21,7 +21,7 @@ this file records what _is_.
   `selfevals baseline show|set` inspects or re-baselines explicitly.
 - **`selfevals run <spec.yaml>`**: load an experiment spec, resolve
   the agent entrypoint, run cases through an adapter, grade each
-  trace, persist iterations to SQLite, render a markdown or JSON
+  trace, persist iterations to Postgres, render a markdown or JSON
   report.
 - **Conversation input**: `EvalCase.input` carries a validated
   multi-turn conversation when it has a `messages` key — roles
@@ -90,8 +90,11 @@ this file records what _is_.
   change. Weights are per-case (summed per outcome, not the global mode
   counter × one weight). This is the go/no-go metric for autopilot:
   "the expensive errors are ~0 even if plain accuracy is 92%".
-- **Storage**: SQLite-backed with optimistic concurrency, workspace
-  isolation, migrations. Filesystem object store for blobs.
+- **Storage**: Postgres-backed (canonical, Postgres-only) with
+  optimistic concurrency, workspace isolation, forward-only migrations,
+  typed mappers. Filesystem object store for blobs. SQLite is legacy —
+  a one-shot `selfevals migrate-sqlite` import path only, never a live
+  backend.
 - **Datasets** (v0.9.0): first-class, persisted, reusable across
   experiments. `repo/datasets.py::persist_dataset` is the canonical
   create path (manifest hash + statistics) shared by the CLI
@@ -110,7 +113,8 @@ this file records what _is_.
 - **Friendly errors**: YAML parse errors with hints, missing
   datasets with fuzzy-match suggestions, unknown graders listing
   what is available, HTTP adapter transport errors with the URL,
-  SQLite locked / corrupted cases. Exit code 2 for user errors.
+  Postgres connection/auth failures surfaced clearly. Exit code 2 for
+  user errors.
 
 ## What does not work yet
 
@@ -249,6 +253,21 @@ on the backlog until it earns its place.
 - **Onboarding docs** (0.2.2) — rewritten README, `examples/README.md`
   walk-through, expanded `CONTRIBUTING.md`, and the `bootstrap` ->
   `selfevals` rename swept through the CLI, CI, and bundled skill.
+- **Consumer skill set + auto-sync** (0.13.x) — seven bundled
+  agent-facing skills cover the full lifecycle: `evaluate-this-repo`
+  (autonomous "set up evals for this project" bootstrap), `selfevals`
+  (orientation/decision map), `design-your-dataset`, `connect-your-agent`,
+  `run-eval-experiment`, `error-analysis`, `iterate-and-ship`. They
+  auto-install into a project's `.claude/skills/` on any CLI invocation
+  (opt out with `SELFEVALS_NO_SKILL_SYNC=1`), or explicitly via
+  `selfevals skills sync`. The `selfevals-*-change` skills remain
+  repo-maintenance only and are excluded from the consumer sync.
+
+## Agent ↔ human DX
+
+The collaboration loop (agent operates via CLI/API, human reviews and
+gates via the web) is operational end-to-end. The known rough edges and
+their fixes are tracked in `docs/AGENT_HUMAN_DX_HANDOFF.md`.
 
 ### Still on the backlog
 

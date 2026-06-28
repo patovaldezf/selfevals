@@ -1,0 +1,4 @@
+interface:
+  display_name: "Iterate and Ship"
+  short_description: "Compare iterations, gate regressions, and run at scale."
+  default_prompt: "Use this to pick the next change, diff iterations, set/check a dataset baseline for CI (exit codes), read the decision outcome, tune convergence, and scale out with durable Redis workers."

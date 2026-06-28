@@ -7,6 +7,34 @@ Versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Conjunto de skills de consumo + auto-instalación.** Las skills agent-facing
+  pasan de 2 a 7 y cubren el ciclo completo para que un coding agent exprima el
+  framework: `evaluate-this-repo` (arranque autónomo "monta evals para este
+  proyecto"), `selfevals` (orientación / mapa de decisión),
+  `design-your-dataset`, `connect-your-agent`, `run-eval-experiment` (reescrita),
+  `error-analysis` (actualizada) e `iterate-and-ship`. Cada una cita los docs de
+  `docs/` y desambigua su triggering con un `description` afilado.
+- **Auto-sync de skills.** `selfevals.skills.sync_skills()` + el nuevo subcomando
+  `selfevals skills sync` instalan las skills de consumo en `.claude/skills/` del
+  proyecto. Como un wheel no puede correr un post-install hook, el CLI lo hace de
+  forma perezosa en cualquier invocación (idempotente por contenido, best-effort,
+  opt-out con `SELFEVALS_NO_SKILL_SYNC=1`). Las `selfevals-*-change` de
+  mantenimiento del repo quedan excluidas del sync de consumo (`--all` las
+  incluye).
+
+### Changed
+
+- **Docs Postgres-only (freshness).** Barrido de referencias stale a SQLite como
+  storage default: `docs/STATUS.md` (→v0.13.0), `docs/eval_config.md`,
+  `docs/json_report_schema.md`, `docs/api_reference.md` (§Storage, sin fallback
+  SQLite ni `db_path` SQLite), `ARCHITECTURE.md`, `docs/FRONTEND.md` (diagrama
+  Postgres; API read-write; `selfevals serve` existe), `docs/troubleshooting.md`
+  (§5 errores Postgres en vez de SQLite-lock), `docs/deploy.md` y
+  `docs/PAIRWISE_PORT_HANDOFF.md` marcados respecto a v0.13.0. SQLite queda solo
+  como ruta `migrate-sqlite`.
+
 ## [0.12.0] - 2026-06-12
 
 Tanda de escala (SCALING_ROADMAP): la señal de grading deja de "puntuar" para

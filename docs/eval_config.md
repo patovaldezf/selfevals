@@ -12,8 +12,9 @@ Run a spec with:
 
 ```bash
 selfevals run evals/experiments/example_pingpong.yaml --no-persist
-# or persist to SQLite (note: --db is a GLOBAL flag, before the subcommand):
-selfevals --db ./selfevals.sqlite run evals/experiments/example_pingpong.yaml
+# or persist to Postgres (note: --db is a GLOBAL flag, before the subcommand;
+# it takes a Postgres URL, and defaults to $SELFEVALS_STORAGE_URL):
+selfevals --db postgresql://localhost:5433/selfevals run evals/experiments/example_pingpong.yaml
 ```
 
 See also: [`api_reference.md`](api_reference.md) (HTTP API),

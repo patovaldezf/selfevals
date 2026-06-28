@@ -1,6 +1,6 @@
 # selfevals — Arquitectura
 
-> Estado: documento de arquitectura v0.1 (selfevals v0.5.0). Es la fuente de
+> Estado: documento de arquitectura (selfevals v0.13.0, Postgres-only). Es la fuente de
 > verdad sobre **qué vive dónde y por qué** en el repo. No describe la
 > implementación de cada módulo; fija las piezas, sus fronteras y las utilidades
 > reusables. Regla del repo: **verificar reportes contra el código antes de
@@ -22,7 +22,7 @@ evals/experiments/*.yaml
    → repo/loader (hidrata a ExperimentSpec/Pydantic)
    → cli/commands (construye adapters + graders)
    → optimization/loop (sampling → runner/executor corre el agente → graders puntúan → aggregator)
-   → storage (sqlite) + reporter (markdown/json/compare)
+   → storage (postgres) + reporter (markdown/json/compare)
 ```
 
 ## Piezas
@@ -34,7 +34,7 @@ evals/experiments/*.yaml
 | **Graders**      | `graders/` (base, deterministic, set_match, funnel, llm_judge, judge_panel, guardrail, artifact, trajectory, calibration) + `_select.py` (path selector) + `registry.py` | puntúan output; per-grader scoring (cada grader puntúa por separado); `funnel` compone N niveles declarables en YAML | código vivo        |
 | **Optimization** | `optimization/` (loop, proposers, sampling, aggregator)                                                                                                                  | loop de optimización; el grid proposer agota combinaciones (`SearchSpaceExhaustedError`)                             | código vivo        |
 | **Runner**       | `runner/` (adapters, executor, multiturn, simulator, pricing, otlp\_\*)                                                                                                  | ejecuta el agente; contrato `(AdapterRequest) -> AdapterResponse` (embedded/cli/http)                                | código vivo        |
-| **Storage**      | `storage/` (interface, sqlite, filesystem, migrations, seed)                                                                                                             | persistencia; SQLite por defecto + migraciones                                                                       | código vivo        |
+| **Storage**      | `storage/` (interface, postgres, filesystem, migrations, mappers)                                                                                                        | persistencia; Postgres canónico (Postgres-only) + migraciones forward-only + typed mappers. SQLite solo `migrate-sqlite` | código vivo        |
 | **Reporter**     | `reporter/` (markdown, json_report, compare, \_metrics)                                                                                                                  | renderiza resultados y comparativas                                                                                  | código vivo        |
 | **Analysis**     | `analysis/` (bundle, hypothesis, ingest, staging, schemas)                                                                                                               | análisis de fallos / hipótesis sobre corridas                                                                        | código vivo        |
 | **Trace / SDK**  | `trace/` (recorder, otel_importer, payload_router) · `sdk/` (facade, exporter, auto_instrument, context)                                                                 | captura de traces (OTel) del agente bajo prueba                                                                      | parcial / opcional |
@@ -73,7 +73,7 @@ src/selfevals/
 ├── graders/       base · deterministic · set_match · funnel · llm_judge · judge_panel · guardrail · ... + _select.py + registry.py
 ├── optimization/  loop · proposers · sampling · aggregator
 ├── runner/        adapters · executor · multiturn · simulator · pricing · otlp_*
-├── storage/       interface · sqlite · filesystem · seed · migrations/
+├── storage/       interface · postgres (mappers) · filesystem · migrations/
 ├── reporter/      markdown · json_report · compare · _metrics
 ├── analysis/      bundle · hypothesis · ingest · staging · schemas
 ├── trace/  sdk/   recorder · otel_importer · payload_router · facade · exporter   # captura de traces (opcional)
@@ -102,7 +102,9 @@ Antes de escribir un helper, revisa si ya existe aquí (combate duplicación).
 
 ## Estado
 
-v0.5.0. Per-grader scoring y grid-exhaust implementados; core + CLI + storage +
-reporter vivos. API web y captura de traces tras extras opcionales. `web/` y
-`landing/` son subproyectos JS independientes. `docs/STATUS.md` manda sobre qué
-funciona hoy; verifica ahí (y en el código) antes de tratar un reporte como bug.
+v0.13.0 (Postgres-only). Per-grader scoring, grid-exhaust, datasets de primer
+orden, error-analysis loop y graders many-to-many/funnel implementados; core +
+CLI + storage (Postgres) + reporter vivos. API web y captura de traces tras
+extras opcionales. `web/` y `landing/` son subproyectos JS independientes.
+`docs/STATUS.md` manda sobre qué funciona hoy; verifica ahí (y en el código)
+antes de tratar un reporte como bug.

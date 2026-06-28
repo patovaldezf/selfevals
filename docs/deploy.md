@@ -1,10 +1,19 @@
 # Deploying the selfevals API
 
-The default API is a stateful, long-running service: FastAPI over a local
-SQLite file, with experiment runs executing on **in-process background
-threads**. That shape decides the simplest host. For the first scale step,
-configure Postgres for storage and Redis for live events before introducing
-Kafka, NATS, ClickHouse, or external workflow engines.
+> ⚠️ **Stale (pre-v0.13.0).** This guide was written for the old SQLite-on-a-Fly-
+> volume shape. selfevals is now **Postgres-only**: storage is a Postgres URL
+> (`SELFEVALS_STORAGE_URL`) and durable runs execute on Redis-backed workers
+> (`selfevals worker runs`), not in-process threads on one box. The Fly-volume /
+> single-process / SQLite-backup sections below no longer apply; treat them as
+> historical until this doc is rewritten for the Postgres + Redis + worker
+> topology (see `docs/SCALE_ARCHITECTURE.md` and `docs/STATUS.md`).
+
+The API is a long-running FastAPI service backed by **Postgres** (storage) and,
+for live events and durable run execution, **Redis**. Bring both up locally with
+`docker compose up -d postgres redis` (see `.env.example`); in production point
+`SELFEVALS_STORAGE_URL` at a managed Postgres and `SELFEVALS_REDIS_URL` at a
+managed Redis, and run one or more `selfevals worker runs` consumers alongside
+the API.
 
 ## Why Fly.io (and why not Vercel)
 

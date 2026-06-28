@@ -10,6 +10,7 @@ import argparse
 import os
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from selfevals._errors import SelfEvalsUserError
 from selfevals.cli import (
@@ -430,7 +431,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_run.add_argument(
         "--no-persist",
         action="store_true",
-        help="Do not write iterations/decisions to the SQLite db.",
+        help="Do not write iterations/decisions to storage (no Postgres needed).",
     )
     p_run.add_argument(
         "--persist-traces",
@@ -617,6 +618,31 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_skills_path.add_argument("name", help="Skill name, e.g. error-analysis.")
     p_skills_path.set_defaults(func=commands.cmd_skills_path)
+    p_skills_sync = skills_sub.add_parser(
+        "sync",
+        help="Install the bundled consumer skills into a project skill directory.",
+        description=(
+            "Copy the bundled skills into a project's skill directory (default "
+            ".claude/skills). Installs only the consumer skills — how to use the "
+            "framework — and leaves the selfevals-*-change repo-maintenance skills "
+            "out unless --all is given. Idempotent: re-running writes nothing when "
+            "everything is already current. This also runs automatically on any "
+            "selfevals invocation; set SELFEVALS_NO_SKILL_SYNC=1 to disable that."
+        ),
+        epilog="Example:\n  selfevals skills sync\n  selfevals skills sync --to .claude/skills --all",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_skills_sync.add_argument(
+        "--to",
+        default=None,
+        help="Destination skill directory (default .claude/skills).",
+    )
+    p_skills_sync.add_argument(
+        "--all",
+        action="store_true",
+        help="Also install the selfevals-*-change repo-maintenance skills.",
+    )
+    p_skills_sync.set_defaults(func=commands.cmd_skills_sync)
     p_examples = make_subparser(
         sub,
         "examples",
@@ -739,10 +765,38 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _maybe_autosync_skills() -> None:
+    """Install the consumer skills into the project's .claude/skills on first use.
+
+    A wheel can't run a post-install hook, so "skills show up when you install
+    the framework" is implemented as a lazy sync on any CLI invocation: if we're
+    sitting in a project (has a .claude/, pyproject.toml, or .git) we copy the
+    consumer skills in. It's idempotent by content, so after the first time it
+    writes nothing. Best-effort and non-fatal — a read-only FS or any error must
+    never break the command the user actually ran — and opt-out via
+    SELFEVALS_NO_SKILL_SYNC=1 (e.g. for CI that doesn't want surprise files).
+    """
+    if os.environ.get("SELFEVALS_NO_SKILL_SYNC"):
+        return
+    cwd = Path.cwd()
+    in_project = any((cwd / marker).exists() for marker in (".claude", "pyproject.toml", ".git"))
+    if not in_project:
+        return
+    try:
+        from selfevals import skills
+
+        skills.sync_skills()
+    except (OSError, RuntimeError, KeyError):
+        # Never let skill-sync failure surface to the user; it's a convenience,
+        # not part of the command they asked for.
+        pass
+
+
 def app(argv: Sequence[str] | None = None) -> int:
     """Programmatic entry point. Returns the intended process exit code."""
     parser = _build_parser()
     args = parser.parse_args(argv)
+    _maybe_autosync_skills()
     try:
         return int(args.func(args))
     except SelfEvalsUserError as exc:

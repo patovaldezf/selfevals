@@ -1,0 +1,4 @@
+interface:
+  display_name: "Design Your Dataset"
+  short_description: "Choose what to evaluate and which grader scores it."
+  default_prompt: "Use this to design EvalCases and pick graders — map each capability to deterministic/guardrail/set_match/confusion/funnel/judge_panel/llm_judge/trajectory/artifact_completeness, write the expected block, and manage datasets as first-class entities."

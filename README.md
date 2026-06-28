@@ -366,10 +366,23 @@ selfevals baseline show|set <workspace_id> --dataset <ds_id> [--iteration <itr_i
 selfevals regression check <workspace_id> --dataset <ds_id> --iteration <itr_id>
 selfevals analyze pull|push <workspace_id> <experiment_id>
 selfevals failuremode list|promote|retire|merge|edit ...
-selfevals skills list|path <name>
+selfevals skills list|path|sync ...
 selfevals examples copy pingpong
 selfevals serve
 ```
+
+### Agent skills
+
+selfevals ships a set of **agent skills** — bundled `SKILL.md` playbooks that
+teach a coding agent (Claude Code, Cursor, …) how to drive the framework:
+`evaluate-this-repo` (autonomous "set up evals for this project" bootstrap),
+`selfevals` (orientation), `design-your-dataset`, `connect-your-agent`,
+`run-eval-experiment`, `error-analysis`, and `iterate-and-ship`.
+
+They **auto-install** into the project's `.claude/skills/` on any `selfevals`
+invocation, so they're there as soon as the package is installed (set
+`SELFEVALS_NO_SKILL_SYNC=1` to opt out, or run `selfevals skills sync` to install
+them explicitly). `selfevals skills list` shows what's bundled.
 
 ## Project Layout
 

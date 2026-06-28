@@ -238,6 +238,22 @@ def cmd_skills_path(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_skills_sync(args: argparse.Namespace) -> int:
+    from selfevals import skills
+
+    dest = Path(args.to) if args.to else skills.DEFAULT_SKILL_DEST
+    only_consumer = not args.all
+    written = skills.sync_skills(dest, only_consumer=only_consumer)
+    scope = "consumer" if only_consumer else "all"
+    if not written:
+        print(f"skills already up to date in {dest} ({scope})")
+        return 0
+    print(f"synced {scope} skills to {dest} ({len(written)} file(s) written)")
+    for path in written:
+        print(f"  {path}")
+    return 0
+
+
 _EXAMPLE_NAMES = {"pingpong", "showcase"}
 
 

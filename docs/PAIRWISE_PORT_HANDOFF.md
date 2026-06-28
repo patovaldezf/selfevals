@@ -1,5 +1,12 @@
 # Handoff — Re-portar Pairwise + Torneos a Postgres-only
 
+> ✅ **Obsoleto (completado en v0.13.0).** Este handoff describe un port que ya se
+> realizó: pairwise judge + torneos viven hoy sobre Postgres-only (endpoints
+> `/verdicts`, `/verdicts/ingest`, `/tournaments` en la API, y la pestaña Pairwise
+> en la web). Se conserva por contexto histórico; las referencias de abajo a
+> "SQLite + tabla genérica `entities`" describen el estado **previo** al port, no
+> el código actual.
+
 ## TL;DR
 
 La feature **pairwise judge + torneos Elo/Bradley-Terry** está 100% construida y verde
