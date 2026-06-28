@@ -113,7 +113,6 @@
     >
       <div class="search">
         <Icon icon={Search} size={16} class="search-icon" />
-        <!-- svelte-ignore a11y-autofocus -->
         <input
           bind:this={inputEl}
           bind:value={query}
