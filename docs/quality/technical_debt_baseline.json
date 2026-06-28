@@ -1,0 +1,1674 @@
+{
+  "counts": {
+    "broad_exception_catches": 40,
+    "direct_frontend_fetch": 0,
+    "direct_user_header": 0,
+    "docs_version_drift": 0,
+    "get_entity_calls": 51,
+    "json_extract": 5,
+    "large_files": 16,
+    "large_python_symbols": 20,
+    "list_entities_calls": 65,
+    "type_ignores": 131
+  },
+  "description": "Baseline for scripts/audit_technical_debt.py. Decrease counts as debt is removed; do not increase without review.",
+  "findings": {
+    "broad_exception_catches": [
+      {
+        "detail": "broad except Exception",
+        "line": 189,
+        "path": "examples/hello_llm/agent.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 220,
+        "path": "examples/hello_llm/agent.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 430,
+        "path": "examples/hello_llm/agent.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 144,
+        "path": "examples/hello_openai/agent.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 308,
+        "path": "examples/hello_openai/agent.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 70,
+        "path": "src/selfevals/api/dataset_writer.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 181,
+        "path": "src/selfevals/api/dataset_writer.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 305,
+        "path": "src/selfevals/api/dataset_writer.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 61,
+        "path": "src/selfevals/api/failure_mode_ops.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 225,
+        "path": "src/selfevals/api/run_launcher.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 299,
+        "path": "src/selfevals/api/run_launcher.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 136,
+        "path": "src/selfevals/api/run_queue.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 150,
+        "path": "src/selfevals/api/run_queue.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 294,
+        "path": "src/selfevals/cli/commands.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 137,
+        "path": "src/selfevals/cli/demo_commands.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 62,
+        "path": "src/selfevals/cli/migrate_commands.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 346,
+        "path": "src/selfevals/graders/funnel.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 150,
+        "path": "src/selfevals/graders/llm_judge.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 237,
+        "path": "src/selfevals/graders/pairwise.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 60,
+        "path": "src/selfevals/repo/datasets.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 397,
+        "path": "src/selfevals/repo/loader.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 450,
+        "path": "src/selfevals/repo/loader.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 481,
+        "path": "src/selfevals/repo/loader.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 516,
+        "path": "src/selfevals/repo/loader.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 217,
+        "path": "src/selfevals/runner/adapters.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 164,
+        "path": "src/selfevals/runner/baseline.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 728,
+        "path": "src/selfevals/runner/launch.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 788,
+        "path": "src/selfevals/runner/launch.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 128,
+        "path": "src/selfevals/runner/otlp_receiver.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 132,
+        "path": "src/selfevals/runner/otlp_receiver.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 174,
+        "path": "src/selfevals/runner/otlp_receiver.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 184,
+        "path": "src/selfevals/runner/otlp_receiver.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 198,
+        "path": "src/selfevals/runner/otlp_receiver.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 250,
+        "path": "src/selfevals/runner/otlp_receiver.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 274,
+        "path": "src/selfevals/runner/otlp_receiver.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 127,
+        "path": "src/selfevals/runner/pairwise_tournament.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 158,
+        "path": "src/selfevals/sdk/auto_instrument.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 427,
+        "path": "src/selfevals/trace/recorder.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 97,
+        "path": "src/selfevals/worker/lease_sweeper.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 219,
+        "path": "tests/storage/test_postgres_storage.py"
+      }
+    ],
+    "direct_frontend_fetch": [],
+    "direct_user_header": [],
+    "docs_version_drift": [],
+    "get_entity_calls": [
+      {
+        "detail": "get_entity call",
+        "line": 105,
+        "path": "src/selfevals/analysis/ingest.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 38,
+        "path": "src/selfevals/api/baseline_ops.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 47,
+        "path": "src/selfevals/api/baseline_ops.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 180,
+        "path": "src/selfevals/api/dataset_writer.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 208,
+        "path": "src/selfevals/api/dataset_writer.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 225,
+        "path": "src/selfevals/api/dataset_writer.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 248,
+        "path": "src/selfevals/api/dataset_writer.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 315,
+        "path": "src/selfevals/api/dataset_writer.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 60,
+        "path": "src/selfevals/api/failure_mode_ops.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 90,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 181,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 290,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 501,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 532,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 566,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 567,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 634,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 689,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 869,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 57,
+        "path": "src/selfevals/api/run_jobs.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 117,
+        "path": "src/selfevals/api/run_jobs.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 226,
+        "path": "src/selfevals/api/run_jobs.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 90,
+        "path": "src/selfevals/api/run_launcher.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 36,
+        "path": "src/selfevals/cli/baseline_commands.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 47,
+        "path": "src/selfevals/cli/baseline_commands.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 293,
+        "path": "src/selfevals/cli/commands.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 55,
+        "path": "src/selfevals/runner/baseline.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 727,
+        "path": "src/selfevals/runner/launch.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 785,
+        "path": "src/selfevals/runner/launch.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 211,
+        "path": "src/selfevals/storage/interface.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 216,
+        "path": "src/selfevals/storage/postgres/storage.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 199,
+        "path": "src/selfevals/storage/seed.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 171,
+        "path": "tests/analysis/test_handshake.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 52,
+        "path": "tests/api/test_run_jobs.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 114,
+        "path": "tests/api/test_run_jobs.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 143,
+        "path": "tests/api/test_run_jobs.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 183,
+        "path": "tests/api/test_run_jobs.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 79,
+        "path": "tests/cli/test_migrate_sqlite.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 82,
+        "path": "tests/cli/test_migrate_sqlite.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 204,
+        "path": "tests/optimization/test_loop.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 168,
+        "path": "tests/repo/test_datasets.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 201,
+        "path": "tests/runner/test_baseline.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 71,
+        "path": "tests/storage/test_factory.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 49,
+        "path": "tests/storage/test_postgres_storage.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 80,
+        "path": "tests/storage/test_postgres_storage.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 86,
+        "path": "tests/storage/test_postgres_storage.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 59,
+        "path": "tests/storage/test_seed.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 71,
+        "path": "tests/worker/test_lease_sweeper.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 82,
+        "path": "tests/worker/test_lease_sweeper.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 126,
+        "path": "tests/worker/test_lease_sweeper.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 144,
+        "path": "tests/worker/test_lease_sweeper.py"
+      }
+    ],
+    "json_extract": [
+      {
+        "detail": "json_extract usage",
+        "line": 146,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "json_extract usage",
+        "line": 218,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "json_extract usage",
+        "line": 190,
+        "path": "src/selfevals/schemas/eval_case.py"
+      },
+      {
+        "detail": "json_extract usage",
+        "line": 191,
+        "path": "src/selfevals/storage/seed.py"
+      },
+      {
+        "detail": "json_extract usage",
+        "line": 192,
+        "path": "src/selfevals/storage/seed.py"
+      }
+    ],
+    "large_files": [
+      {
+        "detail": "1539 lines > limit 700",
+        "line": 1,
+        "path": "src/selfevals/api/app.py"
+      },
+      {
+        "detail": "905 lines > limit 700",
+        "line": 1,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "988 lines > limit 700",
+        "line": 1,
+        "path": "src/selfevals/api/schemas.py"
+      },
+      {
+        "detail": "707 lines > limit 700",
+        "line": 1,
+        "path": "src/selfevals/cli/commands.py"
+      },
+      {
+        "detail": "763 lines > limit 700",
+        "line": 1,
+        "path": "src/selfevals/cli/main.py"
+      },
+      {
+        "detail": "765 lines > limit 700",
+        "line": 1,
+        "path": "src/selfevals/optimization/loop.py"
+      },
+      {
+        "detail": "1121 lines > limit 700",
+        "line": 1,
+        "path": "src/selfevals/repo/loader.py"
+      },
+      {
+        "detail": "924 lines > limit 700",
+        "line": 1,
+        "path": "src/selfevals/runner/launch.py"
+      },
+      {
+        "detail": "803 lines > limit 700",
+        "line": 1,
+        "path": "src/selfevals/storage/postgres/mappers/trace.py"
+      },
+      {
+        "detail": "730 lines > limit 700",
+        "line": 1,
+        "path": "tests/optimization/test_aggregator.py"
+      },
+      {
+        "detail": "791 lines > limit 700",
+        "line": 1,
+        "path": "tests/optimization/test_loop.py"
+      },
+      {
+        "detail": "839 lines > limit 700",
+        "line": 1,
+        "path": "tests/repo/test_loader.py"
+      },
+      {
+        "detail": "827 lines > limit 700",
+        "line": 1,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "1238 lines > limit 900",
+        "line": 1,
+        "path": "web/src/lib/api/client.ts"
+      },
+      {
+        "detail": "1387 lines > limit 700",
+        "line": 1,
+        "path": "web/src/routes/[workspace]/experiments/[experiment]/+page.svelte"
+      },
+      {
+        "detail": "968 lines > limit 700",
+        "line": 1,
+        "path": "web/src/routes/[workspace]/traces/[trace]/+page.svelte"
+      }
+    ],
+    "large_python_symbols": [
+      {
+        "detail": "function build_app has 1359 lines: def build_app(*, db_path: str | None = None) -> FastAPI:",
+        "line": 180,
+        "path": "src/selfevals/api/app.py"
+      },
+      {
+        "detail": "function _build_parser has 713 lines: def _build_parser() -> argparse.ArgumentParser:",
+        "line": 27,
+        "path": "src/selfevals/cli/main.py"
+      },
+      {
+        "detail": "function grade has 142 lines: async def grade(self, context: GraderContext) -> GradeResult:",
+        "line": 199,
+        "path": "src/selfevals/graders/deterministic.py"
+      },
+      {
+        "detail": "class JudgePanelGrader has 405 lines: class JudgePanelGrader(Grader):",
+        "line": 134,
+        "path": "src/selfevals/graders/judge_panel.py"
+      },
+      {
+        "detail": "class TrajectoryGrader has 249 lines: class TrajectoryGrader(Grader):",
+        "line": 115,
+        "path": "src/selfevals/graders/trajectory.py"
+      },
+      {
+        "detail": "class OptimizationLoop has 476 lines: class OptimizationLoop:",
+        "line": 127,
+        "path": "src/selfevals/optimization/loop.py"
+      },
+      {
+        "detail": "function _run_iterations has 136 lines: async def _run_iterations(self) -> OptimizationResult:",
+        "line": 205,
+        "path": "src/selfevals/optimization/loop.py"
+      },
+      {
+        "detail": "class Executor has 343 lines: class Executor:",
+        "line": 134,
+        "path": "src/selfevals/runner/executor.py"
+      },
+      {
+        "detail": "class MultiTurnExecutor has 187 lines: class MultiTurnExecutor:",
+        "line": 47,
+        "path": "src/selfevals/runner/multiturn.py"
+      },
+      {
+        "detail": "function run_case has 177 lines: async def run_case(",
+        "line": 57,
+        "path": "src/selfevals/runner/multiturn.py"
+      },
+      {
+        "detail": "class UserSimulator has 185 lines: class UserSimulator(AgentAdapter):",
+        "line": 135,
+        "path": "src/selfevals/runner/simulator.py"
+      },
+      {
+        "detail": "class EvalCaseMapper has 185 lines: class EvalCaseMapper(EntityMapper[EvalCase]):",
+        "line": 87,
+        "path": "src/selfevals/storage/postgres/mappers/eval_case.py"
+      },
+      {
+        "detail": "class ExperimentMapper has 344 lines: class ExperimentMapper(EntityMapper[Experiment]):",
+        "line": 128,
+        "path": "src/selfevals/storage/postgres/mappers/experiment.py"
+      },
+      {
+        "detail": "function upsert has 125 lines: def upsert(self, cur: Any, entity: Experiment) -> None:",
+        "line": 133,
+        "path": "src/selfevals/storage/postgres/mappers/experiment.py"
+      },
+      {
+        "detail": "function _build has 175 lines: def _build(self, cur: Any, row: tuple[Any, ...]) -> Experiment:",
+        "line": 297,
+        "path": "src/selfevals/storage/postgres/mappers/experiment.py"
+      },
+      {
+        "detail": "class IterationRecordMapper has 221 lines: class IterationRecordMapper(EntityMapper[IterationRecord]):",
+        "line": 68,
+        "path": "src/selfevals/storage/postgres/mappers/iteration_record.py"
+      },
+      {
+        "detail": "class TraceMapper has 708 lines: class TraceMapper(EntityMapper[Trace]):",
+        "line": 92,
+        "path": "src/selfevals/storage/postgres/mappers/trace.py"
+      },
+      {
+        "detail": "function _insert_span has 233 lines: def _insert_span(",
+        "line": 195,
+        "path": "src/selfevals/storage/postgres/mappers/trace.py"
+      },
+      {
+        "detail": "class TraceRecorder has 431 lines: class TraceRecorder:",
+        "line": 195,
+        "path": "src/selfevals/trace/recorder.py"
+      },
+      {
+        "detail": "function test_end_to_end_chain_constructable has 193 lines: def test_end_to_end_chain_constructable() -> None:",
+        "line": 78,
+        "path": "tests/schemas/test_cross_entity.py"
+      }
+    ],
+    "list_entities_calls": [
+      {
+        "detail": "list_entities call",
+        "line": 119,
+        "path": "src/selfevals/analysis/bundle.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 145,
+        "path": "src/selfevals/analysis/bundle.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 59,
+        "path": "src/selfevals/analysis/ingest.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 187,
+        "path": "src/selfevals/api/dataset_writer.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 212,
+        "path": "src/selfevals/api/dataset_writer.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 49,
+        "path": "src/selfevals/api/failure_mode_ops.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 180,
+        "path": "src/selfevals/api/metrics.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 203,
+        "path": "src/selfevals/api/metrics.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 240,
+        "path": "src/selfevals/api/pairwise_ops.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 94,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 99,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 714,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 840,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 876,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 70,
+        "path": "src/selfevals/api/run_jobs.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 86,
+        "path": "src/selfevals/api/run_jobs.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 89,
+        "path": "src/selfevals/cli/analyze_commands.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 95,
+        "path": "src/selfevals/cli/commands.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 110,
+        "path": "src/selfevals/cli/commands.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 299,
+        "path": "src/selfevals/cli/commands.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 308,
+        "path": "src/selfevals/cli/commands.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 333,
+        "path": "src/selfevals/cli/commands.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 79,
+        "path": "src/selfevals/cli/dataset_commands.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 144,
+        "path": "src/selfevals/cli/dataset_commands.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 588,
+        "path": "src/selfevals/optimization/loop.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 739,
+        "path": "src/selfevals/runner/launch.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 104,
+        "path": "src/selfevals/runner/pairwise_ops.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 215,
+        "path": "src/selfevals/storage/interface.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 234,
+        "path": "src/selfevals/storage/postgres/storage.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 137,
+        "path": "src/selfevals/storage/seed.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 204,
+        "path": "src/selfevals/storage/seed.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 166,
+        "path": "tests/analysis/test_handshake.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 206,
+        "path": "tests/analysis/test_handshake.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 233,
+        "path": "tests/analysis/test_handshake.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 183,
+        "path": "tests/cli/test_cli.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 69,
+        "path": "tests/cli/test_cli_run.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 70,
+        "path": "tests/cli/test_cli_run.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 39,
+        "path": "tests/cli/test_compare.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 230,
+        "path": "tests/integration/test_full_loop_with_mocked_judge.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 233,
+        "path": "tests/integration/test_full_loop_with_mocked_judge.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 167,
+        "path": "tests/optimization/test_loop.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 168,
+        "path": "tests/optimization/test_loop.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 251,
+        "path": "tests/optimization/test_loop.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 299,
+        "path": "tests/optimization/test_loop.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 338,
+        "path": "tests/optimization/test_loop.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 193,
+        "path": "tests/optimization/test_loop_error_analysis.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 209,
+        "path": "tests/optimization/test_loop_error_analysis.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 226,
+        "path": "tests/optimization/test_loop_error_analysis.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 250,
+        "path": "tests/optimization/test_loop_error_analysis.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 349,
+        "path": "tests/optimization/test_loop_error_analysis.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 170,
+        "path": "tests/repo/test_datasets.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 204,
+        "path": "tests/repo/test_datasets.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 95,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 238,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 273,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 81,
+        "path": "tests/runner/test_pairwise_tournament.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 83,
+        "path": "tests/runner/test_pairwise_tournament.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 164,
+        "path": "tests/runner/test_pairwise_tournament.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 165,
+        "path": "tests/runner/test_pairwise_tournament.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 126,
+        "path": "tests/storage/test_postgres_storage.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 131,
+        "path": "tests/storage/test_postgres_storage.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 141,
+        "path": "tests/storage/test_postgres_storage.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 154,
+        "path": "tests/storage/test_postgres_storage.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 199,
+        "path": "tests/storage/test_postgres_storage.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 61,
+        "path": "tests/storage/test_seed.py"
+      }
+    ],
+    "type_ignores": [
+      {
+        "detail": "type ignore",
+        "line": 173,
+        "path": "examples/hello_llm/agent.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 203,
+        "path": "examples/hello_llm/agent.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 125,
+        "path": "examples/hello_openai/agent.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 103,
+        "path": "src/selfevals/analysis/ingest.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 69,
+        "path": "src/selfevals/api/dataset_writer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 42,
+        "path": "src/selfevals/api/pairwise_ops.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 59,
+        "path": "src/selfevals/api/pairwise_ops.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 62,
+        "path": "src/selfevals/api/pairwise_ops.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 66,
+        "path": "src/selfevals/api/pairwise_ops.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 220,
+        "path": "src/selfevals/api/pairwise_ops.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 302,
+        "path": "src/selfevals/api/queries.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 293,
+        "path": "src/selfevals/cli/commands.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 299,
+        "path": "src/selfevals/cli/commands.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 308,
+        "path": "src/selfevals/cli/commands.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 333,
+        "path": "src/selfevals/cli/commands.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 100,
+        "path": "src/selfevals/graders/pairwise.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 181,
+        "path": "src/selfevals/runner/launch.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 189,
+        "path": "src/selfevals/runner/launch.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 645,
+        "path": "src/selfevals/runner/launch.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 260,
+        "path": "src/selfevals/runner/pairwise_tournament.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 59,
+        "path": "src/selfevals/runner/retry.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 63,
+        "path": "src/selfevals/runner/retry.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 81,
+        "path": "src/selfevals/runner/throttle.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 85,
+        "path": "src/selfevals/runner/throttle.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 199,
+        "path": "src/selfevals/storage/seed.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 204,
+        "path": "src/selfevals/storage/seed.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 39,
+        "path": "tests/api/test_run_queue.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 73,
+        "path": "tests/api/test_threads.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 81,
+        "path": "tests/api/test_threads.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 111,
+        "path": "tests/api/test_threads.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 31,
+        "path": "tests/cli/test_analyze_cli.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 56,
+        "path": "tests/conftest.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 71,
+        "path": "tests/conftest.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 61,
+        "path": "tests/decision/test_matrix.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 62,
+        "path": "tests/decision/test_matrix.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 38,
+        "path": "tests/examples/test_showcase_offline.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 74,
+        "path": "tests/examples/test_showcase_offline.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 95,
+        "path": "tests/examples/test_showcase_offline.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 81,
+        "path": "tests/graders/test_artifact.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 48,
+        "path": "tests/graders/test_registry_dotted_path.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 49,
+        "path": "tests/graders/test_registry_dotted_path.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 50,
+        "path": "tests/graders/test_registry_dotted_path.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 213,
+        "path": "tests/graders/test_set_match.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 117,
+        "path": "tests/optimization/test_loop.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 712,
+        "path": "tests/optimization/test_loop.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 126,
+        "path": "tests/optimization/test_loop_error_analysis.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 249,
+        "path": "tests/optimization/test_loop_error_analysis.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 111,
+        "path": "tests/optimization/test_proposers.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 295,
+        "path": "tests/optimization/test_proposers.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 315,
+        "path": "tests/optimization/test_proposers.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 104,
+        "path": "tests/runner/test_adapters.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 128,
+        "path": "tests/runner/test_adapters.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 215,
+        "path": "tests/runner/test_adapters.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 219,
+        "path": "tests/runner/test_adapters.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 238,
+        "path": "tests/runner/test_adapters.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 243,
+        "path": "tests/runner/test_adapters.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 275,
+        "path": "tests/runner/test_adapters.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 280,
+        "path": "tests/runner/test_adapters.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 93,
+        "path": "tests/runner/test_baseline.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 154,
+        "path": "tests/runner/test_baseline.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 167,
+        "path": "tests/runner/test_baseline.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 174,
+        "path": "tests/runner/test_baseline.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 193,
+        "path": "tests/runner/test_baseline.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 206,
+        "path": "tests/runner/test_baseline.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 304,
+        "path": "tests/runner/test_executor.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 164,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 166,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 195,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 233,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 235,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 247,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 251,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 252,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 267,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 270,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 481,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 495,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 605,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 629,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 657,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 700,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 724,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 748,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 763,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 777,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 810,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 823,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 49,
+        "path": "tests/runner/test_pairwise_ops.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 51,
+        "path": "tests/runner/test_pairwise_ops.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 82,
+        "path": "tests/runner/test_throttle.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 26,
+        "path": "tests/schemas/test_base.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 41,
+        "path": "tests/schemas/test_base.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 68,
+        "path": "tests/schemas/test_base.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 75,
+        "path": "tests/schemas/test_base.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 22,
+        "path": "tests/schemas/test_dataset.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 44,
+        "path": "tests/schemas/test_enums.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 182,
+        "path": "tests/schemas/test_eval_case.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 258,
+        "path": "tests/schemas/test_eval_case.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 32,
+        "path": "tests/schemas/test_failure_mode.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 22,
+        "path": "tests/schemas/test_fleet.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 23,
+        "path": "tests/schemas/test_pairwise_verdict.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 27,
+        "path": "tests/schemas/test_registry.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 18,
+        "path": "tests/schemas/test_tool.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 47,
+        "path": "tests/schemas/test_tool.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 255,
+        "path": "tests/schemas/test_trace.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 64,
+        "path": "tests/schemas/test_workspace.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 76,
+        "path": "tests/schemas/test_workspace.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 69,
+        "path": "tests/storage/test_factory.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 29,
+        "path": "tests/storage/test_migrations.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 35,
+        "path": "tests/storage/test_migrations.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 42,
+        "path": "tests/storage/test_migrations.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 194,
+        "path": "tests/storage/test_postgres_storage.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 35,
+        "path": "tests/trace/test_otel_importer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 61,
+        "path": "tests/trace/test_otel_importer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 62,
+        "path": "tests/trace/test_otel_importer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 110,
+        "path": "tests/trace/test_otel_importer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 132,
+        "path": "tests/trace/test_otel_importer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 150,
+        "path": "tests/trace/test_otel_importer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 167,
+        "path": "tests/trace/test_otel_importer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 190,
+        "path": "tests/trace/test_otel_importer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 216,
+        "path": "tests/trace/test_otel_importer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 252,
+        "path": "tests/trace/test_otel_importer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 271,
+        "path": "tests/trace/test_otel_importer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 295,
+        "path": "tests/trace/test_otel_importer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 311,
+        "path": "tests/trace/test_otel_importer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 334,
+        "path": "tests/trace/test_otel_importer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 353,
+        "path": "tests/trace/test_otel_importer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 390,
+        "path": "tests/trace/test_otel_importer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 409,
+        "path": "tests/trace/test_otel_importer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 433,
+        "path": "tests/trace/test_otel_importer.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 461,
+        "path": "tests/trace/test_otel_importer.py"
+      }
+    ]
+  }
+}

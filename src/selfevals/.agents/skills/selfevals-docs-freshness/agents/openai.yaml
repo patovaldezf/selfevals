@@ -1,0 +1,4 @@
+interface:
+  display_name: "selfevals Docs Freshness"
+  short_description: "Keep selfevals docs aligned with shipped behavior."
+  default_prompt: "Use this after changing public behavior in selfevals."

@@ -3,8 +3,6 @@
   import CopyableId from '$lib/components/CopyableId.svelte';
   import DecisionBadge from '$lib/components/DecisionBadge.svelte';
   import FunnelNode from '$lib/components/FunnelNode.svelte';
-  import MetricChip from '$lib/components/MetricChip.svelte';
-  import Sparkline from '$lib/components/Sparkline.svelte';
   import { api, ApiError } from '$lib/api/client';
   import { openTraceStream, type StreamHandle } from '$lib/api/sse';
   import type {
@@ -22,6 +20,16 @@
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
   import BaselinePanel from '$lib/components/BaselinePanel.svelte';
   import PairwisePanel from '$lib/components/PairwisePanel.svelte';
+  import Tabs from '$lib/components/ui/Tabs.svelte';
+  import Badge from '$lib/components/ui/Badge.svelte';
+  import StatusDot from '$lib/components/ui/StatusDot.svelte';
+  import { LineChart, StatRing, CountUp } from '$lib/components/charts';
+  import {
+    directionFromOperator,
+    thresholdLevel,
+    levelColor,
+    deltaLevel
+  } from '$lib/viz/thresholds';
 
   export let data: PageData;
 
@@ -62,6 +70,34 @@
   $: trendValues = iterations
     .map((it) => it.primary_metric_value)
     .filter((v): v is number => v !== null);
+
+  // The optimization story: primary metric per iteration, in run order, as
+  // chart points (x = iteration index). This is the "accuracy climbing" line —
+  // coloured against the experiment's own target so the threshold line shows
+  // exactly where "good enough" sits.
+  $: targetDirection = directionFromOperator(summary.primary_target.operator);
+  $: accuracyPoints = iterations
+    .filter((it) => it.primary_metric_value !== null)
+    .map((it) => ({ x: it.iteration, y: it.primary_metric_value as number }));
+  $: bestValue = best?.primary_metric_value ?? null;
+  $: bestLevel = thresholdLevel(bestValue, {
+    target: summary.primary_target.value,
+    direction: targetDirection
+  });
+
+  // When the Compare tab first opens, default to the most useful pair: the best
+  // iteration as B (candidate) vs the one before it as A (baseline). The user can
+  // still re-pick; this just lands them on the comparison they almost always want.
+  $: if (tab === 'compare' && compareA === null && compareB === null && best !== null) {
+    const bestIdx = iterations.findIndex((it) => it.id === best!.id);
+    if (bestIdx > 0) {
+      compareA = iterations[bestIdx - 1].id;
+      compareB = best.id;
+    } else if (iterations.length > 1) {
+      compareA = iterations[0].id;
+      compareB = iterations[1].id;
+    }
+  }
 
   // --- Live run state: cancel + poll -------------------------------------
   // While a run is queued/running we poll the experiment so iterations and
@@ -161,15 +197,6 @@
     detachLive();
   }
   onDestroy(stopLiveLookup);
-
-  const STATE_TONE: Record<string, string> = {
-    running: 'state-running',
-    queued: 'state-queued',
-    draft: 'state-queued',
-    completed: 'state-done',
-    aborted: 'state-aborted',
-    failed: 'state-aborted'
-  };
 
   // Compare tab (B3): the diff is computed server-side (one math source
   // shared with the CLI). The FE picks A and B, fetches the structured
@@ -309,11 +336,11 @@
     return `${sign}${fmtNumber(value, 3)}`;
   }
 
-  // Same convention as the iterations table Δ column (~line 187): green up,
-  // red down, neutral grey for zero/missing.
+  // Δ colour via the shared threshold language: improvement (in the metric's
+  // good direction) is green, regression red, neutral grey. Same green/amber/red
+  // vocabulary the charts and stat cards use.
   function deltaColor(value: number | null): string {
-    if (value === null || Math.abs(value) < 1e-9) return 'var(--color-text-3)';
-    return value > 0 ? 'var(--color-success)' : 'var(--color-danger)';
+    return levelColor(deltaLevel(value, targetDirection));
   }
 
   // Recommendation banner copy, derived from the server's verdict.
@@ -358,9 +385,9 @@
       </div>
     </div>
     <div class="flex shrink-0 items-center gap-3">
-      <span class="state-badge {STATE_TONE[summary.state] ?? 'state-queued'}">
-        {#if isActive}<span class="pulse" aria-hidden="true"></span>{/if}
-        {summary.state}
+      <span class="state-pill">
+        <StatusDot state={summary.state} />
+        <span class="state-pill-label">{summary.state}</span>
       </span>
       <Button
         variant="secondary"
@@ -375,62 +402,119 @@
     </div>
   </header>
 
-  {#if isActive && liveRunId}
-    <div class="live-banner mb-8">
-      <span class="live-dot" aria-hidden="true"></span>
-      <span class="text-sm">
-        <span class="font-medium">Live run</span>
-        <span class="text-text-2"
-          >· {liveSpanCount} span{liveSpanCount === 1 ? '' : 's'}{liveLastSpan
-            ? ` · ${liveLastSpan}`
-            : ''}</span
-        >
-      </span>
-      <a class="watch-link" href={`/${workspaceId}/traces/${liveRunId}`}>Watch live →</a>
+  {#if isActive}
+    <!-- Live header: the run is breathing. A pulsing dot, the iteration it's on,
+         the metric counting up as iterations land, and the agent's last action
+         streaming in from SSE. This is the "watch a run live" moment. -->
+    <div class="live mb-8" class:live-attached={liveRunId}>
+      <div class="live-main">
+        <span class="live-dot" aria-hidden="true"></span>
+        <span class="live-title">Run in progress</span>
+        <span class="live-sep" aria-hidden="true">·</span>
+        <span class="live-iter mono" data-numeric>
+          iteration {summary.iteration_count}<span class="live-iter-of"
+            >/{summary.max_iterations}</span
+          >
+        </span>
+        {#if bestValue !== null}
+          <span class="live-sep" aria-hidden="true">·</span>
+          <span class="live-metric">
+            <span class="live-metric-label">{summary.primary_metric}</span>
+            <span class="live-metric-val" style:color={levelColor(bestLevel)}>
+              <CountUp value={bestValue} format="percent" />
+            </span>
+          </span>
+        {/if}
+      </div>
+
+      <div class="live-foot">
+        {#if liveRunId}
+          <span class="live-activity">
+            <span class="live-activity-count mono" data-numeric>{liveSpanCount}</span>
+            <span class="live-activity-label">span{liveSpanCount === 1 ? '' : 's'}</span>
+            {#if liveLastSpan}
+              <span class="live-sep" aria-hidden="true">·</span>
+              <span class="live-last">{liveLastSpan}</span>
+            {/if}
+          </span>
+          <a class="watch-link" href={`/${workspaceId}/traces/${liveRunId}`}>Watch live →</a>
+        {:else}
+          <span class="live-waiting">waiting for the run to emit spans…</span>
+        {/if}
+      </div>
+
+      <!-- Progress of the optimization loop across its iteration budget. -->
+      <div class="live-progress" aria-hidden="true">
+        <div
+          class="live-progress-fill"
+          style:width="{Math.min(
+            100,
+            (summary.iteration_count / Math.max(1, summary.max_iterations)) * 100
+          )}%"
+        ></div>
+      </div>
     </div>
   {/if}
 
-  <section class="grid grid-cols-4 gap-4 mb-10">
-    <MetricChip
-      label="Best primary"
-      value={best?.primary_metric_value ?? null}
-      unit={summary.primary_metric}
-    />
-    <MetricChip
-      label="Target"
-      value={`${summary.primary_target.operator} ${summary.primary_target.value}`}
-      format="plain"
-    />
-    <MetricChip
-      label="Iterations"
-      value={`${summary.iteration_count}/${summary.max_iterations}`}
-      format="plain"
-    />
-    <div class="rounded-lg border border-border bg-surface px-4 py-3.5 flex items-center gap-3">
-      <div class="flex-1">
-        <div class="text-xs uppercase tracking-wide text-text-3 mb-1">Trend</div>
-        <div class="font-mono text-sm text-text-2" data-numeric>
-          {trendValues.length} pts
+  <!-- The optimization at a glance: the line is the primary metric climbing
+       across iterations, with the target drawn in; the ring is where the best
+       iteration landed against that target. Green/amber/red is derived, never
+       hardcoded — the same threshold language as everywhere else. -->
+  <section class="analytics mb-10">
+    <div class="analytics-chart card">
+      <div class="analytics-head">
+        <div>
+          <div class="analytics-eyebrow">Primary metric over iterations</div>
+          <div class="analytics-metric mono">{summary.primary_metric}</div>
+        </div>
+        <div class="analytics-target mono">
+          target {summary.primary_target.operator}
+          {summary.primary_target.value}
         </div>
       </div>
-      <Sparkline values={trendValues} width={88} height={36} />
+      {#if accuracyPoints.length > 0}
+        <LineChart
+          points={accuracyPoints}
+          height={150}
+          format="percent"
+          threshold={{ target: summary.primary_target.value, direction: targetDirection }}
+        />
+      {:else}
+        <div class="analytics-empty">No completed iterations yet.</div>
+      {/if}
+    </div>
+
+    <div class="analytics-side">
+      <div class="card analytics-ring">
+        <StatRing
+          value={bestValue}
+          threshold={{ target: summary.primary_target.value, direction: targetDirection }}
+          label="Best"
+          size={84}
+        />
+      </div>
+      <div class="card analytics-stat">
+        <span class="analytics-stat-label">Iterations</span>
+        <span class="analytics-stat-value mono" data-numeric>
+          {summary.iteration_count}<span class="analytics-stat-of">/{summary.max_iterations}</span>
+        </span>
+      </div>
     </div>
   </section>
 
-  <div class="border-b border-border mb-6">
-    <div class="flex gap-6 text-sm">
-      {#each [{ id: 'iterations', label: `Iterations · ${iterations.length}` }, { id: 'results', label: 'Results' }, { id: 'compare', label: 'Compare' }, { id: 'funnel', label: 'Funnel' }, { id: 'pairwise', label: 'Pairwise' }, { id: 'decisions', label: `Decisions · ${data.decisions.length}` }] as t}
-        <button
-          type="button"
-          class="-mb-px py-2.5 border-b-2 transition-colors {tab === t.id
-            ? 'border-text-1 text-text-1 font-medium'
-            : 'border-transparent text-text-3 hover:text-text-1'}"
-          on:click={() => setTab(t.id)}
-        >
-          {t.label}
-        </button>
-      {/each}
-    </div>
+  <div class="mb-6">
+    <Tabs
+      tabs={[
+        { id: 'iterations', label: `Iterations · ${iterations.length}` },
+        { id: 'results', label: 'Results' },
+        { id: 'compare', label: 'Compare' },
+        { id: 'funnel', label: 'Funnel' },
+        { id: 'pairwise', label: 'Pairwise' },
+        { id: 'decisions', label: `Decisions · ${data.decisions.length}` }
+      ]}
+      active={tab}
+      on:change={(e) => setTab(e.detail)}
+    />
   </div>
 
   {#if tab === 'iterations'}
@@ -448,11 +532,15 @@
         </thead>
         <tbody class="divide-y divide-border">
           {#each iterations as it}
+            {@const isBest = best !== null && it.id === best.id}
             <tr
-              class="hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-1 transition-colors cursor-pointer"
+              class="iter-row hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-1 transition-colors cursor-pointer"
+              class:iter-best={isBest}
               role="button"
               tabindex="0"
-              aria-label="Open details for iteration #{it.iteration}"
+              aria-label="Open details for iteration #{it.iteration}{isBest
+                ? ' (best so far)'
+                : ''}"
               on:click={() => (openIteration = it)}
               on:keydown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -461,7 +549,13 @@
                 }
               }}
             >
-              <td class="px-4 py-3 font-mono text-text-3 text-xs" data-numeric>{it.iteration}</td>
+              <td class="px-4 py-3 font-mono text-text-3 text-xs" data-numeric>
+                <span class="iter-num">
+                  {#if isBest}<span class="iter-best-mark" title="Best so far" aria-hidden="true"
+                    ></span>{/if}
+                  {it.iteration}
+                </span>
+              </td>
               <td class="px-4 py-3">
                 {#if Object.keys(it.proposed_parameters).length === 0}
                   <span class="text-text-3 text-xs">—</span>
@@ -477,16 +571,21 @@
                   </div>
                 {/if}
               </td>
-              <td class="px-4 py-3 text-right font-mono" data-numeric>
+              <td
+                class="px-4 py-3 text-right font-mono"
+                style:color={levelColor(
+                  thresholdLevel(it.primary_metric_value, {
+                    target: summary.primary_target.value,
+                    direction: targetDirection
+                  })
+                )}
+                data-numeric
+              >
                 {fmtNumber(it.primary_metric_value)}
               </td>
               <td
                 class="px-4 py-3 text-right font-mono text-xs"
-                style:color={it.delta_vs_best && it.delta_vs_best > 0
-                  ? 'var(--color-success)'
-                  : it.delta_vs_best && it.delta_vs_best < 0
-                    ? 'var(--color-danger)'
-                    : 'var(--color-text-3)'}
+                style:color={levelColor(deltaLevel(it.delta_vs_best, targetDirection))}
                 data-numeric
               >
                 {fmtDelta(it.delta_vs_best)}
@@ -546,42 +645,33 @@
       {/if}
     </section>
   {:else if tab === 'compare'}
-    <div class="grid grid-cols-2 gap-6 mb-6">
-      <div class="rounded-lg border border-border bg-surface px-5 py-4">
-        <div class="flex items-center justify-between gap-3">
-          <span class="text-xs uppercase tracking-wide text-text-3">
-            Iteration A
-            <span class="text-text-3 normal-case ml-1">· baseline</span>
-          </span>
-          <select
-            class="font-mono text-xs px-2 py-1 rounded border border-border bg-bg"
-            aria-label="Pick iteration A"
-            bind:value={compareA}
-          >
-            <option value={null}>— pick —</option>
-            {#each iterations as it}
-              <option value={it.id}>#{it.iteration}</option>
-            {/each}
-          </select>
-        </div>
+    <div class="cmp-pickers mb-6">
+      <div class="cmp-pick">
+        <span class="cmp-pick-role">A · baseline</span>
+        <select class="cmp-select" aria-label="Pick iteration A" bind:value={compareA}>
+          <option value={null}>— pick —</option>
+          {#each iterations as it}
+            <option value={it.id}
+              >#{it.iteration}{it.primary_metric_value !== null
+                ? ` · ${(it.primary_metric_value * 100).toFixed(1)}%`
+                : ''}</option
+            >
+          {/each}
+        </select>
       </div>
-      <div class="rounded-lg border border-border bg-surface px-5 py-4">
-        <div class="flex items-center justify-between gap-3">
-          <span class="text-xs uppercase tracking-wide text-text-3">
-            Iteration B
-            <span class="text-text-3 normal-case ml-1">· candidate</span>
-          </span>
-          <select
-            class="font-mono text-xs px-2 py-1 rounded border border-border bg-bg"
-            aria-label="Pick iteration B"
-            bind:value={compareB}
-          >
-            <option value={null}>— pick —</option>
-            {#each iterations as it}
-              <option value={it.id}>#{it.iteration}</option>
-            {/each}
-          </select>
-        </div>
+      <div class="cmp-vs" aria-hidden="true">vs</div>
+      <div class="cmp-pick">
+        <span class="cmp-pick-role">B · candidate</span>
+        <select class="cmp-select" aria-label="Pick iteration B" bind:value={compareB}>
+          <option value={null}>— pick —</option>
+          {#each iterations as it}
+            <option value={it.id}
+              >#{it.iteration}{it.primary_metric_value !== null
+                ? ` · ${(it.primary_metric_value * 100).toFixed(1)}%`
+                : ''}</option
+            >
+          {/each}
+        </select>
       </div>
     </div>
 
@@ -1001,41 +1091,101 @@
 />
 
 <style>
-  .state-badge {
+  .state-pill {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
-    padding: 0.25rem 0.6rem;
+    gap: 0.45rem;
+    padding: 0.3rem 0.65rem;
     border-radius: var(--radius-md);
-    font-size: 12px;
-    font-weight: 500;
-    text-transform: capitalize;
     border: 1px solid var(--color-border);
+    background: var(--color-surface);
   }
-  .state-running {
-    color: var(--color-success);
-    border-color: color-mix(in srgb, var(--color-success) 35%, transparent);
-    background: color-mix(in srgb, var(--color-success) 8%, transparent);
-  }
-  .state-queued {
-    color: var(--color-warning);
-    border-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
-    background: color-mix(in srgb, var(--color-warning) 8%, transparent);
-  }
-  .state-done {
+  .state-pill-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
     color: var(--color-text-2);
+    text-transform: capitalize;
   }
-  .state-aborted {
-    color: var(--color-danger);
-    border-color: color-mix(in srgb, var(--color-danger) 35%, transparent);
-    background: color-mix(in srgb, var(--color-danger) 8%, transparent);
+
+  /* Analytics row: the climbing-metric chart takes the lead width, the ring +
+     iteration count sit beside it. This is the first thing the eye lands on. */
+  .analytics {
+    display: grid;
+    grid-template-columns: 1fr 200px;
+    gap: 1rem;
   }
-  .pulse {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: currentColor;
-    animation: pulse 1.6s ease-in-out infinite;
+  .card {
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+  }
+  .analytics-chart {
+    padding: 1rem 1.2rem 0.6rem;
+    min-width: 0;
+  }
+  .analytics-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+  }
+  .analytics-eyebrow {
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-3);
+  }
+  .analytics-metric {
+    font-size: var(--text-sm);
+    color: var(--color-text-1);
+    margin-top: 0.15rem;
+  }
+  .analytics-target {
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+  }
+  .analytics-empty {
+    padding: 2.5rem 0;
+    text-align: center;
+    font-size: var(--text-sm);
+    color: var(--color-text-3);
+  }
+  .analytics-side {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .analytics-ring {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.8rem;
+    flex: 1;
+  }
+  .analytics-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.8rem 1rem;
+  }
+  .analytics-stat-label {
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-3);
+  }
+  .analytics-stat-value {
+    font-size: var(--text-xl);
+    font-weight: 500;
+    line-height: 1;
+  }
+  .analytics-stat-of {
+    color: var(--color-text-3);
+    font-size: var(--text-md);
+  }
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
   }
   @keyframes pulse {
     0%,
@@ -1047,38 +1197,190 @@
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .pulse {
-      animation: none;
-    }
-    .live-dot {
+    .live-dot,
+    .live-dot::after {
       animation: none;
     }
   }
 
-  .live-banner {
+  /* Live header — brand-tinted, the one place the chromatic accent signals
+     "this is happening now". */
+  .live {
+    border: 1px solid color-mix(in srgb, var(--color-brand) 30%, var(--color-border));
+    border-radius: var(--radius-lg);
+    background: var(--color-brand-subtle);
+    overflow: hidden;
+  }
+  .live-main {
     display: flex;
     align-items: center;
-    gap: 0.7rem;
-    padding: 0.6rem 0.9rem;
-    border: 1px solid color-mix(in srgb, var(--color-success) 30%, var(--color-border));
-    border-radius: var(--radius-md);
-    background: color-mix(in srgb, var(--color-success) 7%, transparent);
+    gap: 0.55rem;
+    padding: 0.75rem 1rem 0.5rem;
   }
   .live-dot {
-    width: 7px;
-    height: 7px;
+    position: relative;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    background: var(--color-success);
-    animation: pulse 1.6s ease-in-out infinite;
+    background: var(--color-brand);
+    flex-shrink: 0;
+  }
+  /* A second expanding ring for a richer "live" pulse than a simple fade. */
+  .live-dot::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: var(--color-brand);
+    animation: live-ping 1.8s ease-out infinite;
+  }
+  @keyframes live-ping {
+    0% {
+      transform: scale(1);
+      opacity: 0.5;
+    }
+    100% {
+      transform: scale(3);
+      opacity: 0;
+    }
+  }
+  .live-title {
+    font-weight: 600;
+    font-size: var(--text-sm);
+    color: var(--color-text-1);
+  }
+  .live-sep {
+    color: var(--color-text-3);
+  }
+  .live-iter {
+    font-size: var(--text-xs);
+    color: var(--color-text-2);
+  }
+  .live-iter-of {
+    color: var(--color-text-3);
+  }
+  .live-metric {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.35rem;
+  }
+  .live-metric-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+  }
+  .live-metric-val {
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+  .live-foot {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0 1rem 0.7rem;
+  }
+  .live-activity {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: var(--text-xs);
+    color: var(--color-text-2);
+  }
+  .live-activity-count {
+    color: var(--color-text-1);
+    font-weight: 500;
+  }
+  .live-activity-label,
+  .live-last {
+    color: var(--color-text-3);
+  }
+  .live-waiting {
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+    font-style: italic;
   }
   .watch-link {
     margin-left: auto;
-    font-size: 0.8rem;
+    font-size: var(--text-xs);
     font-weight: 500;
-    color: var(--color-success);
+    color: var(--color-brand-strong);
     text-underline-offset: 2px;
   }
   .watch-link:hover {
     text-decoration: underline;
+  }
+  .live-progress {
+    height: 3px;
+    background: color-mix(in srgb, var(--color-brand) 15%, transparent);
+  }
+  .live-progress-fill {
+    height: 100%;
+    background: var(--color-brand);
+    transition: width var(--dur-slow) var(--ease-out);
+  }
+
+  /* The winning iteration gets a quiet left accent + dot so "which one is best"
+     is obvious at a glance while a run climbs. */
+  .iter-best {
+    background: var(--color-ok-subtle);
+    box-shadow: inset 2px 0 0 var(--color-ok);
+  }
+  .iter-best:hover {
+    background: color-mix(in srgb, var(--color-ok) 14%, transparent);
+  }
+  .iter-num {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .iter-best-mark {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--color-ok);
+    flex-shrink: 0;
+  }
+
+  /* Compare pickers: A vs B side by side with their metric value inline, so the
+     choice is informed before the diff even loads. */
+  .cmp-pickers {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 0.9rem;
+    align-items: center;
+  }
+  .cmp-pick {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+  }
+  .cmp-pick-role {
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-3);
+  }
+  .cmp-select {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    padding: 0.4rem 0.55rem;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
+    color: var(--color-text-1);
+    cursor: pointer;
+  }
+  .cmp-select:focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 1px;
+  }
+  .cmp-vs {
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+    font-style: italic;
   }
 </style>

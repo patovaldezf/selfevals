@@ -1,0 +1,4 @@
+interface:
+  display_name: "selfevals Change Guard"
+  short_description: "Guardrails for safe selfevals repo changes."
+  default_prompt: "Use this before making any selfevals code change."

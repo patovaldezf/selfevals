@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
+import { safeGetItem, safeSetItem } from "./browserStorage";
 import { dict, type Lang, type Dict } from "./i18n";
 
 const LangCtx = createContext<{
@@ -13,7 +14,7 @@ export function LangProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLangState] = useState<Lang>("en");
 
   useEffect(() => {
-    const saved = localStorage.getItem("selfevals-lang") as Lang | null;
+    const saved = safeGetItem("selfevals-lang") as Lang | null;
     if (saved === "en" || saved === "es") {
       setLangState(saved);
     } else if (navigator.language.toLowerCase().startsWith("es")) {
@@ -23,7 +24,7 @@ export function LangProvider({ children }: { children: React.ReactNode }) {
 
   const setLang = (l: Lang) => {
     setLangState(l);
-    localStorage.setItem("selfevals-lang", l);
+    safeSetItem("selfevals-lang", l);
     document.documentElement.lang = l;
   };
 

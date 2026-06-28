@@ -7,15 +7,23 @@
   the trace JSON (could be huge, would dominate trace size). This
   component shows the pointer truncated, lets the user click to resolve,
   and renders the result inline — JSON when the server says it's JSON,
-  preformatted text otherwise.
+  preformatted text otherwise — with a one-click copy.
 
-  Karpathy filter (FRONTEND_PRODUCT_PLAN.md §3): without this, the trace
-  viewer is theater — every prompt/output is `null` or an opaque pointer
-  string. With this, the real prompt is one click away.
+  Resolved payloads are content-addressed (sha256), so the same pointer
+  always yields the same bytes. We cache by pointer string across the
+  whole session, so re-opening a span you already looked at is instant.
 -->
+<script lang="ts" context="module">
+  // Module-level cache: pointer string -> resolved payload. Content-addressed,
+  // so this never goes stale within a session.
+  const payloadCache = new Map<string, { text: string; isJson: boolean }>();
+</script>
+
 <script lang="ts">
   import { page } from '$app/stores';
   import { api, ApiError } from '$lib/api/client';
+  import Icon from '$lib/components/ui/Icon.svelte';
+  import { Copy, Check, ChevronDown } from 'lucide-svelte';
 
   export let label: string;
   /** The pointer string, or null if the span doesn't have this field. */
@@ -30,6 +38,7 @@
     | { kind: 'error'; status: number; message: string };
 
   let state: State = { kind: 'idle' };
+  let copied = false;
 
   $: shortPointer = pointer ? truncatePointer(pointer) : null;
 
@@ -43,11 +52,17 @@
 
   async function resolve() {
     if (!pointer) return;
+    const cached = payloadCache.get(pointer);
+    if (cached) {
+      state = { kind: 'resolved', text: cached.text, isJson: cached.isJson };
+      return;
+    }
     const ws = $page.params.workspace;
     if (!ws) return;
     state = { kind: 'loading' };
     try {
       const result = await api.resolvePayload(ws, pointer);
+      payloadCache.set(pointer, { text: result.text, isJson: result.isJson });
       state = { kind: 'resolved', text: result.text, isJson: result.isJson };
     } catch (e) {
       if (e instanceof ApiError) {
@@ -78,50 +93,138 @@
       return text;
     }
   }
+
+  async function copy() {
+    if (state.kind !== 'resolved') return;
+    try {
+      await navigator.clipboard.writeText(prettyIfJson(state.text, state.isJson));
+      copied = true;
+      setTimeout(() => (copied = false), 1400);
+    } catch {
+      /* clipboard blocked — no-op, the payload is still visible to select */
+    }
+  }
 </script>
 
 {#if pointer}
-  <div class="space-y-1.5">
-    <div class="flex items-baseline justify-between gap-3">
-      <div class="text-xs uppercase tracking-wide text-text-3">{label}</div>
-      {#if state.kind === 'resolved'}
-        <button
-          type="button"
-          on:click={collapse}
-          class="text-xs text-text-3 hover:text-text-1 transition-colors"
-        >
-          Collapse
-        </button>
-      {:else if state.kind !== 'loading'}
-        <button
-          type="button"
-          on:click={resolve}
-          class="text-xs text-text-2 hover:text-text-1 transition-colors flex items-center gap-1"
-        >
-          {state.kind === 'error' ? 'Retry' : 'Resolve'} <span aria-hidden="true">↓</span>
-        </button>
-      {/if}
-    </div>
-    <div class="font-mono text-[11px] text-text-3 truncate" title={pointer}>
-      {shortPointer}{#if hash}<span class="text-text-3"> · {hash.slice(0, 19)}…</span>{/if}
-    </div>
-    {#if state.kind === 'loading'}
-      <div class="text-xs text-text-3 italic">resolving…</div>
-    {:else if state.kind === 'resolved'}
-      <pre
-        class="font-mono text-xs bg-surface-2 border border-border rounded p-3 overflow-x-auto whitespace-pre-wrap break-words max-h-96">{prettyIfJson(
-          state.text,
-          state.isJson
-        )}</pre>
-    {:else if state.kind === 'error'}
-      <div class="text-xs text-danger font-mono">
-        {state.status} · {state.message}
+  <div class="pf">
+    <div class="pf-head">
+      <span class="pf-label">{label}</span>
+      <div class="pf-actions">
+        {#if state.kind === 'resolved'}
+          <button type="button" class="pf-btn" on:click={copy} title="Copy payload">
+            <Icon icon={copied ? Check : Copy} size={13} />
+            <span>{copied ? 'Copied' : 'Copy'}</span>
+          </button>
+          <button type="button" class="pf-btn" on:click={collapse}>Collapse</button>
+        {:else if state.kind !== 'loading'}
+          <button type="button" class="pf-btn pf-btn-go" on:click={resolve}>
+            {state.kind === 'error' ? 'Retry' : 'Resolve'}
+            <Icon icon={ChevronDown} size={13} />
+          </button>
+        {/if}
       </div>
+    </div>
+
+    <div class="pf-pointer" title={pointer}>
+      {shortPointer}{#if hash}<span class="pf-hash"> · {hash.slice(0, 19)}…</span>{/if}
+    </div>
+
+    {#if state.kind === 'loading'}
+      <div class="pf-loading">resolving…</div>
+    {:else if state.kind === 'resolved'}
+      <pre class="pf-payload">{prettyIfJson(state.text, state.isJson)}</pre>
+    {:else if state.kind === 'error'}
+      <div class="pf-error">{state.status} · {state.message}</div>
     {/if}
   </div>
 {:else}
-  <div>
-    <div class="text-xs uppercase tracking-wide text-text-3">{label}</div>
-    <div class="text-xs text-text-3 italic">not captured</div>
+  <div class="pf-empty">
+    <span class="pf-label">{label}</span>
+    <span class="pf-empty-note">not captured</span>
   </div>
 {/if}
+
+<style>
+  .pf {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .pf-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .pf-label {
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-3);
+  }
+  .pf-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .pf-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: var(--text-xs);
+    color: var(--color-text-2);
+    transition: color var(--dur-fast) var(--ease-out);
+  }
+  .pf-btn:hover {
+    color: var(--color-text-1);
+  }
+  .pf-btn-go {
+    color: var(--color-brand-strong);
+  }
+  .pf-pointer {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--color-text-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pf-hash {
+    color: var(--color-text-3);
+  }
+  .pf-loading {
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+    font-style: italic;
+  }
+  .pf-payload {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 1.55;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 0.75rem;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 24rem;
+    color: var(--color-text-1);
+  }
+  .pf-error {
+    font-size: var(--text-xs);
+    color: var(--color-bad);
+    font-family: var(--font-mono);
+  }
+  .pf-empty {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .pf-empty-note {
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+    font-style: italic;
+  }
+</style>

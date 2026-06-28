@@ -52,10 +52,48 @@ export default function Terminal() {
   const [done, setDone] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const started = useRef(false);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
+
+    const schedule = (callback: () => void, delay: number) => {
+      const timer = setTimeout(callback, delay);
+      timers.current.push(timer);
+    };
+
+    const play = () => {
+      const reduce =
+        typeof window !== "undefined" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      if (reduce) {
+        setCount(SCRIPT.length);
+        setDone(true);
+        return;
+      }
+
+      let i = 0;
+      const tick = () => {
+        if (i >= SCRIPT.length) {
+          setDone(true);
+          schedule(() => {
+            setDone(false);
+            setCount(0);
+            i = 0;
+            schedule(tick, 900);
+          }, 4200);
+          return;
+        }
+        i += 1;
+        setCount(i);
+        const next = SCRIPT[i]?.after ?? 160;
+        schedule(tick, next);
+      };
+      schedule(tick, 400);
+    };
+
     const io = new IntersectionObserver(
       ([e]) => {
         if (e.isIntersecting && !started.current) {
@@ -67,41 +105,12 @@ export default function Terminal() {
       { threshold: 0.35 },
     );
     io.observe(el);
-    return () => io.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function play() {
-    const reduce =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    if (reduce) {
-      setCount(SCRIPT.length);
-      setDone(true);
-      return;
-    }
-
-    let i = 0;
-    const tick = () => {
-      if (i >= SCRIPT.length) {
-        setDone(true);
-        // loop after a beat
-        setTimeout(() => {
-          setDone(false);
-          setCount(0);
-          i = 0;
-          setTimeout(tick, 900);
-        }, 4200);
-        return;
-      }
-      i += 1;
-      setCount(i);
-      const next = SCRIPT[i]?.after ?? 160;
-      setTimeout(tick, next);
+    return () => {
+      io.disconnect();
+      for (const timer of timers.current) clearTimeout(timer);
+      timers.current = [];
     };
-    setTimeout(tick, 400);
-  }
+  }, []);
 
   return (
     <div ref={wrapRef} className="grad-border relative rounded-xl bg-[#0a0c0d] shadow-[0_24px_70px_-20px_rgba(0,0,0,0.8)]">

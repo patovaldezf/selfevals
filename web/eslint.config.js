@@ -39,6 +39,14 @@ export default ts.config(
     }
   },
   {
+    files: ['**/*.svelte'],
+    rules: {
+      // typescript-eslint 8.60 can crash on Svelte compiler nodes here.
+      // svelte-check remains the source of truth for Svelte script diagnostics.
+      '@typescript-eslint/no-unused-vars': 'off'
+    }
+  },
+  {
     ignores: [
       'build/',
       '.svelte-kit/',

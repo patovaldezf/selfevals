@@ -14,7 +14,9 @@
   import Button from '$lib/components/ui/Button.svelte';
   import Select from '$lib/components/ui/Select.svelte';
   import TextField from '$lib/components/ui/TextField.svelte';
-  import EmptyState from '$lib/components/EmptyState.svelte';
+  import Badge from '$lib/components/ui/Badge.svelte';
+  import Icon from '$lib/components/ui/Icon.svelte';
+  import { CheckCircle2, ArrowRight, AlertTriangle } from 'lucide-svelte';
 
   export let data: PageData & LayoutData;
 
@@ -154,22 +156,26 @@
       {#if summary.created_candidates.length}
         <a
           href={`/${wsId}/failure-modes?status=candidate`}
-          class="mt-3 inline-block text-sm text-text-1 underline underline-offset-2"
+          class="mt-3 inline-flex items-center gap-1 text-sm text-brand-strong hover:underline underline-offset-2"
+          style:color="var(--color-brand-strong)"
         >
-          Review &amp; promote new candidates →
+          Review &amp; promote new candidates
+          <Icon icon={ArrowRight} size={14} />
         </a>
       {/if}
     </div>
   {/if}
 
   {#if bundle.traces.length === 0}
-    <EmptyState
-      icon="✓"
-      title={data.all ? 'No traces to analyze' : 'No failed traces'}
-      description={data.all
-        ? 'This experiment has no persisted traces yet. Run it with persist_traces enabled.'
-        : 'Nothing failed in this experiment — or traces were not persisted. Toggle “Include passing” to see all.'}
-    />
+    <div class="empty">
+      <Icon icon={CheckCircle2} size={22} />
+      <p class="empty-title">{data.all ? 'No traces to analyze' : 'No failed traces'}</p>
+      <p class="empty-sub">
+        {data.all
+          ? 'This experiment has no persisted traces yet. Run it with persist_traces enabled.'
+          : 'Nothing failed in this experiment — or traces were not persisted. Toggle “Include passing” to see all.'}
+      </p>
+    </div>
   {:else}
     <div class="flex flex-col gap-3">
       {#each bundle.traces as t (t.trace_id)}
@@ -177,13 +183,14 @@
           <div class="flex items-start justify-between gap-4">
             <div class="min-w-0">
               <div class="flex items-center gap-2">
-                <span class="grade-pill">{t.grade.label}</span>
+                <Badge tone="bad" size="sm">{t.grade.label}</Badge>
                 {#if t.eval_case_id}<span class="font-mono text-xs text-text-3"
                     >{t.eval_case_id}</span
                   >{/if}
               </div>
               {#if t.first_error_span}
-                <p class="mt-1.5 text-sm text-danger">
+                <p class="error-line">
+                  <Icon icon={AlertTriangle} size={13} />
                   {t.first_error_span.kind}: {t.first_error_span.error ?? t.first_error_span.name}
                 </p>
               {/if}
@@ -191,10 +198,10 @@
                 <p class="mt-1 text-sm text-text-2">{t.grade.judge_reason}</p>
               {/if}
             </div>
-            <a
-              class="shrink-0 text-xs text-text-2 hover:text-text-1 hover:underline underline-offset-2"
-              href={`/${wsId}/traces/${t.trace_id}`}>open trace →</a
-            >
+            <a class="trace-link shrink-0" href={`/${wsId}/traces/${t.trace_id}`}>
+              open trace
+              <Icon icon={ArrowRight} size={13} />
+            </a>
           </div>
 
           {#if t.transcript.length}
@@ -270,14 +277,44 @@
 </div>
 
 <style>
-  .grade-pill {
-    display: inline-block;
-    padding: 0.1rem 0.5rem;
-    border-radius: var(--radius-sm);
-    font-size: 11px;
-    font-weight: 500;
-    text-transform: capitalize;
-    color: var(--color-danger);
-    background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+  .error-line {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.4rem;
+    font-size: var(--text-sm);
+    color: var(--color-bad);
+  }
+  .trace-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: var(--text-xs);
+    color: var(--color-text-2);
+    transition: color var(--dur-fast) var(--ease-out);
+  }
+  .trace-link:hover {
+    color: var(--color-text-1);
+  }
+  .empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 3.5rem 1.5rem;
+    text-align: center;
+    color: var(--color-ok);
+    border: 1px dashed var(--color-border-strong);
+    border-radius: var(--radius-lg);
+  }
+  .empty-title {
+    font-weight: 600;
+    color: var(--color-text-1);
+  }
+  .empty-sub {
+    font-size: var(--text-sm);
+    color: var(--color-text-2);
+    max-width: 32rem;
+    line-height: var(--leading-snug);
   }
 </style>

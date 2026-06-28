@@ -2,7 +2,7 @@
   /** The one button. Variants map to intent (primary action / secondary /
    *  quiet / destructive); `loading` disables and shows a spinner so a slow
    *  mutation can't be double-fired. */
-  export let variant: 'primary' | 'secondary' | 'ghost' | 'danger' = 'secondary';
+  export let variant: 'primary' | 'secondary' | 'ghost' | 'danger' | 'brand' = 'secondary';
   export let size: 'sm' | 'md' = 'md';
   export let type: 'button' | 'submit' | 'reset' = 'button';
   export let disabled = false;
@@ -53,7 +53,7 @@
     transform: translateY(0.5px);
   }
   .btn:focus-visible {
-    outline: 2px solid var(--color-accent);
+    outline: 2px solid var(--color-brand);
     outline-offset: 2px;
   }
   .btn-sm {
@@ -93,6 +93,13 @@
   }
   .btn-danger:hover:not(.btn-disabled) {
     filter: brightness(0.92);
+  }
+  .btn-brand {
+    background: var(--color-brand);
+    color: var(--color-brand-fg);
+  }
+  .btn-brand:hover:not(.btn-disabled) {
+    background: var(--color-brand-strong);
   }
   .btn-disabled {
     opacity: 0.5;

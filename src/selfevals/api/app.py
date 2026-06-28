@@ -5,8 +5,9 @@ Endpoints map 1:1 to the pages of the web UI; payload shapes match
 the existing Pydantic models so the web side can validate against the
 same canonical JSON.
 
-Auth: stubbed via a single `X-SelfEvals-User` header (default
-`"local"`). Real auth lands later; everything else is forward-compat.
+Auth is centralized in `api.auth`. Local development accepts
+`X-SelfEvals-User` with a `"local"` fallback; shared deployments should set a
+stricter auth mode before exposing the API.
 """
 
 from __future__ import annotations
@@ -23,7 +24,6 @@ from fastapi import (
     FastAPI,
     File,
     Form,
-    Header,
     HTTPException,
     Query,
     UploadFile,
@@ -31,6 +31,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 
+from selfevals.api.auth import UserHeader, resolve_user_id
 from selfevals.api.baseline_ops import (
     BaselineNotFoundError,
     BaselineOpError,
@@ -157,8 +158,6 @@ from selfevals.storage.factory import (
 from selfevals.storage.filesystem import FilesystemObjectStore, parse_pointer
 from selfevals.storage.interface import StorageInterface
 
-_USER_HEADER = "X-SelfEvals-User"
-
 # Dev frontends that may call the API cross-origin. 5173 is the bundled
 # SvelteKit web UI; 3000 is the common Next/Vite default (e.g. the seals
 # playground). Override with SELFEVALS_CORS_ORIGINS (comma-separated) to add a
@@ -177,12 +176,6 @@ def _cors_origins() -> list[str]:
         # Explicit override wins outright; trim blanks and empties.
         return [o.strip() for o in raw.split(",") if o.strip()]
     return list(_DEFAULT_CORS_ORIGINS)
-
-UserHeader = Annotated[
-    str | None,
-    Header(alias=_USER_HEADER, description="Stubbed user id (auth is post-MVP)."),
-]
-
 
 def build_app(*, db_path: str | None = None) -> FastAPI:
     """Construct the FastAPI app, parameterized on the storage URL."""
@@ -290,7 +283,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
                 storage,
                 slug=body.slug,
                 name=body.name or body.slug,
-                user_id=user or "local",
+                user_id=resolve_user_id(user),
                 description=body.description,
             )
             ws = seeded.workspace

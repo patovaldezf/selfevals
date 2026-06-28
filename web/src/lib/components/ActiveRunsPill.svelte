@@ -1,21 +1,23 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { api } from '$lib/api/client';
 
   type ActiveRun = { workspace_id: string; run_id: string };
 
   let runs: ActiveRun[] = [];
   let timer: ReturnType<typeof setInterval> | null = null;
+  let loading = false;
 
   async function fetchActive() {
+    if (loading) return;
+    loading = true;
     try {
-      const res = await fetch('/api/runs/active', {
-        headers: { 'X-SelfEvals-User': 'local' }
-      });
-      if (!res.ok) return;
-      const body = await res.json();
+      const body = await api.activeRuns();
       runs = body.runs ?? [];
     } catch {
       /* keep the last known state; failures here aren't user-facing */
+    } finally {
+      loading = false;
     }
   }
 
