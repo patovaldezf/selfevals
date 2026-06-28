@@ -4,12 +4,13 @@
   import { invalidateAll } from '$app/navigation';
   import { api, ApiError } from '$lib/api/client';
   import { toast } from '$lib/stores/toasts';
-  import MetricChip from '$lib/components/MetricChip.svelte';
   import BarChart from '$lib/components/charts/BarChart.svelte';
   import CaseRow from '$lib/components/CaseRow.svelte';
   import CopyableId from '$lib/components/CopyableId.svelte';
   import Button from '$lib/components/ui/Button.svelte';
+  import Badge from '$lib/components/ui/Badge.svelte';
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+  import { Lock } from 'lucide-svelte';
 
   export let data: PageData & LayoutData;
 
@@ -38,6 +39,30 @@
         { title: 'By risk', data: stats.by_risk }
       ] as const)
     : [];
+
+  // Split allocation as visual segments — optimization / holdout / reliability
+  // are what the proposer can train on vs what's held back to detect overfit.
+  // Seeing the proportions beats reading three separate percentages.
+  $: splitSegments = [
+    {
+      key: 'optimization',
+      label: 'Optimization',
+      value: ds.split_allocation.optimization,
+      color: 'var(--color-brand)'
+    },
+    {
+      key: 'holdout',
+      label: 'Holdout',
+      value: ds.split_allocation.holdout,
+      color: 'var(--color-chart-2)'
+    },
+    {
+      key: 'reliability',
+      label: 'Reliability',
+      value: ds.split_allocation.reliability,
+      color: 'var(--color-chart-3)'
+    }
+  ].filter((s) => s.value > 0);
 
   async function freeze() {
     try {
@@ -80,19 +105,46 @@
     </div>
     <div class="shrink-0">
       {#if isFrozen}
-        <span class="frozen-badge">✓ frozen</span>
+        <Badge tone="brand" icon={Lock}>frozen</Badge>
       {:else}
         <Button variant="secondary" on:click={() => (showFreeze = true)}>Freeze</Button>
       {/if}
     </div>
   </header>
 
-  <!-- Split + counts -->
-  <section class="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
-    <MetricChip label="Cases" value={ds.case_count} />
-    <MetricChip label="Holdout" value={stats?.holdout_count ?? 0} />
-    <MetricChip label="Optimization" value={ds.split_allocation.optimization} format="percent" />
-    <MetricChip label="Reliability" value={ds.split_allocation.reliability} format="percent" />
+  <!-- Counts + split allocation as a single proportional bar. -->
+  <section class="split-section">
+    <div class="split-counts">
+      <div class="split-count">
+        <span class="split-count-val mono" data-numeric>{ds.case_count}</span>
+        <span class="split-count-label">cases</span>
+      </div>
+      <div class="split-count">
+        <span class="split-count-val mono" data-numeric>{stats?.holdout_count ?? 0}</span>
+        <span class="split-count-label">held out</span>
+      </div>
+    </div>
+    <div class="split-alloc">
+      <div class="split-bar" role="img" aria-label="Split allocation">
+        {#each splitSegments as seg (seg.key)}
+          <div
+            class="split-seg"
+            style:width="{seg.value * 100}%"
+            style:background={seg.color}
+            title="{seg.label} {(seg.value * 100).toFixed(0)}%"
+          ></div>
+        {/each}
+      </div>
+      <div class="split-legend">
+        {#each splitSegments as seg (seg.key)}
+          <span class="split-leg">
+            <span class="split-dot" style:background={seg.color}></span>
+            <span class="split-leg-label">{seg.label}</span>
+            <span class="split-leg-val mono" data-numeric>{(seg.value * 100).toFixed(0)}%</span>
+          </span>
+        {/each}
+      </div>
+    </div>
   </section>
 
   <!-- Facets -->
@@ -183,14 +235,77 @@
 />
 
 <style>
-  .frozen-badge {
-    display: inline-block;
-    padding: 0.35rem 0.7rem;
-    border-radius: var(--radius-md);
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--color-text-1);
-    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  .split-section {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2rem;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding: 1.1rem 1.3rem;
     border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+  }
+  .split-counts {
+    display: flex;
+    gap: 1.8rem;
+  }
+  .split-count {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .split-count-val {
+    font-size: var(--text-xl);
+    font-weight: 500;
+    line-height: 1;
+  }
+  .split-count-label {
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-3);
+  }
+  .split-alloc {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .split-bar {
+    display: flex;
+    height: 10px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--color-surface-2);
+  }
+  .split-seg {
+    height: 100%;
+    transition: width var(--dur-slow) var(--ease-out);
+  }
+  .split-seg:not(:last-child) {
+    border-right: 2px solid var(--color-surface);
+  }
+  .split-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  .split-leg {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: var(--text-xs);
+  }
+  .split-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+  }
+  .split-leg-label {
+    color: var(--color-text-2);
+  }
+  .split-leg-val {
+    color: var(--color-text-1);
+    font-weight: 500;
   }
 </style>
