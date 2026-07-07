@@ -238,7 +238,7 @@ def cmd_skills_path(args: argparse.Namespace) -> int:
     return 0
 
 
-_EXAMPLE_NAMES = {"pingpong", "showcase"}
+_EXAMPLE_NAMES = {"pingpong", "route_ops_copilot", "showcase"}
 
 
 def cmd_examples_copy(args: argparse.Namespace) -> int:
