@@ -38,6 +38,13 @@ from selfevals.storage.interface import StorageInterface
 
 
 def register(app: FastAPI, deps: AppDeps) -> None:
+    _register_lifecycle(app, deps)
+    _register_results(app, deps)
+    _register_decisions_compare(app, deps)
+    _register_iteration_detail(app, deps)
+
+
+def _register_lifecycle(app: FastAPI, deps: AppDeps) -> None:
     @app.get(
         "/api/workspaces/{workspace_id}/experiments",
         response_model=ExperimentListPage,
@@ -54,7 +61,9 @@ def register(app: FastAPI, deps: AppDeps) -> None:
         ] = None,
         feature: Annotated[
             str | None,
-            Query(description="Filter to experiments whose taxonomy.target_features contains this."),
+            Query(
+                description="Filter to experiments whose taxonomy.target_features contains this."
+            ),
         ] = None,
         _user: UserHeader = None,
     ) -> ExperimentListPage:
@@ -145,6 +154,8 @@ def register(app: FastAPI, deps: AppDeps) -> None:
         finally:
             storage.close()
 
+
+def _register_results(app: FastAPI, deps: AppDeps) -> None:
     @app.get(
         "/api/workspaces/{workspace_id}/experiments/{experiment_id}/iterations",
         response_model=IterationListResponse,
@@ -250,6 +261,8 @@ def register(app: FastAPI, deps: AppDeps) -> None:
         finally:
             storage.close()
 
+
+def _register_decisions_compare(app: FastAPI, deps: AppDeps) -> None:
     @app.get(
         "/api/workspaces/{workspace_id}/experiments/{experiment_id}/decisions",
         response_model=list[DecisionRecordResponse],
@@ -307,6 +320,8 @@ def register(app: FastAPI, deps: AppDeps) -> None:
         finally:
             storage.close()
 
+
+def _register_iteration_detail(app: FastAPI, deps: AppDeps) -> None:
     @app.get(
         "/api/workspaces/{workspace_id}/iterations/{iteration_id}",
         tags=["experiments"],

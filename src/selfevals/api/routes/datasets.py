@@ -40,6 +40,12 @@ from selfevals.storage.interface import StorageInterface
 
 
 def register(app: FastAPI, deps: AppDeps) -> None:
+    _register_listing(app, deps)
+    _register_mutations(app, deps)
+    _register_baseline(app, deps)
+
+
+def _register_listing(app: FastAPI, deps: AppDeps) -> None:
     @app.get(
         "/api/workspaces/{workspace_id}/datasets",
         response_model=DatasetListPage,
@@ -110,6 +116,8 @@ def register(app: FastAPI, deps: AppDeps) -> None:
         except DatasetWriteError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+
+def _register_mutations(app: FastAPI, deps: AppDeps) -> None:
     @app.post(
         "/api/workspaces/{workspace_id}/datasets/upload",
         response_model=DatasetDetailResponse,
@@ -187,6 +195,8 @@ def register(app: FastAPI, deps: AppDeps) -> None:
         finally:
             storage.close()
 
+
+def _register_baseline(app: FastAPI, deps: AppDeps) -> None:
     @app.get(
         "/api/workspaces/{workspace_id}/datasets/{dataset_id}/baseline",
         response_model=BaselineResponse,

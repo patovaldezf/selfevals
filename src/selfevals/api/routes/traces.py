@@ -27,6 +27,11 @@ from selfevals.storage.interface import StorageInterface
 
 
 def register(app: FastAPI, deps: AppDeps) -> None:
+    _register_trace_detail(app, deps)
+    _register_streaming_and_payloads(app, deps)
+
+
+def _register_trace_detail(app: FastAPI, deps: AppDeps) -> None:
     @app.get(
         "/api/workspaces/{workspace_id}/traces/{trace_id}",
         response_model=TraceResponse,
@@ -43,8 +48,8 @@ def register(app: FastAPI, deps: AppDeps) -> None:
             "exposes its `run_id`.\n\n"
             "The response always echoes both `id` (`tr_…`) and `run_id` (`run_…`), so "
             "either field can be used as the navigation key without guessing. Only "
-            "traces actually persisted are resolvable; with `persist_traces=\"failed\"` "
-            "passing cases have no trace (use `\"all\"` to keep them — see "
+            'traces actually persisted are resolvable; with `persist_traces="failed"` '
+            'passing cases have no trace (use `"all"` to keep them — see '
             "`SELFEVALS_TRACE_SAMPLING`)."
         ),
     )
@@ -116,6 +121,8 @@ def register(app: FastAPI, deps: AppDeps) -> None:
         finally:
             storage.close()
 
+
+def _register_streaming_and_payloads(app: FastAPI, deps: AppDeps) -> None:
     @app.get("/api/runs/active", response_model=ActiveRunsResponse, tags=["traces"])
     def runs_active(
         storage: StorageInterface = Depends(deps.storage),

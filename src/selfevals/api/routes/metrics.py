@@ -29,6 +29,11 @@ from selfevals.storage.interface import StorageInterface
 
 
 def register(app: FastAPI, deps: AppDeps) -> None:
+    _register_quality_metrics(app, deps)
+    _register_cost_metrics(app, deps)
+
+
+def _register_quality_metrics(app: FastAPI, deps: AppDeps) -> None:
     @app.get(
         "/api/workspaces/{workspace_id}/metrics/pass-rate",
         response_model=PassRateMetricsResponse,
@@ -107,6 +112,8 @@ def register(app: FastAPI, deps: AppDeps) -> None:
         finally:
             storage.close()
 
+
+def _register_cost_metrics(app: FastAPI, deps: AppDeps) -> None:
     @app.get(
         "/api/workspaces/{workspace_id}/metrics/cost",
         response_model=CostMetricsResponse,
