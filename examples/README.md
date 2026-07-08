@@ -1,6 +1,6 @@
 # Examples
 
-Four runnable examples, in increasing realism. Run them from a **source
+Five runnable examples, in increasing realism. Run them from a **source
 checkout** (the `hello_*` examples import `examples.hello_*.agent`, which
 needs the repo on `sys.path`).
 
@@ -8,6 +8,7 @@ needs the repo on `sys.path`).
 | --------------- | --------- | ------------ | ------------------------------------------------------------------------------------------------- |
 | `pingpong`      | none      | no           | The smallest possible loop — an in-process echo agent. Start here.                                |
 | `showcase`      | none      | no           | The kitchen sink — one grader of every type and a funnel with every match kind, all offline.      |
+| `route_ops_copilot` | none | no           | A realistic tool-using workflow: read tools, write tools, route gates, artifacts, and actions.    |
 | `hello_llm/`    | Anthropic | optional     | A real agent + LLM judge over three task types, with a deterministic fake fallback.               |
 | `hello_openai/` | OpenAI    | optional     | The exact same experiment as `hello_llm`, swapped to OpenAI — a side-by-side provider comparison. |
 
@@ -44,6 +45,29 @@ calls, and a deterministic `judge` lets `judge_panel` run fully offline. Driven
 by `model_params.level`, the grid proposer improves from `level=0.0` (the funnel
 gate fails, its children are SKIPPED — the short-circuit) to `level=1.0` (every
 level passes). It's the reference for _how each grader is configured in YAML_.
+
+## route_ops_copilot - an agentic workflow
+
+Also ships inside the package:
+
+```bash
+selfevals examples copy route_ops_copilot
+selfevals run evals/experiments/example_route_ops_copilot.yaml --no-persist
+```
+
+This is the practical example for integrating selfevals with a real agentic
+flow. The deterministic agent (`selfevals.examples.route_ops_copilot:run`)
+models a route-ops assistant that reads route/account/task context, edits a
+route after a feasibility check, rejects an infeasible write without saving, and
+turns an insight into recovery tasks. It emits `structured_output` with
+`detected`, `intent_class`, `artifact`, and `safety_status`, plus `tool_uses`
+for the read/write tools. The spec combines deterministic rules, set matching,
+a funnel over the action contract, a judge panel, and a confusion matrix for
+the intent class.
+
+Use it as the template for one-prompt integrations: write user stories as
+cases, expose the app through an adapter, return structured artifacts, and let
+selfevals grade both the answer and the path the agent took.
 
 ## hello_llm / hello_openai — a realistic eval
 
