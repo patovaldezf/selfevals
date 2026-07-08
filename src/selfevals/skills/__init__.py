@@ -34,6 +34,7 @@ CONSUMER_SKILLS = (
     "run-eval-experiment",
     "error-analysis",
     "iterate-and-ship",
+    "arena-iterate",
 )
 
 # Default place a project keeps its agent skills (the convention Claude Code and

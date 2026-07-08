@@ -227,6 +227,14 @@ def test_register_variant_and_launch_round_end_to_end(
         time.sleep(0.2)
     assert final_round["state"] == "completed"
 
+    bundle_res = c.get(f"/api/workspaces/{WS}/arenas/{arena_id}/bundle")
+    assert bundle_res.status_code == 200, bundle_res.text
+    bundle = bundle_res.json()
+    assert bundle["arena"]["id"] == arena_id
+    assert len(bundle["variants"]) == 1
+    assert bundle["variants"][0]["variant_id"] == variant["id"]
+    assert bundle["contract"]["register_variant"] == f"/api/workspaces/{WS}/arenas/{arena_id}/variants"
+
     promote_res = c.post(
         f"/api/workspaces/{WS}/arenas/{arena_id}/promote",
         json={"variant_id": variant["id"]},
@@ -258,3 +266,20 @@ def test_delete_arena_archives_it(client: tuple[TestClient, str], tmp_path: Path
     assert res.status_code == 204
     got = c.get(f"/api/workspaces/{WS}/arenas/{arena['id']}")
     assert got.json()["state"] == "archived"
+
+
+def test_bundle_404_for_unknown_arena(client: tuple[TestClient, str]) -> None:
+    c, _ = client
+    res = c.get(f"/api/workspaces/{WS}/arenas/arn_doesnotexist/bundle")
+    assert res.status_code == 404
+
+
+def test_iterations_compare_any_experiment_rejects_unknown_ids(
+    client: tuple[TestClient, str],
+) -> None:
+    c, _ = client
+    res = c.get(
+        f"/api/workspaces/{WS}/iterations/compare",
+        params={"a": "itr_doesnotexist1", "b": "itr_doesnotexist2"},
+    )
+    assert res.status_code == 404

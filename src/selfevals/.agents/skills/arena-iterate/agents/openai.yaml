@@ -1,0 +1,4 @@
+interface:
+  display_name: "Arena Iterate"
+  short_description: "Bake-off N git-branch code variants of an agent in parallel, iterate toward a winner."
+  default_prompt: "Use this to compare code variants of an agent empirically — create/register variants on git branches, launch parallel rounds, read the cross-variant bundle, mutate the losing variant with a hypothesis-driven code change, and recommend (never merge) a winner when converged."

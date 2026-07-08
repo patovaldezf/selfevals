@@ -99,6 +99,7 @@ from selfevals.api.queries import (
     list_experiments,
     list_workspaces,
     load_compare,
+    load_compare_any_experiment,
     load_iteration_funnel,
     load_thread,
     load_trace,
@@ -716,6 +717,31 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ArenaOpError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/arenas/{arena_id}/bundle",
+        tags=["arena"],
+    )
+    def arena_bundle(
+        workspace_id: str,
+        arena_id: str,
+        round: Annotated[int | None, Query(ge=0, description="Round index; defaults to latest.")] = None,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> dict[str, Any]:
+        # Same pattern as the error-analysis bundle: pass the arena.schemas
+        # Pydantic model through as JSON so the contract lives in one place.
+        from selfevals.arena.bundle import build_bundle
+
+        try:
+            bundle = build_bundle(
+                storage, workspace_id=workspace_id, arena_id=arena_id, round_index=round
+            )
+            return bundle.model_dump(mode="json")
+        except EntityNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"arena {arena_id} not found") from exc
         finally:
             storage.close()
 
@@ -1503,6 +1529,26 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
                     status_code=404,
                     detail="one or both iterations not found",
                 )
+            return result
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/iterations/compare",
+        response_model=CompareResponse,
+        tags=["arena"],
+    )
+    def iterations_compare_any_experiment(
+        workspace_id: str,
+        a: Annotated[str, Query(description="Iteration A record id.")],
+        b: Annotated[str, Query(description="Iteration B record id.")],
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> CompareResponse:
+        try:
+            result = load_compare_any_experiment(storage, workspace_id=workspace_id, a_id=a, b_id=b)
+            if result is None:
+                raise HTTPException(status_code=404, detail="one or both iterations not found")
             return result
         finally:
             storage.close()
