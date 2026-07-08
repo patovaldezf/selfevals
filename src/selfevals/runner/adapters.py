@@ -30,6 +30,7 @@ import json
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -259,14 +260,18 @@ class CliCommandAdapter(AgentAdapter):
         timeout_seconds: float | None = 60.0,
         agent: Agent | None = None,
         model: ModelRef | None = None,
+        cwd: str | None = None,
     ) -> None:
         if not command:
             raise ValueError("command must be non-empty")
+        if cwd is not None and not Path(cwd).is_dir():
+            raise ValueError(f"agent.cwd does not exist or is not a directory: {cwd!r}")
         self._command = list(command)
         self._env = env
         self._timeout = timeout_seconds
         self.agent = agent
         self.model = model
+        self._cwd = cwd
 
     async def invoke(self, request: AdapterRequest) -> AdapterResponse:
         payload = json.dumps(_request_to_json(request)).encode("utf-8")
@@ -276,6 +281,7 @@ class CliCommandAdapter(AgentAdapter):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=self._env,
+            cwd=self._cwd,
         )
         try:
             stdout, stderr = await asyncio.wait_for(

@@ -90,16 +90,20 @@ class AgentModelDecl:
 
 @dataclass(frozen=True)
 class CliAgentSpec:
-    """`agent: {type: cli, command: [...], env?, timeout_seconds?, model?}`.
+    """`agent: {type: cli, command: [...], env?, timeout_seconds?, model?, cwd?}`.
 
     The CLI wires this into a `CliCommandAdapter` — no Python entrypoint
-    proxy needed. `command` is the argv list spawned per case.
+    proxy needed. `command` is the argv list spawned per case. `cwd` is an
+    optional absolute working directory for the subprocess — Arena uses it
+    to point a variant's command at its own git worktree checkout; omitted,
+    the subprocess inherits the caller's cwd (unchanged default behaviour).
     """
 
     command: list[str]
     env: dict[str, str] | None = None
     timeout_seconds: float | None = None
     model: AgentModelDecl | None = None
+    cwd: str | None = None
 
 
 @dataclass(frozen=True)
@@ -338,6 +342,8 @@ def _dump_agent_spec(agent: AgentSpec) -> dict[str, Any]:
             payload["timeout_seconds"] = agent.timeout_seconds
         if agent.model is not None:
             payload["model"] = _dump_agent_model(agent.model)
+        if agent.cwd is not None:
+            payload["cwd"] = agent.cwd
         return payload
     payload = {"type": "http", "url": agent.url}
     if agent.headers is not None:
@@ -1062,8 +1068,15 @@ def _build_cli_agent_spec(spec_path: Path, agent_section: dict[str, Any]) -> Cli
     env = _parse_str_map(spec_path, agent_section.get("env"), field_name="agent.env")
     timeout = _parse_timeout(spec_path, agent_section.get("timeout_seconds"))
     model = _parse_agent_model(spec_path, agent_section.get("model"))
+    cwd = agent_section.get("cwd")
+    if cwd is not None and not isinstance(cwd, str):
+        raise LoaderError(f"{spec_path}: agent.cwd must be a string; got {cwd!r}")
     return CliAgentSpec(
-        command=[str(c) for c in command], env=env, timeout_seconds=timeout, model=model
+        command=[str(c) for c in command],
+        env=env,
+        timeout_seconds=timeout,
+        model=model,
+        cwd=cwd,
     )
 
 

@@ -32,6 +32,8 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+from selfevals.api import arena_ops
+from selfevals.api.arena_ops import ArenaOpError
 from selfevals.api.auth import (
     USER_HEADER,
     UserHeader,
@@ -110,10 +112,14 @@ from selfevals.api.schemas import (
     AnalysisIngestSummaryResponse,
     AppendDatasetCaseRequest,
     AppendDatasetCaseResponse,
+    ArenaResponse,
+    ArenaRoundResponse,
+    ArenaVariantResponse,
     BaselineResponse,
     CaseListResponse,
     CompareResponse,
     CostMetricsResponse,
+    CreateArenaRequest,
     CreateDatasetRequest,
     CreateWorkspaceRequest,
     DatasetDetailResponse,
@@ -128,10 +134,12 @@ from selfevals.api.schemas import (
     FailureModeMetricsResponse,
     FailureModeResponse,
     FunnelResponse,
+    GitRefsResponse,
     HealthResponse,
     IngestPairwiseRequest,
     IterationListResponse,
     LatencyMetricsResponse,
+    LaunchRoundRequest,
     MergeFailureModeRequest,
     PairwiseCalibrationResponse,
     PairwiseIngestSummaryResponse,
@@ -139,6 +147,9 @@ from selfevals.api.schemas import (
     PassRateMetricsResponse,
     PromoteCaseDraftRequest,
     PromoteCaseDraftResponse,
+    PromoteVariantRequest,
+    PromoteVariantResponse,
+    RegisterVariantRequest,
     RegressionCheckRequest,
     RegressionResultResponse,
     RunExperimentRequest,
@@ -155,7 +166,11 @@ from selfevals.api.schemas import (
 )
 from selfevals.api.sse import stream_trace
 from selfevals.schemas.enums import DatasetStatus, ExperimentState
-from selfevals.storage.errors import ObjectNotFoundError, PointerHashMismatchError
+from selfevals.storage.errors import (
+    EntityNotFoundError,
+    ObjectNotFoundError,
+    PointerHashMismatchError,
+)
 from selfevals.storage.factory import (
     object_store_base_for_storage_url,
     open_storage,
@@ -513,6 +528,211 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         finally:
             storage.close()
+
+    # --- arena (parallel experiments across git-worktree code variants) -
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/arenas",
+        response_model=ArenaResponse,
+        status_code=201,
+        tags=["arena"],
+    )
+    def arenas_create(
+        workspace_id: str,
+        body: CreateArenaRequest,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> ArenaResponse:
+        try:
+            return arena_ops.create_arena(storage, workspace_id=workspace_id, body=body)
+        except ArenaOpError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/arenas",
+        response_model=list[ArenaResponse],
+        tags=["arena"],
+    )
+    def arenas_list(
+        workspace_id: str,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> list[ArenaResponse]:
+        return arena_ops.list_arenas(storage, workspace_id=workspace_id)
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/arenas/{arena_id}",
+        response_model=ArenaResponse,
+        tags=["arena"],
+    )
+    def arenas_get(
+        workspace_id: str,
+        arena_id: str,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> ArenaResponse:
+        try:
+            return arena_ops.get_arena(storage, workspace_id=workspace_id, arena_id=arena_id)
+        except EntityNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"arena {arena_id} not found") from exc
+
+    @app.delete(
+        "/api/workspaces/{workspace_id}/arenas/{arena_id}",
+        status_code=204,
+        tags=["arena"],
+    )
+    def arenas_delete(
+        workspace_id: str,
+        arena_id: str,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> Response:
+        try:
+            arena_ops.delete_arena(storage, workspace_id=workspace_id, arena_id=arena_id)
+        except EntityNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"arena {arena_id} not found") from exc
+        return Response(status_code=204)
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/arenas/{arena_id}/variants",
+        response_model=ArenaVariantResponse,
+        status_code=202,
+        tags=["arena"],
+    )
+    def arena_variants_create(
+        workspace_id: str,
+        arena_id: str,
+        body: RegisterVariantRequest,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> ArenaVariantResponse:
+        try:
+            return arena_ops.register_variant(
+                storage,
+                storage_url=resolved,
+                workspace_id=workspace_id,
+                arena_id=arena_id,
+                body=body,
+            )
+        except EntityNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"arena {arena_id} not found") from exc
+        except ArenaOpError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/arenas/{arena_id}/variants",
+        response_model=list[ArenaVariantResponse],
+        tags=["arena"],
+    )
+    def arena_variants_list(
+        workspace_id: str,
+        arena_id: str,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> list[ArenaVariantResponse]:
+        return arena_ops.list_variants(storage, workspace_id=workspace_id, arena_id=arena_id)
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/arenas/{arena_id}/rounds",
+        response_model=ArenaRoundResponse,
+        status_code=202,
+        tags=["arena"],
+    )
+    def arena_rounds_create(
+        workspace_id: str,
+        arena_id: str,
+        body: LaunchRoundRequest,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> ArenaRoundResponse:
+        try:
+            return arena_ops.launch_round(
+                storage,
+                storage_url=resolved,
+                workspace_id=workspace_id,
+                arena_id=arena_id,
+                body=body,
+            )
+        except EntityNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"arena {arena_id} not found") from exc
+        except ArenaOpError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/arenas/{arena_id}/rounds",
+        response_model=list[ArenaRoundResponse],
+        tags=["arena"],
+    )
+    def arena_rounds_list(
+        workspace_id: str,
+        arena_id: str,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> list[ArenaRoundResponse]:
+        return arena_ops.list_rounds(storage, workspace_id=workspace_id, arena_id=arena_id)
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/arenas/{arena_id}/rounds/{round_id}",
+        response_model=ArenaRoundResponse,
+        tags=["arena"],
+    )
+    def arena_rounds_get(
+        workspace_id: str,
+        arena_id: str,
+        round_id: str,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> ArenaRoundResponse:
+        try:
+            return arena_ops.get_round(
+                storage, workspace_id=workspace_id, arena_id=arena_id, round_id=round_id
+            )
+        except EntityNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"round {round_id} not found") from exc
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/arenas/{arena_id}/promote",
+        response_model=PromoteVariantResponse,
+        tags=["arena"],
+    )
+    def arena_promote(
+        workspace_id: str,
+        arena_id: str,
+        body: PromoteVariantRequest,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> PromoteVariantResponse:
+        try:
+            return arena_ops.promote_variant(
+                storage, workspace_id=workspace_id, arena_id=arena_id, body=body
+            )
+        except EntityNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ArenaOpError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/git/refs",
+        response_model=GitRefsResponse,
+        tags=["arena"],
+    )
+    def arena_git_refs(
+        workspace_id: str,
+        repo_path: str = Query(..., description="Absolute path to a git repo on the server."),
+        _user: UserHeader = None,
+    ) -> GitRefsResponse:
+        try:
+            return arena_ops.git_refs(repo_path)
+        except ArenaOpError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     # --- pairwise verdicts (LLM + human, RLHF / judge calibration) ------
 

@@ -178,6 +178,8 @@ def build_adapter(agent: AgentSpec) -> AgentAdapter:
         kwargs: dict[str, object] = {"env": agent.env, "model": _model_ref(agent.model)}
         if agent.timeout_seconds is not None:
             kwargs["timeout_seconds"] = agent.timeout_seconds
+        if agent.cwd is not None:
+            kwargs["cwd"] = agent.cwd
         return CliCommandAdapter(agent.command, **kwargs)  # type: ignore[arg-type]
     if isinstance(agent, HttpAgentSpec):
         http_kwargs: dict[str, object] = {

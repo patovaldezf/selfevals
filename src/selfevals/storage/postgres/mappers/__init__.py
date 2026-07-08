@@ -18,6 +18,9 @@ from selfevals.storage.postgres.mappers import agent as _agent  # noqa: F401
 from selfevals.storage.postgres.mappers import agent_fleet as _agent_fleet  # noqa: F401
 from selfevals.storage.postgres.mappers import analysis as _analysis  # noqa: F401
 from selfevals.storage.postgres.mappers import annotation as _annotation  # noqa: F401
+from selfevals.storage.postgres.mappers import arena as _arena  # noqa: F401
+from selfevals.storage.postgres.mappers import arena_round as _arena_round  # noqa: F401
+from selfevals.storage.postgres.mappers import arena_variant as _arena_variant  # noqa: F401
 from selfevals.storage.postgres.mappers import dataset as _dataset  # noqa: F401
 from selfevals.storage.postgres.mappers import dataset_baseline as _dataset_baseline  # noqa: F401
 from selfevals.storage.postgres.mappers import decision_record as _decision_record  # noqa: F401
