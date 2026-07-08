@@ -16,6 +16,7 @@
     AlertTriangle,
     Layers,
     Anchor,
+    Swords,
     Command as CommandIcon,
     Sun,
     Moon,
@@ -43,6 +44,7 @@
             icon: FlaskConical,
             chord: 'e'
           },
+          { href: `/${workspaceId}/arenas`, label: 'Arenas', icon: Swords, chord: 'r' },
           { href: `/${workspaceId}/metrics`, label: 'Metrics', icon: BarChart3, chord: 'm' },
           { href: `/${workspaceId}/datasets`, label: 'Datasets', icon: Database, chord: 'd' },
           {
