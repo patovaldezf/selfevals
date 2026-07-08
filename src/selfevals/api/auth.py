@@ -1,24 +1,34 @@
 """Authentication and authorization seams for the FastAPI surface.
 
-The current implementation keeps local-development compatibility with the
-legacy ``X-SelfEvals-User`` header while making that behavior explicit and
-centralized. Shared deployments should set ``SELFEVALS_AUTH_MODE`` to a real
-mode before exposing the API.
+Three modes, selected by ``SELFEVALS_AUTH_MODE``:
+
+- ``local`` (default): the historical developer experience, no identity
+  enforcement.
+- ``header``: trusts the caller-supplied ``X-SelfEvals-User`` header as-is.
+  Suitable only behind a trusted internal bridge that itself authenticates
+  the caller before forwarding the header.
+- ``token``: the caller-supplied header must be a signed token issued by
+  :mod:`selfevals.api.tokens` (HMAC-SHA256, ``SELFEVALS_AUTH_SECRET``).
+  Forged or expired tokens are rejected. This is the mode to use before any
+  untrusted shared deployment.
 """
 
 from __future__ import annotations
 
+import hmac
 import os
 from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import Header, HTTPException
 
+from selfevals.api.tokens import TokenError, verify_token
 from selfevals.schemas.enums import Role
 from selfevals.storage.interface import StorageInterface
 
 USER_HEADER = "X-SelfEvals-User"
 LOCAL_USER_ID = "local"
+OPERATOR_SECRET_HEADER = "X-SelfEvals-Operator-Secret"
 
 READ_ROLES: frozenset[Role] = frozenset(Role)
 MUTATION_ROLES: frozenset[Role] = frozenset(
@@ -27,7 +37,13 @@ MUTATION_ROLES: frozenset[Role] = frozenset(
 
 UserHeader = Annotated[
     str | None,
-    Header(alias=USER_HEADER, description="Development user id; replace in shared auth mode."),
+    Header(
+        alias=USER_HEADER,
+        description=(
+            "Caller identity. In `local`/`header` mode: a plain user id. "
+            "In `token` mode: a signed token from `selfevals.api.tokens.issue_token`."
+        ),
+    ),
 ]
 
 
@@ -46,13 +62,22 @@ def auth_mode() -> str:
 def resolve_principal(user: str | None) -> Principal:
     """Resolve the current caller.
 
-    ``local`` mode preserves the historical developer experience. Any stricter
-    mode must receive an explicit user header until a token/session provider is
-    wired in.
+    ``local`` mode preserves the historical developer experience. ``header``
+    mode trusts the caller-supplied user id as-is. ``token`` mode requires the
+    header to carry a signed, unexpired token and resolves the principal from
+    its verified payload instead of the raw string.
     """
     mode = auth_mode()
     if mode == "local":
         return Principal(user_id=user or LOCAL_USER_ID, auth_mode=mode)
+    if mode == "token":
+        if not user:
+            raise HTTPException(status_code=401, detail="authentication required")
+        try:
+            verified = verify_token(user)
+        except TokenError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+        return Principal(user_id=verified.user_id, auth_mode=mode)
     if user:
         return Principal(user_id=user, auth_mode=mode)
     raise HTTPException(status_code=401, detail="authentication required")
@@ -117,3 +142,19 @@ def readable_workspace_ids(
             )
         )
     }
+
+
+def authorize_operator(secret: str | None) -> None:
+    """Authorize a server-operator action (issuing session tokens).
+
+    Requires the caller to present ``SELFEVALS_AUTH_SECRET`` verbatim via
+    ``X-SelfEvals-Operator-Secret``. Only meaningful in ``token`` mode — in
+    ``local``/``header`` mode there is no signed-token concept to bootstrap.
+    """
+    if auth_mode() != "token":
+        raise HTTPException(
+            status_code=400, detail="session tokens are only issued in token auth mode"
+        )
+    configured = os.environ.get("SELFEVALS_AUTH_SECRET", "").strip()
+    if not configured or not secret or not hmac.compare_digest(configured, secret):
+        raise HTTPException(status_code=401, detail="operator secret required")

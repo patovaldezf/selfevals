@@ -170,6 +170,10 @@ class Executor:
     def sandbox(self) -> SandboxPolicy:
         return self._sandbox
 
+    @property
+    def workspace_id(self) -> str:
+        return self._workspace_id
+
     def close(self) -> None:
         """Stop the embedded OTLP receiver, if one was started. Idempotent —
         safe to call from the loop's `finally` even when no receiver exists."""
@@ -201,7 +205,7 @@ class Executor:
     ) -> CaseRun:
         if repetitions < 1:
             raise ValueError("repetitions must be >= 1")
-        agent_ref = self._agent_ref()
+        agent_ref = self.agent_ref()
         overrides = parameter_overrides or {}
         sem = asyncio.Semaphore(self._concurrency)
 
@@ -215,7 +219,7 @@ class Executor:
                 repetition=rep,
             )
             async with sem:
-                return await self._run_single(
+                return await self.run_single(
                     case=case,
                     run_info=run_info,
                     agent_ref=agent_ref,
@@ -224,11 +228,11 @@ class Executor:
 
         # gather preserves input order, so results stay ordered by rep index.
         # No return_exceptions: a non-AdapterError propagates (AdapterError is
-        # caught inside _run_single and recorded as RepetitionResult.error).
+        # caught inside run_single and recorded as RepetitionResult.error).
         results = await asyncio.gather(*(_bounded(rep) for rep in range(repetitions)))
         return CaseRun(case_id=case.id, repetitions=list(results))
 
-    async def _run_single(
+    async def run_single(
         self,
         *,
         case: EvalCase,
@@ -239,9 +243,12 @@ class Executor:
     ) -> RepetitionResult:
         """Run one adapter invocation and assemble its Trace.
 
-        `input_override` lets a caller (the MultiTurnExecutor) feed a
-        turn-specific conversation history instead of the case's raw input;
-        when None the case input is used verbatim (the single-shot path).
+        Public: `MultiTurnExecutor` composes `Executor` and calls this
+        directly, once per conversation turn, so it reuses trace assembly,
+        cost/timing recording, and sandbox handling instead of duplicating
+        them. `input_override` lets that caller feed a turn-specific
+        conversation history instead of the case's raw input; when None the
+        case input is used verbatim (the single-shot path).
         """
         started_at = utc_now()
         recorder = TraceRecorder(
@@ -264,9 +271,7 @@ class Executor:
             tools_allowed=self._tools_allowed(case),
             parameters=parameter_overrides,
             metadata={"taxonomy": case.taxonomy.model_dump(mode="json")},
-            otlp_endpoint=(
-                self._otlp_handle.endpoint if self._otlp_handle is not None else None
-            ),
+            otlp_endpoint=(self._otlp_handle.endpoint if self._otlp_handle is not None else None),
         )
 
         # Bind the OTLP receiver to this rep's recorder so spans the agent
@@ -447,9 +452,7 @@ class Executor:
         """
         if response.cost_usd > 0:
             return CostBreakdown(total=response.cost_usd)
-        model = self._adapter.model or (
-            self._adapter.agent.model if self._adapter.agent else None
-        )
+        model = self._adapter.model or (self._adapter.agent.model if self._adapter.agent else None)
         if model is None:
             return None
         tokens = TokenBreakdown(
@@ -468,7 +471,7 @@ class Executor:
         )
         return estimate_cost(model.provider, model.name, tokens)
 
-    def _agent_ref(self) -> AgentSnapshotRef:
+    def agent_ref(self) -> AgentSnapshotRef:
         ag = self._adapter.agent
         if ag is None:
             return AgentSnapshotRef(agent_id="unknown", agent_version=1)

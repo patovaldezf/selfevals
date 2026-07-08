@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from selfevals.schemas.experiment import Experiment
     from selfevals.schemas.job import ScenarioJob
     from selfevals.schemas.trace import Trace
+    from selfevals.schemas.workspace import Workspace
 
 
 class PostgresStorage(StorageInterface):
@@ -49,8 +50,7 @@ class PostgresStorage(StorageInterface):
             import psycopg
         except ImportError as exc:  # pragma: no cover - psycopg is a core dep
             raise RuntimeError(
-                "PostgresStorage requires psycopg (a core dependency); "
-                "reinstall selfevals."
+                "PostgresStorage requires psycopg (a core dependency); reinstall selfevals."
             ) from exc
         self._dsn = dsn
         # autocommit by default: each statement commits on its own. The
@@ -91,7 +91,7 @@ class PostgresStorage(StorageInterface):
     def list_workspace_summaries(self) -> list[WorkspaceSummary]:
         return _queries.list_workspace_summaries(self._conn)
 
-    def workspace_by_slug_owner(self, *, slug: str, user_id: str) -> Any | None:
+    def workspace_by_slug_owner(self, *, slug: str, user_id: str) -> Workspace | None:
         return _queries.workspace_by_slug_owner(self._conn, slug=slug, user_id=user_id)
 
     def workspace_member_roles(self, *, workspace_id: str, user_id: str) -> list[Role] | None:
@@ -140,9 +140,7 @@ class PostgresStorage(StorageInterface):
 
     # -- run-job durability (sweeper + heartbeat) ---------------------------
 
-    def expired_run_job_leases(
-        self, *, now: datetime, limit: int = 100
-    ) -> list[tuple[str, str]]:
+    def expired_run_job_leases(self, *, now: datetime, limit: int = 100) -> list[tuple[str, str]]:
         return _queries.expired_run_job_leases(self._conn, now=now, limit=limit)
 
     def touch_run_job_lease(
@@ -371,8 +369,7 @@ class _PostgresScope(WorkspaceScope):
         mapper = mapper_for(entity_type)
         with self._conn.cursor() as cur:
             cur.execute(
-                f"SELECT 1 FROM {mapper.table} "
-                "WHERE id = %s AND workspace_id = %s",
+                f"SELECT 1 FROM {mapper.table} WHERE id = %s AND workspace_id = %s",
                 (entity_id, self.workspace_id),
             )
             return cur.fetchone() is not None

@@ -55,7 +55,9 @@ export default ts.config(
       'package-lock.json',
       'test-results/',
       'playwright-report/',
-      'e2e/.fixtures/'
+      'e2e/.fixtures/',
+      'openapi.json',
+      'src/lib/api/types.gen.ts'
     ]
   }
 );
