@@ -12,7 +12,7 @@ The same JSON shape is also returned inside the HTTP API's
 [`eval_config.md`](eval_config.md).
 
 ```bash
-selfevals --db ./selfevals.sqlite report <workspace_id> <experiment_id> --format json
+selfevals --db "$SELFEVALS_STORAGE_URL" report <workspace_id> <experiment_id> --format json
 ```
 
 ## Root keys

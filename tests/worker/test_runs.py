@@ -36,6 +36,7 @@ class _FakeQueue:
 @pytest.fixture
 def fake_queue(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(worker_runs, "RedisRunJobQueue", _FakeQueue)
+    monkeypatch.setattr(worker_runs, "_queued_durable_jobs", lambda storage_url: [])
 
 
 def test_worker_logs_boot_line(
@@ -106,3 +107,35 @@ def test_n_workers_get_distinct_consumer_names(
             boot = next(r for r in caplog.records if "run worker online" in r.getMessage())
             names.append(boot.getMessage().split("consumer=")[1].split(" ")[0])
     assert names[0] != names[1]
+
+
+def test_worker_polls_durable_queued_jobs_when_stream_is_empty(
+    fake_queue: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        worker_runs,
+        "_queued_durable_jobs",
+        lambda storage_url: [("ws_01HZZZZZZZZZZZZZZZZZZZZZZZ", "job_123")],
+    )
+
+    def _execute(**kwargs: object) -> bool:
+        calls.append(kwargs)
+        return True
+
+    monkeypatch.setattr(worker_runs, "execute_run_job", _execute)
+
+    processed = run_worker(
+        RunWorkerConfig(
+            storage_url="postgresql://x/y",
+            redis_url="redis://localhost:6380/15",
+            consumer="host:1",
+            once=True,
+        )
+    )
+
+    assert processed == 1
+    assert calls[0]["workspace_id"] == "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
+    assert calls[0]["job_id"] == "job_123"
+    assert calls[0]["owner"] == "host:1"

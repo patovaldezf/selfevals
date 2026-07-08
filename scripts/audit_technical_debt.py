@@ -4,6 +4,19 @@
 The audit is intentionally baseline-driven: existing debt is tracked, and CI
 fails when a change increases it. Use ``--update-baseline`` only after a human
 has reviewed and accepted a new baseline.
+
+Not every pattern hit is debt. Some are deliberate and correct — a best-effort
+``except Exception`` in teardown, wrapping a library exception into a domain
+error with ``from exc``, a grading harness that turns a nested crash into an
+ERROR result. To keep the signal high, a regex-based finding can be *suppressed
+in place* with a justified marker on the match's own line or the line above it::
+
+    except Exception as exc:  # audit:ignore[broad_exception_catches] — teardown must not raise
+
+The reason after the bracket is required, so a suppression is always a reviewed
+comment in the diff — the opposite of an anonymous ``# type: ignore``. Only the
+named category is suppressed. Prefer suppressing a genuinely-correct use over
+narrowing it into worse code; use the baseline for debt you intend to pay down.
 """
 
 from __future__ import annotations
@@ -133,7 +146,31 @@ def audit_large_python_functions(files: list[Path]) -> list[Finding]:
     return findings
 
 
-def audit_regex(files: list[Path], name: str, pattern: str) -> list[Finding]:
+def _suppressed(lines: list[str], match_line: int, category: str) -> bool:
+    """True when the match at `match_line` (1-based) is deliberately suppressed.
+
+    A pattern match is a *false positive* — a deliberate, reviewed use of the
+    pattern rather than debt — when its own line or the line immediately above it
+    carries a marker `audit:ignore[<category>] <reason>`. The reason is required
+    (non-empty text after the bracket) so a suppression can never be added
+    silently: it shows up in the diff as a justified comment, which a human can
+    review, unlike an anonymous `# type: ignore`. Only the matching category is
+    suppressed, so `audit:ignore[type_ignores]` never hides a broad-except.
+    """
+    marker = re.compile(rf"audit:ignore\[{re.escape(category)}\]\s*\S")
+    for idx in (match_line - 1, match_line - 2):  # own line, then the line above
+        if 0 <= idx < len(lines) and marker.search(lines[idx]):
+            return True
+    return False
+
+
+def audit_regex(files: list[Path], category: str, detail: str, pattern: str) -> list[Finding]:
+    """Count regex matches in code files, minus in-place suppressions.
+
+    `category` is the audit key (e.g. `broad_exception_catches`) — the name used
+    both in the baseline and in an `audit:ignore[<category>]` marker. `detail` is
+    the human label recorded on each finding.
+    """
     rx = re.compile(pattern)
     findings: list[Finding] = []
     for path in files:
@@ -141,8 +178,12 @@ def audit_regex(files: list[Path], name: str, pattern: str) -> list[Finding]:
         if not rel.startswith(CODE_PREFIXES):
             continue
         text = read_text(path)
+        lines = text.splitlines()
         for match in rx.finditer(text):
-            findings.append(Finding(rel, line_number(text, match.start()), name))
+            line_no = line_number(text, match.start())
+            if _suppressed(lines, line_no, category):
+                continue
+            findings.append(Finding(rel, line_no, detail))
     return findings
 
 
@@ -208,11 +249,19 @@ def collect() -> dict[str, list[dict[str, Any]]]:
     audits = {
         "large_files": audit_large_files(files),
         "large_python_symbols": audit_large_python_functions(files),
-        "broad_exception_catches": audit_regex(files, "broad except Exception", r"except Exception\b"),
-        "type_ignores": audit_regex(files, "type ignore", r"#\s*type:\s*ignore"),
-        "json_extract": audit_regex(files, "json_extract usage", r"\bjson_extract\b"),
-        "list_entities_calls": audit_regex(files, "list_entities call", r"\blist_entities\s*\("),
-        "get_entity_calls": audit_regex(files, "get_entity call", r"\bget_entity\s*\("),
+        "broad_exception_catches": audit_regex(
+            files, "broad_exception_catches", "broad except Exception", r"except Exception\b"
+        ),
+        "type_ignores": audit_regex(files, "type_ignores", "type ignore", r"#\s*type:\s*ignore"),
+        "json_extract": audit_regex(
+            files, "json_extract", "json_extract usage", r"\bjson_extract\b"
+        ),
+        "list_entities_calls": audit_regex(
+            files, "list_entities_calls", "list_entities call", r"\blist_entities\s*\("
+        ),
+        "get_entity_calls": audit_regex(
+            files, "get_entity_calls", "get_entity call", r"\bget_entity\s*\("
+        ),
         "direct_frontend_fetch": audit_direct_frontend_fetch(files),
         "direct_user_header": audit_direct_user_header(files),
         "docs_version_drift": audit_docs_version(files),

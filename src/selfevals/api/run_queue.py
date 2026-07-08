@@ -21,6 +21,18 @@ RUN_JOBS_GROUP = "selfevals-workers"
 LIVE_CONSUMER_MAX_IDLE_MS = 60_000
 
 
+class RunQueueUnavailableError(RuntimeError):
+    """Raised when a configured Redis run queue cannot accept work."""
+
+
+def _redis_error_types() -> tuple[type[BaseException], ...]:
+    try:
+        import redis
+    except ImportError:  # pragma: no cover - optional extra absent
+        return (OSError, TimeoutError)
+    return (redis.RedisError, OSError, TimeoutError)
+
+
 def redact_url(url: str) -> str:
     """Strip credentials from a Redis URL while keeping host, port, and DB.
 
@@ -60,7 +72,7 @@ class RedisRunJobQueue:
         try:
             import redis
         except ImportError as exc:  # pragma: no cover - depends on optional extra
-            raise RuntimeError(
+            raise RunQueueUnavailableError(
                 "Redis run queue requires the redis extra: pip install 'selfevals[redis]'"
             ) from exc
         self._client: Any = redis.Redis.from_url(redis_url, decode_responses=True)
@@ -70,7 +82,10 @@ class RedisRunJobQueue:
         self._ensure_group()
 
     def enqueue(self, job: RunJob) -> None:
-        self._client.xadd(self.stream, _job_fields(job))
+        try:
+            self._client.xadd(self.stream, _job_fields(job))
+        except _redis_error_types() as exc:
+            raise RunQueueUnavailableError("Redis run queue is unavailable") from exc
 
     def requeue(self, job: RunJob) -> None:
         self.enqueue(job)
@@ -135,7 +150,9 @@ class RedisRunJobQueue:
             consumers = self._client.xinfo_consumers(self.stream, self.group)
         except Exception:
             # Group may not exist yet, or Redis is unreachable — either way the
-            # probe is best-effort and must not break the launch.
+            # probe is best-effort and must not break the launch. Broad on
+            # purpose: any failure here degrades to "couldn't check", per the
+            # contract documented above.
             return None
         live = 0
         for consumer in consumers:
@@ -147,9 +164,9 @@ class RedisRunJobQueue:
     def _ensure_group(self) -> None:
         try:
             self._client.xgroup_create(self.stream, self.group, id="0", mkstream=True)
-        except Exception as exc:
+        except _redis_error_types() as exc:
             if "BUSYGROUP" not in str(exc):
-                raise
+                raise RunQueueUnavailableError("Redis run queue is unavailable") from exc
 
 
 def configured_run_queue() -> RedisRunJobQueue | None:

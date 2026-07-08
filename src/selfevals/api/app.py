@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Annotated, Any
@@ -26,12 +26,19 @@ from fastapi import (
     Form,
     HTTPException,
     Query,
+    Request,
     UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from selfevals.api.auth import UserHeader, resolve_user_id
+from selfevals.api.auth import (
+    USER_HEADER,
+    UserHeader,
+    authorize_workspace,
+    readable_workspace_ids,
+    resolve_user_id,
+)
 from selfevals.api.baseline_ops import (
     BaselineNotFoundError,
     BaselineOpError,
@@ -224,6 +231,33 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
     def _storage_factory() -> StorageInterface:
         return open_storage(resolved)
 
+    @app.middleware("http")
+    async def _authorize_workspace_routes(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        """Authorize non-local callers for workspace-scoped API routes."""
+        parts = [part for part in request.url.path.split("/") if part]
+        if len(parts) >= 3 and parts[0] == "api" and parts[1] == "workspaces":
+            workspace_id = parts[2]
+            write = request.method.upper() not in {"GET", "HEAD", "OPTIONS"}
+            store = open_storage(resolved)
+            try:
+                try:
+                    authorize_workspace(
+                        store,
+                        workspace_id=workspace_id,
+                        user=request.headers.get(USER_HEADER),
+                        write=write,
+                    )
+                except HTTPException as exc:
+                    return JSONResponse(
+                        status_code=exc.status_code,
+                        content={"detail": exc.detail},
+                    )
+            finally:
+                store.close()
+        return await call_next(request)
+
     @app.get("/api/health", response_model=HealthResponse, tags=["meta"])
     def health() -> HealthResponse:
         return HealthResponse(
@@ -243,7 +277,13 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
         _user: UserHeader = None,
     ) -> WorkspaceListResponse:
         try:
-            return WorkspaceListResponse(workspaces=list_workspaces(storage))
+            summaries = list_workspaces(storage)
+            allowed = readable_workspace_ids(
+                storage, candidate_ids=[ws.id for ws in summaries], user=_user
+            )
+            if allowed is not None:
+                summaries = [ws for ws in summaries if ws.id in allowed]
+            return WorkspaceListResponse(workspaces=summaries)
         finally:
             storage.close()
 
@@ -1393,13 +1433,22 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
             storage.close()
 
     @app.get("/api/runs/active", response_model=ActiveRunsResponse, tags=["traces"])
-    def runs_active(_user: UserHeader = None) -> ActiveRunsResponse:
-        return ActiveRunsResponse(
-            runs=[
-                ActiveRun(workspace_id=ws, run_id=run)
-                for (ws, run) in get_broker().active_runs()
-            ]
-        )
+    def runs_active(
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> ActiveRunsResponse:
+        try:
+            active = get_broker().active_runs()
+            allowed = readable_workspace_ids(
+                storage, candidate_ids=[ws for (ws, _run) in active], user=_user
+            )
+            if allowed is not None:
+                active = [(ws, run) for (ws, run) in active if ws in allowed]
+            return ActiveRunsResponse(
+                runs=[ActiveRun(workspace_id=ws, run_id=run) for (ws, run) in active]
+            )
+        finally:
+            storage.close()
 
     @app.get(
         "/api/workspaces/{workspace_id}/traces/{run_id}/stream",

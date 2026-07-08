@@ -1,6 +1,6 @@
 # Examples
 
-Five runnable examples, in increasing realism. Run them from a **source
+Six runnable examples, in increasing realism. Run them from a **source
 checkout** (the `hello_*` examples import `examples.hello_*.agent`, which
 needs the repo on `sys.path`).
 
@@ -9,6 +9,7 @@ needs the repo on `sys.path`).
 | `pingpong`      | none      | no           | The smallest possible loop — an in-process echo agent. Start here.                                |
 | `showcase`      | none      | no           | The kitchen sink — one grader of every type and a funnel with every match kind, all offline.      |
 | `route_ops_copilot` | none | no           | A realistic tool-using workflow: read tools, write tools, route gates, artifacts, and actions.    |
+| `sentiment_live` | Anthropic | yes         | Same offline `set_match` shape as `showcase`, but every case is a real Claude call — watch a live trace populate in the web UI. |
 | `hello_llm/`    | Anthropic | optional     | A real agent + LLM judge over three task types, with a deterministic fake fallback.               |
 | `hello_openai/` | OpenAI    | optional     | The exact same experiment as `hello_llm`, swapped to OpenAI — a side-by-side provider comparison. |
 
@@ -68,6 +69,25 @@ the intent class.
 Use it as the template for one-prompt integrations: write user stories as
 cases, expose the app through an adapter, return structured artifacts, and let
 selfevals grade both the answer and the path the agent took.
+
+## sentiment_live — a real Claude call per case
+
+Ships inside the package, but needs a key (unlike `pingpong`/`showcase`/
+`route_ops_copilot`, which are fully offline):
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+selfevals examples copy sentiment_live
+selfevals run evals/experiments/example_sentiment_live.yaml
+```
+
+Same grading shape as `showcase`'s `set_match` case — the agent
+(`selfevals.examples.sentiment_live:run`) classifies a product review's
+sentiment and returns the label under `structured_output["detected"]` — but
+every case is a genuine `client.messages.create` call (forced into
+`sentiment`/`confidence`/`rationale` via a single-tool `tool_choice`), so a
+real model-request span opens and closes in the web UI's live trace view
+instead of the deterministic offline agents the other examples use.
 
 ## hello_llm / hello_openai — a realistic eval
 

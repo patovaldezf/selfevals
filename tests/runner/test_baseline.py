@@ -90,7 +90,7 @@ def _result(spec_dataset_id: str, *, primary: float = 0.8) -> tuple[Optimization
         iteration_record=record,
         decision_record=SimpleNamespace(),  # unused by the baseline path
     )
-    result = OptimizationResult(experiment=SimpleNamespace())  # type: ignore[arg-type]
+    result = OptimizationResult(experiment=SimpleNamespace())  # type: ignore[arg-type]  # audit:ignore[type_ignores] — SimpleNamespace fake stands in for Experiment; the baseline path never reads it
     result.iterations.append(outcome)
 
     spec = SimpleNamespace(
@@ -151,7 +151,7 @@ def test_set_overwrites_and_bumps_version(db_url: str) -> None:
 def test_autoset_creates_baseline_on_first_run(db_url: str) -> None:
     with _scope(db_url) as scope:
         result, spec = _result(DS)
-        created = maybe_autoset_baseline(scope, spec, result)  # type: ignore[arg-type]
+        created = maybe_autoset_baseline(scope, spec, result)  # type: ignore[arg-type]  # audit:ignore[type_ignores] — SimpleNamespace fakes for spec/result
         assert created is not None
         assert created.dataset_id == DS
         assert created.primary_value == 0.8
@@ -164,14 +164,14 @@ def test_autoset_creates_baseline_on_first_run(db_url: str) -> None:
 def test_autoset_is_idempotent_second_run_does_not_overwrite(db_url: str) -> None:
     with _scope(db_url) as scope:
         result1, spec1 = _result(DS, primary=0.8)
-        maybe_autoset_baseline(scope, spec1, result1)  # type: ignore[arg-type]
+        maybe_autoset_baseline(scope, spec1, result1)  # type: ignore[arg-type]  # audit:ignore[type_ignores] — SimpleNamespace fakes for spec/result
         before = load_baseline(scope, DS)
         assert before is not None
 
         # A second, BETTER run over the same dataset must NOT move the baseline —
         # the baseline is the fixed starting point.
         result2, spec2 = _result(DS, primary=0.95)
-        created = maybe_autoset_baseline(scope, spec2, result2)  # type: ignore[arg-type]
+        created = maybe_autoset_baseline(scope, spec2, result2)  # type: ignore[arg-type]  # audit:ignore[type_ignores] — SimpleNamespace fakes for spec/result
         assert created is None
         after = load_baseline(scope, DS)
         assert after is not None
@@ -190,7 +190,7 @@ def test_autoset_skips_when_no_dataset_anchor(db_url: str) -> None:
                 datasets=SimpleNamespace(optimization=SimpleNamespace(id="")),
             )
         )
-        assert maybe_autoset_baseline(scope, spec, result) is None  # type: ignore[arg-type]
+        assert maybe_autoset_baseline(scope, spec, result) is None  # type: ignore[arg-type]  # audit:ignore[type_ignores] — SimpleNamespace fakes for spec/result
 
 
 def test_autoset_swallows_storage_failure(db_url: str) -> None:
@@ -203,4 +203,4 @@ def test_autoset_swallows_storage_failure(db_url: str) -> None:
 
     result, spec = _result(DS)
     # Should return None (swallowed), not raise.
-    assert maybe_autoset_baseline(_BoomScope(), spec, result) is None  # type: ignore[arg-type]
+    assert maybe_autoset_baseline(_BoomScope(), spec, result) is None  # type: ignore[arg-type]  # audit:ignore[type_ignores] — _BoomScope/SimpleNamespace fakes exercise the error path

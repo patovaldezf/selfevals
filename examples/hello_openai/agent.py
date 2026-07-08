@@ -141,7 +141,7 @@ def _call_openai_judge(ctx: PromptContext, *, model: str) -> AdapterResponse:
                 {"role": "user", "content": ctx.user_text},
             ],
         )
-    except Exception as exc:
+    except Exception as exc:  # audit:ignore[broad_exception_catches] — wrap any provider SDK error into a domain error
         raise _OpenAICallError(str(exc)) from exc
     text = completion.choices[0].message.content or ""
     usage = getattr(completion, "usage", None)
@@ -305,7 +305,7 @@ def _call_openai(ctx: PromptContext, *, model: str) -> AdapterResponse:
         kwargs["response_format"] = {"type": "json_object"}
     try:
         completion = client.chat.completions.create(**kwargs)
-    except Exception as exc:  # network, auth, rate-limit
+    except Exception as exc:  # audit:ignore[broad_exception_catches] — wrap provider SDK error (network, auth, rate-limit) into a domain error
         raise _OpenAICallError(str(exc)) from exc
 
     text = completion.choices[0].message.content or ""

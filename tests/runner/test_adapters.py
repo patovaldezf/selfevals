@@ -101,7 +101,7 @@ async def test_embedded_sync_callable_runs_off_event_loop() -> None:
 
 def test_embedded_rejects_non_callable() -> None:
     with pytest.raises(TypeError):
-        EmbeddedAdapter("not a callable")  # type: ignore[arg-type]
+        EmbeddedAdapter("not a callable")  # type: ignore[arg-type]  # audit:ignore[type_ignores] — passes a non-callable on purpose to assert the TypeError
 
 
 @pytest.mark.asyncio
@@ -125,7 +125,7 @@ async def test_embedded_wraps_async_exceptions_as_adapter_error() -> None:
 @pytest.mark.asyncio
 async def test_embedded_rejects_wrong_return_type() -> None:
     def fn(_: AdapterRequest) -> AdapterResponse:
-        return {"content": "wrong"}  # type: ignore[return-value]
+        return {"content": "wrong"}  # type: ignore[return-value]  # audit:ignore[type_ignores] — returns the wrong type on purpose to assert the AdapterError
 
     with pytest.raises(AdapterError, match="expected AdapterResponse"):
         await EmbeddedAdapter(fn).invoke(_req())
@@ -212,11 +212,11 @@ async def test_http_adapter_roundtrip_mock_transport() -> None:
         kwargs.pop("timeout", None)
         return real_client(transport=httpx.MockTransport(handler))
 
-    adapters_mod.httpx.AsyncClient = factory  # type: ignore[assignment]
+    adapters_mod.httpx.AsyncClient = factory  # type: ignore[assignment]  # audit:ignore[type_ignores] — monkeypatch the module's httpx client with a fake
     try:
         resp = await adapter.invoke(_req())
     finally:
-        adapters_mod.httpx.AsyncClient = real_client  # type: ignore[assignment]
+        adapters_mod.httpx.AsyncClient = real_client  # type: ignore[assignment]  # audit:ignore[type_ignores] — restore the monkeypatched httpx client
     assert resp.content == "served: ec_x"
     assert resp.tokens_input == 3
 
@@ -235,12 +235,12 @@ async def test_http_adapter_maps_status_error() -> None:
         kwargs.pop("timeout", None)
         return real_client(transport=httpx.MockTransport(handler))
 
-    adapters_mod.httpx.AsyncClient = factory  # type: ignore[assignment]
+    adapters_mod.httpx.AsyncClient = factory  # type: ignore[assignment]  # audit:ignore[type_ignores] — monkeypatch the module's httpx client with a fake
     try:
         with pytest.raises(AdapterError, match="503"):
             await adapter.invoke(_req())
     finally:
-        adapters_mod.httpx.AsyncClient = real_client  # type: ignore[assignment]
+        adapters_mod.httpx.AsyncClient = real_client  # type: ignore[assignment]  # audit:ignore[type_ignores] — restore the monkeypatched httpx client
 
 
 def test_http_adapter_rejects_empty_url() -> None:
@@ -272,12 +272,12 @@ async def _http_invoke_expecting_error(
         kwargs.pop("timeout", None)
         return real_client(transport=httpx.MockTransport(handler))
 
-    adapters_mod.httpx.AsyncClient = factory  # type: ignore[assignment]
+    adapters_mod.httpx.AsyncClient = factory  # type: ignore[assignment]  # audit:ignore[type_ignores] — monkeypatch the module's httpx client with a fake
     try:
         with pytest.raises(AdapterError) as excinfo:
             await adapter.invoke(_req())
     finally:
-        adapters_mod.httpx.AsyncClient = real_client  # type: ignore[assignment]
+        adapters_mod.httpx.AsyncClient = real_client  # type: ignore[assignment]  # audit:ignore[type_ignores] — restore the monkeypatched httpx client
     return excinfo.value
 
 

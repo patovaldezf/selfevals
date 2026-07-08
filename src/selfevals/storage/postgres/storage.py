@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 
     from selfevals.api.schemas import WorkspaceSummary
     from selfevals.schemas._base import BaseEntity
+    from selfevals.schemas.enums import Role
     from selfevals.schemas.eval_case import EvalCase
     from selfevals.schemas.experiment import Experiment
     from selfevals.schemas.job import ScenarioJob
@@ -93,6 +94,11 @@ class PostgresStorage(StorageInterface):
     def workspace_by_slug_owner(self, *, slug: str, user_id: str) -> Any | None:
         return _queries.workspace_by_slug_owner(self._conn, slug=slug, user_id=user_id)
 
+    def workspace_member_roles(self, *, workspace_id: str, user_id: str) -> list[Role] | None:
+        return _queries.workspace_member_roles(
+            self._conn, workspace_id=workspace_id, user_id=user_id
+        )
+
     def list_experiments_page(
         self,
         *,
@@ -149,6 +155,9 @@ class PostgresStorage(StorageInterface):
             owner=owner,
             lease_expires_at=lease_expires_at,
         )
+
+    def queued_run_jobs(self, *, limit: int = 100) -> list[tuple[str, str]]:
+        return _queries.queued_run_jobs(self._conn, limit=limit)
 
     # -- scenario jobs (sharded per-case claim/plan/barrier) ----------------
 
@@ -273,6 +282,13 @@ class _PostgresScope(WorkspaceScope):
         self.assert_owns(entity)
         mapper = mapper_for(type(entity))
         type_tag = type(entity).__name__
+        if self._conn.autocommit:
+            with self._conn.transaction():
+                self._put_entity_with_mapper(entity, mapper, type_tag)
+            return
+        self._put_entity_with_mapper(entity, mapper, type_tag)
+
+    def _put_entity_with_mapper(self, entity: BaseEntity, mapper: Any, type_tag: str) -> None:
         with self._conn.cursor() as cur:
             cur.execute(
                 f"SELECT version, workspace_id FROM {mapper.table} WHERE id = %s",

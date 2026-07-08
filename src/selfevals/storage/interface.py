@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
     from selfevals.api.schemas import WorkspaceSummary
     from selfevals.schemas._base import BaseEntity
+    from selfevals.schemas.enums import Role
     from selfevals.schemas.eval_case import EvalCase
     from selfevals.schemas.experiment import Experiment
     from selfevals.schemas.job import ScenarioJob
@@ -78,6 +79,10 @@ class StorageInterface(ABC):
         """Resolve a workspace by (slug, owner) or None."""
 
     @abstractmethod
+    def workspace_member_roles(self, *, workspace_id: str, user_id: str) -> list[Role] | None:
+        """Roles for ``user_id`` in a workspace, or None when the workspace is missing."""
+
+    @abstractmethod
     def list_experiments_page(
         self,
         *,
@@ -128,6 +133,10 @@ class StorageInterface(ABC):
         self, *, workspace_id: str, job_id: str, owner: str, lease_expires_at: datetime
     ) -> bool:
         """Renew a job's lease via a direct unversioned UPDATE; True if renewed."""
+
+    @abstractmethod
+    def queued_run_jobs(self, *, limit: int = 100) -> list[tuple[str, str]]:
+        """Cross-workspace ``(workspace_id, job_id)`` of durable jobs still queued."""
 
     # -- scenario jobs (sharded per-case claim/plan/barrier) ----------------
 

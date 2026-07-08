@@ -23,10 +23,11 @@ see [`json_report_schema.md`](json_report_schema.md).
   `http://127.0.0.1:5173`; methods `GET`, `POST`, `OPTIONS`.
 - **OpenAPI:** the generated schema is served at `/api/openapi.json`, and
   interactive Swagger docs at `/api/docs`.
-- **Storage:** resolved from an explicit `--db` CLI flag / `db_path` build arg
-  first, then `SELFEVALS_STORAGE_URL`, then `SELFEVALS_DB`, then
-  `./selfevals.sqlite`. Use a plain path or `sqlite:///...` for SQLite; use
-  `postgresql://...` with the `selfevals[postgres]` extra for Postgres.
+- **Storage:** Postgres-only. Resolved from an explicit `--db` CLI flag /
+  `db_path` build arg first, then `SELFEVALS_STORAGE_URL`; with neither set the
+  app raises rather than guessing. The value is a Postgres URL
+  (`postgresql://...`). SQLite is legacy — only the one-shot
+  `selfevals migrate-sqlite` import, never a live backend.
 - **Live broker:** in-memory by default. Set `SELFEVALS_REDIS_URL` with the
   `selfevals[redis]` extra to fan out live SSE events through Redis Streams
   across API processes.
@@ -37,11 +38,13 @@ see [`json_report_schema.md`](json_report_schema.md).
 ## Running the API
 
 ```bash
-python -m selfevals.api --host 127.0.0.1 --port 8000 --db ./selfevals.sqlite
+python -m selfevals.api --host 127.0.0.1 --port 8000 --db "$SELFEVALS_STORAGE_URL"
+# or, more commonly, mount it through the CLI (also serves the web UI):
+selfevals serve --port 8000
 ```
 
-`--reload` enables autoreload. `--db` is an explicit override; when it is
-absent, `SELFEVALS_STORAGE_URL` wins over `SELFEVALS_DB`.
+`--reload` enables autoreload. `--db` is an explicit override (a Postgres URL);
+when it is absent, `SELFEVALS_STORAGE_URL` is used.
 
 ---
 
@@ -56,7 +59,7 @@ Liveness probe.
 | Field     | Type   | Notes                                        |
 | --------- | ------ | -------------------------------------------- |
 | `status`  | string | Always `"ok"`.                               |
-| `db_path` | string | The resolved SQLite path the app is serving. |
+| `db_path` | string | A safe label for the resolved Postgres storage URL the app is serving (credentials elided). |
 
 ---
 
@@ -116,10 +119,9 @@ and `recent_health` is `null` for a freshly seeded workspace.
 ## Metrics
 
 Metrics endpoints summarize persisted traces for production agent monitoring:
-pass/fail rates, failure modes, tool usage, cost, tokens, and latency. With
-Postgres storage they read normalized fact tables (`trace_grader_results`,
-`tool_calls`, `llm_calls`, and `traces`). SQLite remains supported for local
-quickstarts by scanning canonical Trace JSON.
+pass/fail rates, failure modes, tool usage, cost, tokens, and latency. They read
+normalized Postgres fact tables (`trace_grader_results`, `tool_calls`,
+`llm_calls`, and `traces`).
 
 All metrics endpoints accept:
 

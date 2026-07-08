@@ -1,0 +1,4 @@
+interface:
+  display_name: "Connect Your Agent"
+  short_description: "Wire an agent into selfevals via the adapter contract."
+  default_prompt: "Use this to connect an agent to a selfevals run — pick embedded/cli/http/custom, write the AdapterRequest→AdapterResponse shim, and emit structured_output/tool_uses/tokens so graders can read them."

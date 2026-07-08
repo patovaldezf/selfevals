@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -37,7 +38,7 @@ from selfevals.api.run_jobs import (
     mark_run_job_running,
     mark_run_job_succeeded,
 )
-from selfevals.api.run_queue import configured_run_queue
+from selfevals.api.run_queue import REDIS_URL_ENV, RunQueueUnavailableError, configured_run_queue
 from selfevals.api.schemas import RunExperimentRequest, RunExperimentResponse
 from selfevals.cli import _friendly
 from selfevals.optimization.coordinator import RunCoordinator
@@ -104,10 +105,35 @@ def launch_experiment_run(
     finally:
         storage.close()
 
-    queue = configured_run_queue()
-    if queue is not None:
-        queue.enqueue(job)
-        dispatch = "redis-worker"
+    queue_unavailable = False
+    try:
+        queue = configured_run_queue()
+    except RunQueueUnavailableError:
+        queue_unavailable = True
+        queue = None
+
+    if queue_unavailable:
+        dispatch = "dispatch-pending"
+        logger.warning(
+            "experiment %s persisted as job %s but Redis queue initialization failed; "
+            "a run worker can recover it from durable queued jobs",
+            spec.experiment.id,
+            job.id,
+        )
+    elif queue is not None:
+        try:
+            queue.enqueue(job)
+        except RunQueueUnavailableError:
+            dispatch = "dispatch-pending"
+            logger.warning(
+                "experiment %s persisted as job %s but Redis dispatch failed; "
+                "a run worker can recover it from durable queued jobs",
+                spec.experiment.id,
+                job.id,
+                exc_info=True,
+            )
+        else:
+            dispatch = "redis-worker"
         # A job enqueued with no worker consuming it sits in the stream
         # silently and the experiment never leaves `draft`. Surface that the
         # moment it happens instead of forcing an `XINFO GROUPS` autopsy.
@@ -116,7 +142,7 @@ def launch_experiment_run(
         # None on any Redis error and never fails the launch. False positive to
         # accept: a lone worker busy in a >60s job looks idle, so a launch in
         # that window may warn even though a worker exists — informational only.
-        if queue.active_consumers() == 0:
+        if dispatch == "redis-worker" and queue.active_consumers() == 0:
             logger.warning(
                 "experiment %s queued to redis (%s) but no worker is consuming — "
                 "start one with 'selfevals worker runs' (and make sure it points at "
@@ -175,9 +201,12 @@ def _override_dataset(spec: ExperimentSpec, dataset_id: str) -> ExperimentSpec:
 
     from selfevals.schemas._base import EntityRef
 
+    ref = EntityRef(id=dataset_id)
+    spec.experiment.datasets.optimization = ref
+    spec.experiment.frozen.datasets = [ref]
     return replace(
         spec,
-        dataset_source=RefDatasetSource(ref=EntityRef(id=dataset_id)),
+        dataset_source=RefDatasetSource(ref=ref),
         cases=[],
     )
 
@@ -249,6 +278,7 @@ def execute_run_job(
     job_id: str,
     owner: str,
     queue: RunJobQueue | None = None,
+    redis_url: str | None = None,
 ) -> bool:
     """Background worker: own storage + own event loop. Never blocks FastAPI.
 
@@ -264,6 +294,11 @@ def execute_run_job(
     The broker is a process-wide singleton; if `serve` never bound a loop (e.g.
     a bare run with no SSE consumers) the sink degrades to a silent no-op.
     """
+    # This is genuinely the distributed path (worker / API background thread), so
+    # the global Redis rate-limiter applies. Resolve the url from the env when the
+    # caller didn't pass one; None keeps the in-process bucket (e.g. tests).
+    if redis_url is None:
+        redis_url = os.environ.get(REDIS_URL_ENV)
     storage = open_storage(storage_url)
     with lease_run_job(storage, workspace_id=workspace_id, job_id=job_id, owner=owner) as job:
         if job is None:
@@ -288,6 +323,7 @@ def execute_run_job(
                 repetitions_per_case=job.reps,
                 span_sink=span_sink,
                 payload_router=payload_router,
+                redis_url=redis_url,
             )
             # The run-job IS the coordinator: it shards each iteration into
             # scenario jobs and aggregates from storage. The drain runs this same

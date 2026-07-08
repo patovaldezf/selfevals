@@ -186,7 +186,7 @@ def _call_anthropic_judge(ctx: PromptContext, *, model: str) -> AdapterResponse:
     }
     try:
         message = client.messages.create(**kwargs)
-    except Exception as exc:
+    except Exception as exc:  # audit:ignore[broad_exception_catches] — wrap any provider SDK error into a domain error
         raise _AnthropicCallError(str(exc)) from exc
     text = _strip_json_fences(_join_text_blocks(message.content))
     usage = getattr(message, "usage", None)
@@ -217,7 +217,7 @@ def _call_anthropic_pairwise_judge(ctx: PromptContext, *, model: str) -> Adapter
     }
     try:
         message = client.messages.create(**kwargs)
-    except Exception as exc:
+    except Exception as exc:  # audit:ignore[broad_exception_catches] — wrap any provider SDK error into a domain error
         raise _AnthropicCallError(str(exc)) from exc
     # Models often wrap JSON in ```json fences; the pairwise parser does a bare
     # json.loads, so strip them here.
@@ -427,7 +427,7 @@ def _call_anthropic(ctx: PromptContext, *, model: str) -> AdapterResponse:
         kwargs["top_p"] = ctx.top_p
     try:
         message = client.messages.create(**kwargs)
-    except Exception as exc:  # network, auth, rate-limit
+    except Exception as exc:  # audit:ignore[broad_exception_catches] — wrap provider SDK error (network, auth, rate-limit) into a domain error
         raise _AnthropicCallError(str(exc)) from exc
 
     text = _join_text_blocks(message.content)

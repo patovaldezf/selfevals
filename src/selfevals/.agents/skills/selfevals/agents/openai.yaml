@@ -1,0 +1,4 @@
+interface:
+  display_name: "selfevals (orientation)"
+  short_description: "Map of the framework and which skill to use for an intent."
+  default_prompt: "Use this to get oriented in selfevals and route a specific eval intent (run/analyze/iterate/connect/design) to the right focused skill. For 'set up evals from scratch', use evaluate-this-repo."

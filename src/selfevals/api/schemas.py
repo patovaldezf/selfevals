@@ -617,8 +617,9 @@ class RunExperimentResponse(BaseModel):
 
     `dispatch` tells the caller how the run executes: `redis-worker` means it
     was enqueued and needs a live `selfevals worker runs` to make progress;
-    `in-process-thread` means the API is running it on a local daemon thread
-    (no worker required).
+    `dispatch-pending` means the durable job exists but Redis dispatch failed,
+    so a run worker must recover it from Postgres; `in-process-thread` means the
+    API is running it on a local daemon thread (no worker required).
     """
 
     experiment_id: str

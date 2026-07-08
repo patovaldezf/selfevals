@@ -394,7 +394,7 @@ def _build_experiment(spec_path: Path, raw: dict[str, Any], workspace_id: str) -
     payload.setdefault("workspace_id", workspace_id)
     try:
         return Experiment(**payload)
-    except Exception as exc:
+    except Exception as exc:  # audit:ignore[broad_exception_catches] — wrap any Pydantic build error into a spec-located LoaderError
         raise LoaderError(f"{spec_path}: invalid experiment payload: {exc}") from exc
 
 
@@ -447,7 +447,7 @@ def _build_ref_dataset_source(
         raise LoaderError(f"{spec_path}: `dataset.version:` must be an integer when given")
     try:
         return RefDatasetSource(ref=EntityRef(id=ref, version=version))
-    except Exception as exc:
+    except Exception as exc:  # audit:ignore[broad_exception_catches] — wrap any build error into a spec-located LoaderError
         raise LoaderError(f"{spec_path}: invalid `dataset.ref:`: {exc}") from exc
 
 
@@ -478,7 +478,7 @@ def _opt_split_allocation(spec_path: Path, dataset: dict[str, Any]) -> SplitAllo
         raise LoaderError(f"{spec_path}: `dataset.split_allocation:` must be a mapping when given")
     try:
         return SplitAllocation(**value)
-    except Exception as exc:
+    except Exception as exc:  # audit:ignore[broad_exception_catches] — wrap any build error into a spec-located LoaderError
         raise LoaderError(f"{spec_path}: invalid `dataset.split_allocation:`: {exc}") from exc
 
 
@@ -513,7 +513,7 @@ def _build_cases(spec_path: Path, dataset: dict[str, Any], workspace_id: str) ->
         case_payload.setdefault("workspace_id", workspace_id)
         try:
             cases.append(EvalCase(**case_payload))
-        except Exception as exc:
+        except Exception as exc:  # audit:ignore[broad_exception_catches] — wrap any Pydantic build error into a spec-located LoaderError
             raise LoaderError(f"{spec_path}: invalid case #{i}: {exc}") from exc
     return cases
 

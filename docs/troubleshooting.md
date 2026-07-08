@@ -128,39 +128,43 @@ times out before responding.
 
 ---
 
-## 5. SQLite database locked or corrupted
+## 5. Cannot connect to Postgres
 
-**Symptom (locked)**
+selfevals is Postgres-only. Storage comes from `SELFEVALS_STORAGE_URL` (or the
+global `--db <postgres-url>` flag); with neither set, the CLI/API raises rather
+than guessing.
+
+**Symptom (no storage configured)**
 
 ```text
-error: sqlite database /path/to/selfevals.sqlite is locked
-  hint: another selfevals process is using it; try `--db <new-path>` or wait
+error: no storage configured: set SELFEVALS_STORAGE_URL to a Postgres URL
 ```
 
-**Symptom (corrupted)**
+**Symptom (connection refused / auth failed)**
 
 ```text
-error: sqlite database /path/to/selfevals.sqlite is corrupted or not a valid
-  selfevals db
-  hint: back up the file and re-run with `--db <new-path>` to start clean
+connection to server at "localhost" (::1), port 5433 failed: Connection refused
+# or:
+password authentication failed for user "selfevals"
 ```
 
 **Cause**
 
-- *Locked*: a different `selfevals` process holds a write lock — common
-  if you have `selfevals serve` running and then start a second
-  `selfevals run` against the same db.
-- *Corrupted*: the file is not a SQLite database (overwritten, truncated,
-  copied mid-write) or it was created by a different application.
+- *No storage configured*: neither `SELFEVALS_STORAGE_URL` nor `--db` is set.
+  (For a quick run that needs no DB, use `--no-persist`.)
+- *Connection refused*: Postgres isn't running, or the URL points at the wrong
+  host/port. The local default in `.env.example` is port `5433`.
+- *Auth failed*: wrong user/password/database in the URL.
 
 **Fix**
 
-- For *locked*: stop the other process, or point this run at a separate
-  db with `--db /tmp/scratch.sqlite`.
-- For *corrupted*: move the file aside (do **not** delete until
-  you have inspected it), then re-run with a fresh `--db` path. If
-  the file is salvageable, see the SQLite "Database Disk Image Is
-  Malformed" recovery doc.
+- Bring up local services: `docker compose up -d postgres redis`, then
+  `cp .env.example .env` and `set -a && source .env && set +a` so
+  `SELFEVALS_STORAGE_URL` is exported.
+- Verify the URL: `selfevals --db postgresql://selfevals:selfevals@localhost:5433/selfevals workspace show <ws>`.
+- Migrating off a legacy SQLite file? Import it once with
+  `selfevals migrate-sqlite ./old.sqlite --to "$SELFEVALS_STORAGE_URL"` —
+  SQLite is not a live backend.
 
 ---
 

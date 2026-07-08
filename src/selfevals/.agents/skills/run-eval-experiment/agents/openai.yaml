@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run an Eval Experiment"
+  short_description: "Author, run, and read a selfevals experiment end-to-end."
+  default_prompt: "Use this to write an experiment spec, estimate its cost, run it with the CLI, and interpret the markdown/JSON report and the web UI."

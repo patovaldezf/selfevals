@@ -9,6 +9,8 @@ this wiring is now shared by both the CLI and the HTTP `experiments/run` path.
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from selfevals._errors import SelfEvalsUserError
@@ -16,6 +18,7 @@ from selfevals.repo.loader import (
     AgentEntrypoint,
     CliAgentSpec,
     EmbeddedAgentSpec,
+    ExperimentSpec,
     GraderSpec,
     HttpAgentSpec,
 )
@@ -824,3 +827,60 @@ def test_build_loop_wraps_rate_limit_outermost_when_rpm_set() -> None:
     adapter = loop._executor._adapter
     assert isinstance(adapter, RateLimitedAdapter)
     assert isinstance(adapter._inner, RetryingAdapter)
+
+
+def _spec_with_rate_limit(ws: str, rpm: int | None) -> ExperimentSpec:
+    """Typed wrapper over the `object`-returning helper, for the rate-limit tests."""
+    return cast(ExperimentSpec, _inline_spec_with_rate_limit(ws, rpm))
+
+
+def test_build_loop_uses_redis_bucket_when_redis_url_passed() -> None:
+    # redis_url threaded in (distributed path) → the bucket is the global
+    # Redis-backed one, not the in-process AsyncTokenBucket.
+    from selfevals.runner.launch import build_loop
+    from selfevals.runner.redis_throttle import RedisTokenBucket
+    from selfevals.runner.throttle import RateLimitedAdapter
+
+    spec = _spec_with_rate_limit("ws_01HZZZZZZZZZZZZZZZZZZZZZZZ", 600)
+    loop = build_loop(
+        spec,
+        scope=None,
+        repetitions_per_case=1,
+        redis_url="redis://localhost:6380/15",
+    )
+    adapter = loop._executor._adapter
+    assert isinstance(adapter, RateLimitedAdapter)
+    assert isinstance(adapter._bucket, RedisTokenBucket)
+
+
+def test_build_loop_local_path_stays_in_process() -> None:
+    # No redis_url (local CLI path) → in-process AsyncTokenBucket, never Redis.
+    from selfevals.runner.launch import build_loop
+    from selfevals.runner.throttle import AsyncTokenBucket, RateLimitedAdapter
+
+    spec = _spec_with_rate_limit("ws_01HZZZZZZZZZZZZZZZZZZZZZZZ", 600)
+    loop = build_loop(spec, scope=None, repetitions_per_case=1)
+    adapter = loop._executor._adapter
+    assert isinstance(adapter, RateLimitedAdapter)
+    assert isinstance(adapter._bucket, AsyncTokenBucket)
+
+
+def test_rate_limit_key_falls_back_to_experiment_for_embedded() -> None:
+    # pingpong is an embedded agent (no provider) → key falls back to :exp:.
+    from selfevals.runner.launch import _rate_limit_key
+
+    spec = _spec_with_rate_limit("ws_01HZZZZZZZZZZZZZZZZZZZZZZZ", 600)
+    key = _rate_limit_key(spec)
+    assert key.startswith("selfevals:ratelimit:ws_01HZZZZZZZZZZZZZZZZZZZZZZZ:exp:")
+
+
+def test_rate_limit_key_uses_provider_when_declared() -> None:
+    # An agent with a declared model.provider keys by (workspace, provider) so
+    # the whole fleet hitting that provider shares one quota.
+    from selfevals.repo.loader import AgentModelDecl, CliAgentSpec
+    from selfevals.runner.launch import _provider_of
+
+    agent = CliAgentSpec(command=["echo"], model=AgentModelDecl(provider="anthropic", name="x"))
+    assert _provider_of(agent) == "anthropic"
+    assert _provider_of(EmbeddedAgentSpec(entrypoint=AgentEntrypoint(
+        raw="m:f", module="m", attribute="f"))) is None

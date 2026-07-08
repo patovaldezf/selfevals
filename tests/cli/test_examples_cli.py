@@ -46,6 +46,17 @@ def test_examples_copy_route_ops_copilot_writes_runnable_files(
     assert "example_route_ops_copilot.yaml --no-persist" in stdout
 
 
+def test_examples_copy_sentiment_live_writes_runnable_files(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rc, stdout, _ = _capture(capsys, ["examples", "copy", "sentiment_live", "--to", str(tmp_path)])
+    assert rc == 0
+    assert "copied example 'sentiment_live'" in stdout
+    assert (tmp_path / "evals" / "experiments" / "example_sentiment_live.yaml").is_file()
+    assert (tmp_path / "evals" / "datasets" / "sentiment_live.jsonl").is_file()
+    assert "example_sentiment_live.yaml --no-persist" in stdout
+
+
 def test_examples_copy_refuses_to_overwrite(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

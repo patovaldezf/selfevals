@@ -1,0 +1,4 @@
+interface:
+  display_name: "Error Analysis"
+  short_description: "Open + axial coding of failed traces to grow the taxonomy."
+  default_prompt: "Use this after a run with persisted failed traces — pull the bundle, code the first failure of each trace, classify against the live taxonomy, push assignments + candidate modes, and hand the human the promote gate."

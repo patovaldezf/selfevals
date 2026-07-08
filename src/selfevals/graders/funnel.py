@@ -343,7 +343,7 @@ async def _run_level(
     level_ctx = _feed(level, context) if level.feeds_extract else context
     try:
         result = await level.match.grade(level_ctx)
-    except Exception as exc:  # mirror panel's return_exceptions: a match crash → ERROR
+    except Exception as exc:  # audit:ignore[broad_exception_catches] — mirror panel's return_exceptions: a nested match crash → ERROR
         result = GradeResult(
             grader=level.match.name,
             label=GradeLabel.ERROR,

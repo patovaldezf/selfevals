@@ -17,9 +17,20 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Awaitable, Callable
+from typing import Protocol
 
 from selfevals.runner.adapters import AdapterRequest, AdapterResponse, AgentAdapter
 from selfevals.schemas.fleet import Agent, ModelRef
+
+
+class TokenBucket(Protocol):
+    """The narrow contract `RateLimitedAdapter` needs from a bucket.
+
+    Both `AsyncTokenBucket` (in-process) and `RedisTokenBucket` (global, in
+    `redis_throttle.py`) satisfy this structurally, so either can back the
+    adapter without a Union annotation."""
+
+    async def acquire(self, tokens: float = 1.0) -> None: ...
 
 
 class AsyncTokenBucket:
@@ -73,7 +84,7 @@ class AsyncTokenBucket:
 class RateLimitedAdapter(AgentAdapter):
     """Wrap an adapter, acquiring a bucket token before each call."""
 
-    def __init__(self, inner: AgentAdapter, bucket: AsyncTokenBucket) -> None:
+    def __init__(self, inner: AgentAdapter, bucket: TokenBucket) -> None:
         self._inner = inner
         self._bucket = bucket
 
@@ -88,6 +99,17 @@ class RateLimitedAdapter(AgentAdapter):
     async def invoke(self, request: AdapterRequest) -> AdapterResponse:
         await self._bucket.acquire(1.0)
         return await self._inner.invoke(request)
+
+    async def aclose(self) -> None:
+        """Release the bucket's resources (the Redis bucket holds a client).
+
+        Best-effort and idempotent: the in-process bucket has nothing to close.
+        Called from the executor's teardown so a real Redis client is closed
+        before the loop exits (else `filterwarnings=error` trips on a leaked
+        connection)."""
+        close = getattr(self._bucket, "aclose", None)
+        if callable(close):
+            await close()
 
 
 class ProviderThrottle:

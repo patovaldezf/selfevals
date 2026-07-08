@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from selfevals.api.run_launcher import execute_run_job
 from selfevals.api.run_queue import RedisRunJobQueue
-from selfevals.storage.factory import storage_url_label
+from selfevals.storage.factory import open_storage, storage_url_label
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,7 @@ def run_worker(config: RunWorkerConfig) -> int:
                 job_id=message.job_id,
                 owner=consumer,
                 queue=queue,
+                redis_url=config.redis_url,
             )
             queue.ack(message.message_id)
             handled = True
@@ -65,13 +66,36 @@ def run_worker(config: RunWorkerConfig) -> int:
                 job_id=message.job_id,
                 owner=consumer,
                 queue=queue,
+                redis_url=config.redis_url,
             )
             queue.ack(message.message_id)
             handled = True
             processed += 1
             if config.once:
                 return processed
+        for workspace_id, job_id in _queued_durable_jobs(config.storage_url):
+            ran = execute_run_job(
+                storage_url=config.storage_url,
+                workspace_id=workspace_id,
+                job_id=job_id,
+                owner=consumer,
+                queue=queue,
+                redis_url=config.redis_url,
+            )
+            handled = handled or ran
+            if ran:
+                processed += 1
+                if config.once:
+                    return processed
         if config.once:
             return processed
         if not handled:
             time.sleep(config.idle_sleep_seconds)
+
+
+def _queued_durable_jobs(storage_url: str, *, limit: int = 100) -> list[tuple[str, str]]:
+    storage = open_storage(storage_url)
+    try:
+        return storage.queued_run_jobs(limit=limit)
+    finally:
+        storage.close()

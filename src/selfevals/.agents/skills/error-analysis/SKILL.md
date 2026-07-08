@@ -27,13 +27,16 @@ reading and judgement.
 - Identify the target **workspace id** and **experiment id**. If the user gave
   a spec path, the workspace is the spec's `workspace:` key; the experiment id
   is printed when the experiment was created/run.
-- You will need the db path the project uses (the CLI's `--db` flag, default per
-  the project). Reuse whatever the human/other commands already use.
+- Storage is **Postgres**. The commands below read/write the persisted run, so
+  point at it the way the project already does — usually `SELFEVALS_STORAGE_URL`
+  in the env, or the global `--db <postgres-url>` flag *before* the subcommand.
+  Reuse whatever the human/other commands already use. (SQLite is legacy — only
+  `selfevals migrate-sqlite`, never a live backend.)
 
 ## 1. Pull the bundle
 
 ```bash
-selfevals --db <db> analyze pull <workspace_id> <experiment_id> > bundle.json
+selfevals --db "$SELFEVALS_STORAGE_URL" analyze pull <workspace_id> <experiment_id> > bundle.json
 ```
 
 `bundle.json` contains:
@@ -97,7 +100,7 @@ them next iteration. It does **not** run them automatically.
 Emit an `AnalysisResult` JSON and push it:
 
 ```bash
-selfevals --db <db> analyze push <workspace_id> <experiment_id> --by "agent:<your-name>" < result.json
+selfevals --db "$SELFEVALS_STORAGE_URL" analyze push <workspace_id> <experiment_id> --by "agent:<your-name>" < result.json
 ```
 
 `result.json` shape:
@@ -131,8 +134,8 @@ Print which candidates are strongest — frequency (how many traces) plus your
 confidence — so the human can batch-promote:
 
 ```bash
-selfevals --db <db> failuremode list <workspace_id> --status candidate
-selfevals --db <db> failuremode promote <workspace_id> <fm_id>
+selfevals --db "$SELFEVALS_STORAGE_URL" failuremode list <workspace_id> --status candidate
+selfevals --db "$SELFEVALS_STORAGE_URL" failuremode promote <workspace_id> <fm_id>
 ```
 
 Promotion (candidate → official) is a **human gate** by design. Never promote on
