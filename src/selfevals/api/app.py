@@ -6,8 +6,9 @@ the existing Pydantic models so the web side can validate against the
 same canonical JSON.
 
 Auth is centralized in `api.auth`. Local development accepts
-`X-SelfEvals-User` with a `"local"` fallback; shared deployments should set a
-stricter auth mode before exposing the API.
+`X-SelfEvals-User` with a `"local"` fallback; shared deployments should set
+`SELFEVALS_AUTH_MODE=token` (signed session tokens, see `api.tokens`) before
+exposing the API to untrusted callers.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from fastapi import (
     FastAPI,
     File,
     Form,
+    Header,
     HTTPException,
     Query,
     Request,
@@ -33,8 +35,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from selfevals.api.auth import (
+    OPERATOR_SECRET_HEADER,
     USER_HEADER,
     UserHeader,
+    authorize_operator,
     authorize_workspace,
     readable_workspace_ids,
     resolve_user_id,
@@ -144,6 +148,8 @@ from selfevals.api.schemas import (
     RunExperimentRequest,
     RunExperimentResponse,
     RunTournamentRequest,
+    SessionRequest,
+    SessionResponse,
     SetBaselineRequest,
     ThreadResponse,
     TokenMetricsResponse,
@@ -154,6 +160,7 @@ from selfevals.api.schemas import (
     WorkspaceResponse,
 )
 from selfevals.api.sse import stream_trace
+from selfevals.api.tokens import issue_token
 from selfevals.schemas.enums import DatasetStatus, ExperimentState
 from selfevals.storage.errors import ObjectNotFoundError, PointerHashMismatchError
 from selfevals.storage.factory import (
@@ -266,6 +273,16 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
             storage_url=storage_url_label(resolved),
             storage_backend="postgres",
         )
+
+    @app.post("/api/auth/session", response_model=SessionResponse, tags=["meta"])
+    def issue_session(
+        payload: SessionRequest,
+        operator_secret: Annotated[str | None, Header(alias=OPERATOR_SECRET_HEADER)] = None,
+    ) -> SessionResponse:
+        authorize_operator(operator_secret)
+        token = issue_token(payload.user_id, ttl_seconds=payload.ttl_seconds)
+        expires_at = int(token.rsplit(".", 2)[1])
+        return SessionResponse(token=token, user_id=payload.user_id, expires_at=expires_at)
 
     @app.get(
         "/api/workspaces",
