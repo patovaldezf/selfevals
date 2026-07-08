@@ -3,6 +3,7 @@
    *  Shows after a short delay so a sweep across the UI doesn't flash tips, and
    *  fades quickly. CSS-positioned around the trigger — no portal, so keep tips
    *  short. Appears on keyboard focus too, not just mouse. */
+  import { onDestroy } from 'svelte';
   import { fade } from 'svelte/transition';
 
   export let text: string;
@@ -21,6 +22,10 @@
     timer = null;
     visible = false;
   }
+
+  onDestroy(() => {
+    if (timer) clearTimeout(timer);
+  });
 </script>
 
 <span

@@ -3,7 +3,7 @@
 Turns a `RunExperimentRequest` into a queued background run, reusing the exact
 canonical wiring the CLI uses (`runner.launch.build_loop`). The handler is sync
 and returns 202 immediately; the loop — which drives LLM calls and can take
-minutes — runs on a daemon thread with its own SQLite connection and its own
+minutes — runs on a daemon thread with its own Postgres connection and its own
 `asyncio.run`, so it never blocks the FastAPI event loop. (The span broker
 already publishes cross-thread via `call_soon_threadsafe`, so SSE keeps working.)
 

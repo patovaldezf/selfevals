@@ -160,7 +160,7 @@ class SpanBroker:
 
         Hops onto the FastAPI event loop via call_soon_threadsafe.
         If no loop is bound, drops silently — the broker is best-effort,
-        not the source of truth (SQLite is)."""
+        not the source of truth (Postgres is)."""
         loop = self._loop
         if loop is None:
             return
@@ -182,7 +182,7 @@ class SpanBroker:
         channel = self._channels.get(key)
         if channel is None or channel.closed:
             # No live subscribers and channel hasn't been opened — drop.
-            # A late subscriber will start from the SQLite snapshot.
+            # A late subscriber will start from the Postgres snapshot.
             return
         for sub in list(channel.subscribers):
             try:

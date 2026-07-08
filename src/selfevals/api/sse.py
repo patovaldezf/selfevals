@@ -57,7 +57,7 @@ async def stream_trace(
     """Build a StreamingResponse that emits snapshot + live spans."""
 
     async def gen() -> AsyncIterator[bytes]:
-        # 1. Initial snapshot from SQLite (may be None if the run hasn't
+        # 1. Initial snapshot from Postgres (may be None if the run hasn't
         #    persisted yet; that's fine — the client gets an empty
         #    snapshot and waits for live spans).
         storage = storage_factory()
