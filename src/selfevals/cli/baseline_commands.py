@@ -23,7 +23,7 @@ from selfevals.ci.regression import (
     RegressionThresholds,
     evaluate_regression,
 )
-from selfevals.cli.commands import CommandError, _storage
+from selfevals.cli._common import CommandError, _storage
 from selfevals.runner.baseline import load_baseline, set_baseline
 from selfevals.schemas.dataset import Dataset, DatasetBaseline
 from selfevals.schemas.iteration import IterationRecord

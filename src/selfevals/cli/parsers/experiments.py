@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from selfevals.cli import commands
+from selfevals.cli import experiment_commands
 from selfevals.cli._help import make_subparser
 
 
@@ -24,7 +24,7 @@ def add_workspace(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p_ws_show.add_argument("workspace_id")
-    p_ws_show.set_defaults(func=commands.cmd_workspace_show)
+    p_ws_show.set_defaults(func=experiment_commands.cmd_workspace_show)
 
 
 def add_experiment(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -46,7 +46,7 @@ def add_experiment(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> 
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p_exp_list.add_argument("workspace_id")
-    p_exp_list.set_defaults(func=commands.cmd_experiment_list)
+    p_exp_list.set_defaults(func=experiment_commands.cmd_experiment_list)
     p_exp_show = exp_sub.add_parser(
         "show",
         help="Show one experiment.",
@@ -56,7 +56,7 @@ def add_experiment(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> 
     )
     p_exp_show.add_argument("workspace_id")
     p_exp_show.add_argument("experiment_id")
-    p_exp_show.set_defaults(func=commands.cmd_experiment_show)
+    p_exp_show.set_defaults(func=experiment_commands.cmd_experiment_show)
 
 
 def add_iteration(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -79,4 +79,4 @@ def add_iteration(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     )
     p_iter_list.add_argument("workspace_id")
     p_iter_list.add_argument("experiment_id")
-    p_iter_list.set_defaults(func=commands.cmd_iteration_list)
+    p_iter_list.set_defaults(func=experiment_commands.cmd_iteration_list)

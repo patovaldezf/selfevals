@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from selfevals._errors import SelfEvalsUserError
-from selfevals.cli import commands
+from selfevals.cli import ops_commands
 
 
 def _ns(**overrides: Any) -> argparse.Namespace:
@@ -37,10 +37,10 @@ def test_serve_disables_web_when_no_web_flag_set(tmp_path: Path) -> None:
     """--no-web suppresses subprocess.Popen entirely; uvicorn is the
     only thing that runs. Onboarding fallback for users without Node."""
     with (
-        patch.object(commands, "_run_uvicorn") as fake_uv,
+        patch.object(ops_commands, "_run_uvicorn") as fake_uv,
         patch("subprocess.Popen") as fake_popen,
     ):
-        rc = commands.cmd_serve(_ns(no_web=True, db="postgresql://localhost/selfevals"))
+        rc = ops_commands.cmd_serve(_ns(no_web=True, db="postgresql://localhost/selfevals"))
     assert rc == 0
     fake_uv.assert_called_once_with("127.0.0.1", 8000, False)
     fake_popen.assert_not_called()
@@ -57,10 +57,10 @@ def test_serve_raises_when_uvicorn_missing() -> None:
         )
 
     with (
-        patch.object(commands, "_run_uvicorn", side_effect=fail_uvicorn),
+        patch.object(ops_commands, "_run_uvicorn", side_effect=fail_uvicorn),
         pytest.raises(SelfEvalsUserError, match="uvicorn"),
     ):
-        commands.cmd_serve(_ns(no_web=True))
+        ops_commands.cmd_serve(_ns(no_web=True))
 
 
 def test_serve_explicit_web_dist_must_have_index_js(tmp_path: Path) -> None:
@@ -70,10 +70,10 @@ def test_serve_explicit_web_dist_must_have_index_js(tmp_path: Path) -> None:
     empty = tmp_path / "fakebuild"
     empty.mkdir()
     with (
-        patch.object(commands, "_run_uvicorn"),
+        patch.object(ops_commands, "_run_uvicorn"),
         pytest.raises(SelfEvalsUserError, match=r"index\.js"),
     ):
-        commands.cmd_serve(_ns(web_dist=str(empty), db="postgresql://localhost/selfevals"))
+        ops_commands.cmd_serve(_ns(web_dist=str(empty), db="postgresql://localhost/selfevals"))
 
 
 def test_serve_spawns_node_with_correct_env(tmp_path: Path) -> None:
@@ -85,13 +85,13 @@ def test_serve_spawns_node_with_correct_env(tmp_path: Path) -> None:
     (build_dir / "index.js").write_text("// stub\n")
 
     with (
-        patch.object(commands, "_run_uvicorn") as fake_uv,
+        patch.object(ops_commands, "_run_uvicorn") as fake_uv,
         patch("subprocess.Popen") as fake_popen,
     ):
         fake_popen.return_value.poll.return_value = None
         fake_popen.return_value.terminate = MagicMock()
         fake_popen.return_value.wait = MagicMock()
-        rc = commands.cmd_serve(
+        rc = ops_commands.cmd_serve(
             _ns(web_dist=str(build_dir), port=8000, db="postgresql://localhost/selfevals")
         )
     assert rc == 0
@@ -121,13 +121,13 @@ def test_serve_terminates_web_proc_when_uvicorn_raises(tmp_path: Path) -> None:
     (build_dir / "index.js").write_text("// stub\n")
 
     with (
-        patch.object(commands, "_run_uvicorn", side_effect=KeyboardInterrupt()),
+        patch.object(ops_commands, "_run_uvicorn", side_effect=KeyboardInterrupt()),
         patch("subprocess.Popen") as fake_popen,
     ):
         fake_popen.return_value.poll.return_value = None
         fake_popen.return_value.terminate = MagicMock()
         fake_popen.return_value.wait = MagicMock()
-        rc = commands.cmd_serve(
+        rc = ops_commands.cmd_serve(
             _ns(web_dist=str(build_dir), db="postgresql://localhost/selfevals")
         )
     assert rc == 0
@@ -142,10 +142,10 @@ def test_serve_sets_storage_url_env(
     monkeypatch.delenv("SELFEVALS_STORAGE_URL", raising=False)
     db_url = "postgresql://localhost/set-by-serve"
     with (
-        patch.object(commands, "_run_uvicorn"),
+        patch.object(ops_commands, "_run_uvicorn"),
         patch("subprocess.Popen"),
     ):
-        commands.cmd_serve(_ns(no_web=True, db=db_url))
+        ops_commands.cmd_serve(_ns(no_web=True, db=db_url))
     assert os.environ["SELFEVALS_STORAGE_URL"] == db_url
 
 
@@ -157,8 +157,8 @@ def test_serve_node_missing_falls_back_clean(tmp_path: Path) -> None:
     (build_dir / "index.js").write_text("// stub\n")
 
     with (
-        patch.object(commands, "_run_uvicorn"),
+        patch.object(ops_commands, "_run_uvicorn"),
         patch("subprocess.Popen", side_effect=FileNotFoundError("no node")),
         pytest.raises(SelfEvalsUserError, match="node"),
     ):
-        commands.cmd_serve(_ns(web_dist=str(build_dir), db="postgresql://localhost/selfevals"))
+        ops_commands.cmd_serve(_ns(web_dist=str(build_dir), db="postgresql://localhost/selfevals"))

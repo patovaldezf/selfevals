@@ -1,30 +1,33 @@
-"""CLI command implementations.
+"""CLI command implementations: lifecycle (init, run) and reporting.
 
 Each `cmd_*` takes the parsed argparse Namespace and returns an int exit
 code. Errors that should produce a clean `error: <msg>` line raise
 `CommandError`; anything else escapes as a traceback (a real bug).
+
+Workspace/experiment/iteration inspection lives in `experiment_commands.py`;
+skills/examples/serve/worker live in `ops_commands.py`. Shared helpers
+(`_storage`, `_require_entity`, entity listing/reconstruction) live in
+`_common.py`, which all handler modules — including this one — import from
+directly.
 """
 
 from __future__ import annotations
 
 import argparse
-import sys
-from collections.abc import Sequence
-from importlib import resources
-from pathlib import Path
-from typing import TYPE_CHECKING
 
-from selfevals._errors import SelfEvalsUserError
 from selfevals.cli import _friendly
-from selfevals.graders._confusion import ConfusionReport
-from selfevals.optimization.aggregator import FunnelNode, IterationAggregate
-from selfevals.optimization.loop import (
-    IterationOutcome,
-    OptimizationResult,
+from selfevals.cli._common import (
+    CommandError,
+    _ensure_cwd_on_path,
+    _experiment_decisions,
+    _experiment_iterations,
+    _reconstruct_result,
+    _require_entity,
+    _storage,
 )
+from selfevals.optimization.loop import OptimizationResult
 from selfevals.reporter import render_json, render_markdown
 from selfevals.reporter.compare import render_compare
-from selfevals.runner.executor import CaseRun, RepetitionResult
 from selfevals.runner.launch import (
     build_loop,
     ensure_workspace,
@@ -32,38 +35,10 @@ from selfevals.runner.launch import (
     trace_sampling_override,
 )
 from selfevals.schemas.experiment import Experiment
-from selfevals.schemas.iteration import DecisionRecord, IterationRecord
-from selfevals.schemas.trace import Trace
-from selfevals.schemas.workspace import Workspace
-from selfevals.storage.factory import (
-    open_storage,
-    resolve_storage_url,
-    storage_url_label,
-)
-from selfevals.storage.interface import ListFilter, StorageInterface
+from selfevals.schemas.iteration import IterationRecord
+from selfevals.storage.factory import resolve_storage_url
+from selfevals.storage.interface import StorageInterface
 from selfevals.storage.seed import seed_failure_taxonomy, seed_workspace
-
-if TYPE_CHECKING:
-    from selfevals.schemas._base import BaseEntity
-
-
-class CommandError(SelfEvalsUserError):
-    """Raised for user-correctable errors. CLI prints and exits 2.
-
-    Thin alias of :class:`selfevals._errors.SelfEvalsUserError` so the
-    rest of this module keeps the historical name. Anything new outside
-    the CLI should raise :class:`SelfEvalsUserError` directly.
-    """
-
-
-def _storage(args: argparse.Namespace) -> StorageInterface:
-    """Open the configured Postgres storage.
-
-    A connection error surfaces as the underlying psycopg exception; we
-    don't translate it here (there's no single-file corruption/lock case to
-    rewrite the way the old SQLite path did).
-    """
-    return open_storage(resolve_storage_url(args.db))
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -82,80 +57,6 @@ def cmd_init(args: argparse.Namespace) -> int:
     print(f"workspace id={ws.id} slug={ws.slug} name={ws.name}")
     print(f"members: {len(seeded.members)} role(s)")
     print(f"failure-mode taxonomy: {len(modes)} canonical mode(s) seeded")
-    return 0
-
-
-def cmd_workspace_show(args: argparse.Namespace) -> int:
-    storage = _storage(args)
-    try:
-        with storage.open(args.workspace_id) as scope:
-            ws = _require_entity(scope, Workspace, args.workspace_id)
-            assert isinstance(ws, Workspace)
-            experiments = scope.list_entities(Experiment, ListFilter())
-        print(f"workspace id={ws.id}")
-        print(f"  slug:        {ws.slug}")
-        print(f"  name:        {ws.name}")
-        print(f"  owner:       {ws.owner_id}")
-        print(f"  experiments: {len(experiments)}")
-    finally:
-        storage.close()
-    return 0
-
-
-def cmd_experiment_list(args: argparse.Namespace) -> int:
-    storage = _storage(args)
-    try:
-        with storage.open(args.workspace_id) as scope:
-            experiments = scope.list_entities(Experiment, ListFilter())
-    finally:
-        storage.close()
-    if not experiments:
-        print("(no experiments)")
-        return 0
-    for exp in experiments:
-        assert isinstance(exp, Experiment)
-        print(f"{exp.id}  state={exp.state}  name={exp.name}")
-    return 0
-
-
-def cmd_experiment_show(args: argparse.Namespace) -> int:
-    storage = _storage(args)
-    try:
-        with storage.open(args.workspace_id) as scope:
-            exp = _require_entity(scope, Experiment, args.experiment_id)
-            assert isinstance(exp, Experiment)
-            iterations = _experiment_iterations(scope, exp.id)
-        print(f"experiment id={exp.id}")
-        print(f"  name:        {exp.name}")
-        print(f"  goal:        {exp.goal}")
-        print(f"  state:       {exp.state}")
-        print(f"  mode:        {exp.mode}")
-        print(f"  proposer:    {exp.proposer.strategy}")
-        print(
-            f"  target:      {exp.target.primary.name} "
-            f"{exp.target.primary.operator} {exp.target.primary.value:g}"
-        )
-        print(f"  iterations:  {len(iterations)} of {exp.run.max_iterations}")
-    finally:
-        storage.close()
-    return 0
-
-
-def cmd_iteration_list(args: argparse.Namespace) -> int:
-    storage = _storage(args)
-    try:
-        with storage.open(args.workspace_id) as scope:
-            iterations = _experiment_iterations(scope, args.experiment_id)
-    finally:
-        storage.close()
-    if not iterations:
-        print("(no iterations)")
-        return 0
-    for it in iterations:
-        primary = it.metrics.primary if it.metrics else None
-        primary_str = f"{primary.value:.4g}" if primary else "-"
-        decision = it.decision.outcome if it.decision else "-"
-        print(f"#{it.iteration:>3} {it.id}  {primary_str:>8}  {decision}")
     return 0
 
 
@@ -212,229 +113,6 @@ def cmd_estimate(args: argparse.Namespace) -> int:
     print(f"agent calls (upper bound): {total_calls}")
     print(f"estimated cost (USD):      ${total_cost:.2f}")
     return 0
-
-
-def cmd_skills_list(args: argparse.Namespace) -> int:
-    from selfevals import skills
-
-    names = skills.list_skills()
-    if not names:
-        print("(no bundled skills)")
-        return 0
-    for name in names:
-        print(name)
-    return 0
-
-
-def cmd_skills_path(args: argparse.Namespace) -> int:
-    from selfevals import skills
-
-    try:
-        path = skills.skill_path(args.name)
-    except KeyError as exc:
-        raise CommandError(str(exc)) from exc
-    print(path)
-    return 0
-
-
-def cmd_skills_sync(args: argparse.Namespace) -> int:
-    from selfevals import skills
-
-    dest = Path(args.to) if args.to else skills.DEFAULT_SKILL_DEST
-    only_consumer = not args.all
-    written = skills.sync_skills(dest, only_consumer=only_consumer)
-    scope = "consumer" if only_consumer else "all"
-    if not written:
-        print(f"skills already up to date in {dest} ({scope})")
-        return 0
-    print(f"synced {scope} skills to {dest} ({len(written)} file(s) written)")
-    for path in written:
-        print(f"  {path}")
-    return 0
-
-
-_EXAMPLE_NAMES = {"pingpong", "route_ops_copilot", "sentiment_live", "showcase"}
-
-
-def cmd_examples_copy(args: argparse.Namespace) -> int:
-    name = args.name
-    if name not in _EXAMPLE_NAMES:
-        available = ", ".join(sorted(_EXAMPLE_NAMES))
-        raise CommandError(f"unknown example {name!r}; available: {available}")
-
-    target_root = Path(args.to)
-    if target_root.exists() and not target_root.is_dir():
-        raise CommandError(f"--to must be a directory: {target_root}")
-    target_root.mkdir(parents=True, exist_ok=True)
-
-    copied = _copy_example_tree(name=name, target_root=target_root)
-    print(f"copied example {name!r} to {target_root}")
-    for path in copied:
-        print(f"  {path}")
-    print("")
-    print("Run:")
-    print(
-        f"  selfevals run {target_root / 'evals' / 'experiments' / f'example_{name}.yaml'} --no-persist"
-    )
-    return 0
-
-
-def _copy_example_tree(*, name: str, target_root: Path) -> list[Path]:
-    source_root = resources.files("selfevals.examples").joinpath("evals")
-    files = {
-        source_root.joinpath("experiments", f"example_{name}.yaml"): target_root
-        / "evals"
-        / "experiments"
-        / f"example_{name}.yaml",
-        source_root.joinpath("datasets", f"{name}.jsonl"): target_root
-        / "evals"
-        / "datasets"
-        / f"{name}.jsonl",
-    }
-    copied: list[Path] = []
-    for source, dest in files.items():
-        if not source.is_file():
-            raise CommandError(f"packaged example file missing: {source}")
-        if dest.exists():
-            raise CommandError(f"refusing to overwrite existing file: {dest}")
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
-        copied.append(dest)
-    return copied
-
-
-def _require_entity(scope: object, entity_type: type[BaseEntity], entity_id: str) -> BaseEntity:
-    try:
-        return scope.get_entity(entity_type, entity_id)  # type: ignore[attr-defined,no-any-return]
-    except Exception as exc:
-        raise CommandError(f"{entity_type.__name__} {entity_id} not found in workspace") from exc
-
-
-def _experiment_iterations(scope: object, experiment_id: str) -> list[IterationRecord]:
-    listed = scope.list_entities(IterationRecord, ListFilter())  # type: ignore[attr-defined]
-    iterations = [
-        it for it in listed if isinstance(it, IterationRecord) and it.experiment_id == experiment_id
-    ]
-    iterations.sort(key=lambda it: it.iteration)
-    return iterations
-
-
-def _experiment_decisions(scope: object, experiment_id: str) -> dict[int, DecisionRecord]:
-    listed = scope.list_entities(DecisionRecord, ListFilter())  # type: ignore[attr-defined]
-    by_iter: dict[int, DecisionRecord] = {}
-    for d in listed:
-        if not isinstance(d, DecisionRecord):
-            continue
-        if d.experiment_id != experiment_id:
-            continue
-        # Latest wins on duplicate (shouldn't happen in MVP).
-        by_iter[d.iteration] = d
-    return by_iter
-
-
-def _load_case_runs(scope: object, experiment_id: str, iteration: int) -> list[CaseRun]:
-    """Rehydrate an iteration's CaseRuns from persisted Trace entities.
-
-    `run.persist_traces` writes each repetition's Trace (stamped with its
-    grader_results) to storage; the IterationRecord only keeps the trace ids.
-    Without re-reading the traces, a report rebuilt from disk would have empty
-    `case_runs` and therefore empty `failure_reasons` — losing the per-grade
-    rationales that an inline `run --format json` shows. Filter Trace entities
-    by experiment+iteration (default `persist_traces=failed` keeps exactly the
-    non-passing ones the reporter dedups), group by eval_case_id, and rebuild
-    minimal CaseRuns. `response`/`error` stay None — the reporter only reads
-    `trace.grader_results`.
-    """
-    listed = scope.list_entities(  # type: ignore[attr-defined]
-        Trace,
-        ListFilter(where={"run.experiment_id": experiment_id, "run.iteration": iteration}),
-    )
-    by_case: dict[str, list[RepetitionResult]] = {}
-    for tr in listed:
-        if not isinstance(tr, Trace):
-            continue
-        case_id = tr.run.eval_case_id or tr.run.run_id
-        by_case.setdefault(case_id, []).append(
-            RepetitionResult(repetition=tr.run.repetition, trace=tr, response=None, error=None)
-        )
-    case_runs: list[CaseRun] = []
-    for case_id, reps in by_case.items():
-        reps.sort(key=lambda r: r.repetition)
-        case_runs.append(CaseRun(case_id=case_id, repetitions=reps))
-    return case_runs
-
-
-def _reconstruct_result(
-    scope: object,
-    experiment: Experiment,
-    iterations: Sequence[IterationRecord],
-    decisions: dict[int, DecisionRecord],
-) -> OptimizationResult:
-    """Build an OptimizationResult from persisted state.
-
-    Aggregate-level fields come from the IterationRecord; `case_runs` are
-    rehydrated from persisted Traces (see `_load_case_runs`) so the report's
-    `failure_reasons` match an inline `run --format json`. Live-only fields the
-    traces don't carry (e.g. the AdapterResponse) stay absent — the reporter
-    doesn't read them.
-    """
-    from selfevals.schemas.iteration import Proposal
-
-    outcomes: list[IterationOutcome] = []
-    for record in iterations:
-        if record.metrics is None:
-            continue
-        primary = record.metrics.primary
-        guardrails = {g.name: g.value for g in record.metrics.guardrails}
-        reliability = dict(record.metrics.reliability)
-        aggregate = IterationAggregate(
-            primary_metric=primary.name,
-            primary_value=primary.value,
-            guardrails=guardrails,
-            reliability=reliability,
-            failure_mode_counts=dict(record.metrics.failure_mode_counts),
-            total_cost_usd=record.metrics.cost_usd or 0.0,
-            total_duration_ms=int((record.metrics.duration_seconds or 0.0) * 1000),
-            error_rate=record.metrics.error_rate,
-            case_count=int(record.execution.ran_against.get("case_count", 0)),
-            # Rehydrate the persisted funnel so a result reconstructed from
-            # storage carries the same grader breakdown a live run does — the
-            # reporter's `funnel` is no longer always empty here.
-            funnel={
-                key: FunnelNode.from_dict(node)
-                for key, node in record.metrics.funnel.items()
-            },
-            # Rehydrate the persisted confusion matrix so a reconstructed result
-            # carries the same NxN matrix a live run does (reporter renders it).
-            confusion=(
-                ConfusionReport.from_dict(record.metrics.confusion)
-                if record.metrics.confusion is not None
-                else None
-            ),
-        )
-        decision = decisions.get(record.iteration)
-        if decision is None:
-            # Defensive: skip orphans so the loop's invariants aren't violated.
-            continue
-        proposal = Proposal(
-            parameters=dict(record.proposed_parameters),
-            hypothesis=record.hypothesis,
-        )
-        outcomes.append(
-            IterationOutcome(
-                iteration=record.iteration,
-                proposal=proposal,
-                aggregate=aggregate,
-                case_runs=_load_case_runs(scope, experiment.id, record.iteration),
-                iteration_record=record,
-                decision_record=decision,
-            )
-        )
-    return OptimizationResult(
-        experiment=experiment,
-        iterations=outcomes,
-        terminated_reason="loaded_from_storage",
-    )
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -558,206 +236,3 @@ def _await_run_result(
         iterations = _experiment_iterations(scope, exp.id)
         decisions = _experiment_decisions(scope, exp.id)
         return _reconstruct_result(scope, exp, iterations, decisions)
-
-
-def _ensure_cwd_on_path() -> None:
-    """Make the user's project root importable when the CLI runs.
-
-    `uv run selfevals ...` invokes a console script whose `sys.path` does
-    not include the cwd, so agent entrypoints like
-    `examples.hello_llm.agent:run` would fail to import. We insert the
-    cwd at the front of `sys.path` (once) so the resolver sees user
-    packages.
-    """
-    cwd = str(Path.cwd())
-    if cwd not in sys.path:
-        sys.path.insert(0, cwd)
-
-
-def _run_uvicorn(host: str, port: int, reload: bool) -> None:
-    """Wrapper around uvicorn.run for testability — tests stub this."""
-    try:
-        import uvicorn
-    except ImportError as exc:
-        raise SelfEvalsUserError(
-            "uvicorn is not installed. Install with: pip install 'selfevals[web]'"
-        ) from exc
-    uvicorn.run(
-        "selfevals.api.app:build_app",
-        host=host,
-        port=port,
-        reload=reload,
-        factory=True,
-        log_level="warning",
-    )
-
-
-def cmd_serve(args: argparse.Namespace) -> int:
-    """Run the FastAPI API (and optionally the SvelteKit web UI) in one command.
-
-    Without this, dogfooding meant two terminals: `python -m selfevals.api`
-    in one and `npm run dev` in another. The Altman/Musk filter from
-    FRONTEND_PRODUCT_PLAN.md §3 — "a dev tries it in 5 min" — fails when
-    the onboarding has two processes and a proxy. One command, one URL.
-
-    Web wiring: SvelteKit's `adapter-node` build is a Node server (it
-    does SSR); we can't serve it from FastAPI directly. Instead we spawn
-    `node <web-dist>/index.js` as a child process with its own port (the
-    API port + 1 by default), print both URLs, and tear it down cleanly
-    when uvicorn exits or the user hits Ctrl+C.
-    """
-    import os
-    import signal
-    import subprocess
-    from pathlib import Path
-
-    # Put the cwd on sys.path so user/example entrypoints resolve from the API
-    # too. The pairwise tournament endpoint resolves a `judge_entrypoint` (e.g.
-    # `examples.hello_llm.agent:judge_pairwise`) by import — without this, a
-    # tournament launched from the web UI 422s with "No module named 'examples'"
-    # even though the same entrypoint works from `selfevals run` (which already
-    # calls this). `sys.path` covers the in-process case; `PYTHONPATH` covers the
-    # uvicorn `--reload` worker subprocess, which gets a fresh interpreter.
-    _ensure_cwd_on_path()
-    cwd = str(Path.cwd())
-    existing_pp = os.environ.get("PYTHONPATH", "")
-    if cwd not in existing_pp.split(os.pathsep):
-        os.environ["PYTHONPATH"] = cwd + (os.pathsep + existing_pp if existing_pp else "")
-
-    storage_url = resolve_storage_url(args.db)
-    os.environ["SELFEVALS_STORAGE_URL"] = storage_url
-
-    # Auto-detect a built web bundle if --web-dist wasn't given and the
-    # user didn't disable web mode. Looks for `web/build/index.js`
-    # relative to cwd — matches the conventional repo layout.
-    web_dist: Path | None = None
-    if not args.no_web:
-        if args.web_dist:
-            candidate = Path(args.web_dist)
-            if not (candidate / "index.js").exists():
-                raise SelfEvalsUserError(
-                    f"--web-dist {candidate} does not contain index.js — "
-                    f"run `npm run build` in the web/ dir first."
-                )
-            web_dist = candidate
-        else:
-            default_dist = Path.cwd() / "web" / "build"
-            if (default_dist / "index.js").exists():
-                web_dist = default_dist
-
-    web_proc: subprocess.Popen[bytes] | None = None
-    web_port = args.port + 1
-    if web_dist is not None:
-        web_env = os.environ.copy()
-        web_env["PORT"] = str(web_port)
-        web_env["ORIGIN"] = f"http://{args.host}:{web_port}"
-        # The SvelteKit dev server proxies /api → 127.0.0.1:8000 via
-        # vite.config.ts; the production build has no proxy, so without
-        # this env var every `fetch('/api/...')` in +page.server.ts
-        # would 404 against the Node server and the entire web becomes
-        # unreachable (BUG-4). The hooks.server.ts handle intercepts
-        # `/api/*` and forwards to this origin.
-        web_env["SELFEVALS_API_BASE"] = f"http://{args.host}:{args.port}"
-        try:
-            web_proc = subprocess.Popen(
-                ["node", str(web_dist / "index.js")],
-                env=web_env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except FileNotFoundError as exc:
-            raise SelfEvalsUserError(
-                "node is not installed but --web-dist was set. Install Node "
-                "(https://nodejs.org) or pass --no-web to run the API alone."
-            ) from exc
-
-    # Tear down the web child cleanly on Ctrl+C / SIGTERM.
-    def _shutdown(_signum: int, _frame: object | None) -> None:
-        if web_proc is not None and web_proc.poll() is None:
-            web_proc.terminate()
-        raise KeyboardInterrupt
-
-    prev_sigint = signal.signal(signal.SIGINT, _shutdown)
-    prev_sigterm = signal.signal(signal.SIGTERM, _shutdown)
-
-    print("selfevals serve")
-    print(f"  API : http://{args.host}:{args.port}")
-    if web_proc is not None:
-        print(f"  Web : http://{args.host}:{web_port}")
-    else:
-        print("  Web : disabled (no build at web/build/index.js; pass --web-dist)")
-    print(f"  DB  : {storage_url_label(storage_url)}")
-    print("  ^C to stop.")
-
-    try:
-        _run_uvicorn(args.host, args.port, args.reload)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        signal.signal(signal.SIGINT, prev_sigint)
-        signal.signal(signal.SIGTERM, prev_sigterm)
-        if web_proc is not None and web_proc.poll() is None:
-            web_proc.terminate()
-            try:
-                web_proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                web_proc.kill()
-    return 0
-
-
-def cmd_worker_runs(args: argparse.Namespace) -> int:
-    import logging
-    import os
-
-    # Imported lazily: worker.runs → api.run_launcher → cli → commands forms an
-    # import cycle at module load. Deferring it to call time breaks the cycle.
-    from selfevals.worker.runs import RunWorkerConfig, run_worker
-
-    redis_url = args.redis_url
-    if not redis_url:
-        raise SelfEvalsUserError(
-            "run worker requires Redis: pass --redis-url or set SELFEVALS_REDIS_URL"
-        )
-    # The worker is a long-lived process whose boot line is the only signal of
-    # which Redis DB it bound to. The CLI configures no logging by default, so
-    # without this those INFO lines are dropped on the floor. Only install a
-    # handler if the root logger has none, to avoid clobbering external config.
-    if not logging.getLogger().handlers:
-        level = os.environ.get("SELFEVALS_LOG_LEVEL", "INFO").upper()
-        logging.basicConfig(level=level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    storage_url = resolve_storage_url(args.db)
-    processed = run_worker(
-        RunWorkerConfig(
-            storage_url=storage_url,
-            redis_url=redis_url,
-            consumer=args.consumer,
-            once=args.once,
-        )
-    )
-    if args.once:
-        print(f"processed run jobs: {processed}")
-    return 0
-
-
-def cmd_worker_sweeper(args: argparse.Namespace) -> int:
-    import logging
-    import os
-
-    # Lazy import: same import-cycle reasoning as cmd_worker_runs.
-    from selfevals.worker.lease_sweeper import LeaseSweeperConfig, run_lease_sweeper
-
-    if not logging.getLogger().handlers:
-        level = os.environ.get("SELFEVALS_LOG_LEVEL", "INFO").upper()
-        logging.basicConfig(level=level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    storage_url = resolve_storage_url(args.db)
-    reaped = run_lease_sweeper(
-        LeaseSweeperConfig(
-            storage_url=storage_url,
-            redis_url=args.redis_url,
-            interval_seconds=args.interval,
-            once=args.once,
-        )
-    )
-    if args.once:
-        print(f"swept expired-lease jobs: {reaped}")
-    return 0
