@@ -53,6 +53,7 @@ uv run mypy src/selfevals
 uv run pytest --cov=selfevals --cov-report=term-missing
 cd web && npm run lint && npm run check && npm run build && npm run gen:api:check
 cd landing && npm run lint && npm run build
+docker compose up -d postgres redis && cd web && npm run test:e2e   # E2E (Playwright)
 ```
 
 Audit counts (baseline updated 2026-07-08, after human review of this
