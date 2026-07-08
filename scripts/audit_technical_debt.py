@@ -34,6 +34,8 @@ ROOT = Path(__file__).resolve().parents[1]
 BASELINE = ROOT / "docs" / "quality" / "technical_debt_baseline.json"
 
 EXCLUDED_DIRS = {
+    ".agents",
+    ".claude",
     ".git",
     ".mypy_cache",
     ".next",
@@ -46,7 +48,12 @@ EXCLUDED_DIRS = {
     "node_modules",
     "playwright-report",
     "test-results",
-    ".agents",
+}
+# Generated files: their size is a property of the API surface (OpenAPI
+# schema -> types), not authored code, so they don't count as file-size debt.
+EXCLUDED_FILES = {
+    "web/openapi.json",
+    "web/src/lib/api/types.gen.ts",
 }
 TEXT_SUFFIXES = {
     ".css",
@@ -92,6 +99,8 @@ def iter_files() -> list[Path]:
         if not path.is_file():
             continue
         if any(part in EXCLUDED_DIRS for part in path.relative_to(ROOT).parts):
+            continue
+        if _rel(path) in EXCLUDED_FILES:
             continue
         if path.suffix not in TEXT_SUFFIXES:
             continue
@@ -211,8 +220,7 @@ def audit_direct_user_header(files: list[Path]) -> list[Finding]:
     allowed = {
         "src/selfevals/api/auth.py",
         "src/selfevals/api/app.py",
-        "web/src/lib/api/client.ts",
-        "web/src/lib/api/request.ts",
+        "web/src/lib/api/http.ts",
     }
     findings: list[Finding] = []
     for path in files:

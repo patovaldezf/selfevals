@@ -99,7 +99,7 @@ class MultiTurnExecutor:
         if simulator is None and "simulator" in case.input:
             sim_spec = SimulatorSpec.from_dict(case.input["simulator"])
 
-        agent_ref = self._executor._agent_ref()
+        agent_ref = self._executor.agent_ref()
         overrides = parameter_overrides or {}
 
         results: list[RepetitionResult] = []
@@ -130,7 +130,7 @@ class MultiTurnExecutor:
                     thread_position=position,
                 )
                 turn_input = _turn_input(case, history)
-                result = await self._executor._run_single(
+                result = await self._executor.run_single(
                     case=case,
                     run_info=run_info,
                     agent_ref=agent_ref,
@@ -164,7 +164,7 @@ class MultiTurnExecutor:
                     break
 
                 sim_request = AdapterRequest(
-                    workspace_id=self._executor._workspace_id,
+                    workspace_id=self._executor.workspace_id,
                     case_id=case.id,
                     input={"messages": list(history)},
                     context=case.context,
@@ -207,7 +207,7 @@ class MultiTurnExecutor:
                     thread_position=position,
                 )
                 turn_input = _turn_input(case, history)
-                result = await self._executor._run_single(
+                result = await self._executor.run_single(
                     case=case,
                     run_info=run_info,
                     agent_ref=agent_ref,

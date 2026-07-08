@@ -5,6 +5,7 @@ from pytest import MonkeyPatch
 
 from selfevals.api.app import build_app
 from selfevals.api.auth import readable_workspace_ids
+from selfevals.api.tokens import issue_token
 from selfevals.schemas.enums import Role
 from selfevals.schemas.workspace import Workspace
 from selfevals.storage.factory import open_storage
@@ -13,6 +14,12 @@ from selfevals.storage.seed import seed_workspace
 
 def _client(db_url: str, monkeypatch: MonkeyPatch) -> TestClient:
     monkeypatch.setenv("SELFEVALS_AUTH_MODE", "header")
+    return TestClient(build_app(db_path=db_url))
+
+
+def _token_client(db_url: str, monkeypatch: MonkeyPatch, *, secret: str = "s3cr3t") -> TestClient:
+    monkeypatch.setenv("SELFEVALS_AUTH_MODE", "token")
+    monkeypatch.setenv("SELFEVALS_AUTH_SECRET", secret)
     return TestClient(build_app(db_path=db_url))
 
 
@@ -141,3 +148,100 @@ def test_readable_workspace_ids_filters_to_member_roles(
         assert allowed == {mine.id}
     finally:
         storage.close()
+
+
+def test_token_auth_requires_signed_token(db_url: str, monkeypatch: MonkeyPatch) -> None:
+    ws = _seed_user(db_url, user_id="viewer", role=Role.VIEWER)
+
+    response = _token_client(db_url, monkeypatch).get(
+        f"/api/workspaces/{ws.id}",
+        headers={"X-SelfEvals-User": "viewer"},
+    )
+    assert response.status_code == 401
+
+
+def test_token_auth_rejects_forged_token(db_url: str, monkeypatch: MonkeyPatch) -> None:
+    ws = _seed_user(db_url, user_id="viewer", role=Role.VIEWER)
+    monkeypatch.setenv("SELFEVALS_AUTH_SECRET", "s3cr3t")
+    forged = issue_token("viewer", ttl_seconds=60).rsplit(".", 1)[0] + ".deadbeef"
+
+    response = _token_client(db_url, monkeypatch).get(
+        f"/api/workspaces/{ws.id}",
+        headers={"X-SelfEvals-User": forged},
+    )
+    assert response.status_code == 401
+
+
+def test_token_auth_accepts_valid_signed_token(db_url: str, monkeypatch: MonkeyPatch) -> None:
+    ws = _seed_user(db_url, user_id="viewer", role=Role.VIEWER)
+    monkeypatch.setenv("SELFEVALS_AUTH_SECRET", "s3cr3t")
+    token = issue_token("viewer", ttl_seconds=60)
+
+    response = _token_client(db_url, monkeypatch).get(
+        f"/api/workspaces/{ws.id}",
+        headers={"X-SelfEvals-User": token},
+    )
+    assert response.status_code == 200
+
+
+def test_token_auth_rejects_expired_token(db_url: str, monkeypatch: MonkeyPatch) -> None:
+    ws = _seed_user(db_url, user_id="viewer", role=Role.VIEWER)
+    monkeypatch.setenv("SELFEVALS_AUTH_SECRET", "s3cr3t")
+    expired = issue_token("viewer", ttl_seconds=-10)
+
+    response = _token_client(db_url, monkeypatch).get(
+        f"/api/workspaces/{ws.id}",
+        headers={"X-SelfEvals-User": expired},
+    )
+    assert response.status_code == 401
+
+
+def test_issue_session_requires_operator_secret(db_url: str, monkeypatch: MonkeyPatch) -> None:
+    client = _token_client(db_url, monkeypatch, secret="s3cr3t")
+
+    response = client.post("/api/auth/session", json={"user_id": "alice"})
+    assert response.status_code == 401
+
+
+def test_issue_session_rejects_wrong_operator_secret(
+    db_url: str, monkeypatch: MonkeyPatch
+) -> None:
+    client = _token_client(db_url, monkeypatch, secret="s3cr3t")
+
+    response = client.post(
+        "/api/auth/session",
+        json={"user_id": "alice"},
+        headers={"X-SelfEvals-Operator-Secret": "wrong"},
+    )
+    assert response.status_code == 401
+
+
+def test_issue_session_returns_usable_token(db_url: str, monkeypatch: MonkeyPatch) -> None:
+    ws = _seed_user(db_url, user_id="alice", role=Role.VIEWER)
+    client = _token_client(db_url, monkeypatch, secret="s3cr3t")
+
+    response = client.post(
+        "/api/auth/session",
+        json={"user_id": "alice"},
+        headers={"X-SelfEvals-Operator-Secret": "s3cr3t"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["user_id"] == "alice"
+
+    followup = client.get(
+        f"/api/workspaces/{ws.id}",
+        headers={"X-SelfEvals-User": body["token"]},
+    )
+    assert followup.status_code == 200
+
+
+def test_issue_session_rejected_outside_token_mode(db_url: str, monkeypatch: MonkeyPatch) -> None:
+    client = _client(db_url, monkeypatch)
+
+    response = client.post(
+        "/api/auth/session",
+        json={"user_id": "alice"},
+        headers={"X-SelfEvals-Operator-Secret": "anything"},
+    )
+    assert response.status_code == 400

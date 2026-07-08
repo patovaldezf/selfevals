@@ -1,18 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLang } from "@/lib/LangContext";
 import { CheckIcon } from "./primitives";
 
 export default function InstallPill({ cmd }: { cmd: string }) {
   const { t } = useLang();
   const [copied, setCopied] = useState(false);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+    };
+  }, []);
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(cmd);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+      resetTimer.current = setTimeout(() => setCopied(false), 1600);
     } catch {
       /* clipboard blocked — no-op */
     }

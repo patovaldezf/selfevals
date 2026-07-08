@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from selfevals.schemas.experiment import Experiment
     from selfevals.schemas.job import ScenarioJob
     from selfevals.schemas.trace import Trace
+    from selfevals.schemas.workspace import Workspace
 
 
 @dataclass(frozen=True)
@@ -75,7 +76,7 @@ class StorageInterface(ABC):
         """Cross-workspace listing for the dashboard index."""
 
     @abstractmethod
-    def workspace_by_slug_owner(self, *, slug: str, user_id: str) -> Any | None:
+    def workspace_by_slug_owner(self, *, slug: str, user_id: str) -> Workspace | None:
         """Resolve a workspace by (slug, owner) or None."""
 
     @abstractmethod
@@ -95,9 +96,7 @@ class StorageInterface(ABC):
         """Paginated experiments + total + per-experiment iteration counts."""
 
     @abstractmethod
-    def eval_cases_for_experiment(
-        self, workspace_id: str, experiment_id: str
-    ) -> list[EvalCase]:
+    def eval_cases_for_experiment(self, workspace_id: str, experiment_id: str) -> list[EvalCase]:
         """All EvalCases persisted under an experiment."""
 
     @abstractmethod
@@ -123,9 +122,7 @@ class StorageInterface(ABC):
     # -- run-job durability (sweeper + heartbeat) ---------------------------
 
     @abstractmethod
-    def expired_run_job_leases(
-        self, *, now: datetime, limit: int = 100
-    ) -> list[tuple[str, str]]:
+    def expired_run_job_leases(self, *, now: datetime, limit: int = 100) -> list[tuple[str, str]]:
         """Cross-workspace ``(workspace_id, job_id)`` of run jobs with a lapsed lease."""
 
     @abstractmethod

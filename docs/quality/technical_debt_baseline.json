@@ -6,8 +6,8 @@
     "docs_version_drift": 0,
     "get_entity_calls": 52,
     "json_extract": 5,
-    "large_files": 15,
-    "large_python_symbols": 21,
+    "large_files": 7,
+    "large_python_symbols": 18,
     "list_entities_calls": 65,
     "type_ignores": 99
   },
@@ -91,13 +91,13 @@
       },
       {
         "detail": "broad except Exception",
-        "line": 777,
-        "path": "src/selfevals/runner/launch.py"
+        "line": 92,
+        "path": "src/selfevals/runner/launch/datasets.py"
       },
       {
         "detail": "broad except Exception",
-        "line": 837,
-        "path": "src/selfevals/runner/launch.py"
+        "line": 152,
+        "path": "src/selfevals/runner/launch/datasets.py"
       },
       {
         "detail": "broad except Exception",
@@ -181,53 +181,53 @@
       },
       {
         "detail": "get_entity call",
-        "line": 90,
-        "path": "src/selfevals/api/queries.py"
+        "line": 80,
+        "path": "src/selfevals/api/queries/datasets.py"
       },
       {
         "detail": "get_entity call",
-        "line": 181,
-        "path": "src/selfevals/api/queries.py"
+        "line": 104,
+        "path": "src/selfevals/api/queries/experiments.py"
       },
       {
         "detail": "get_entity call",
-        "line": 290,
-        "path": "src/selfevals/api/queries.py"
+        "line": 185,
+        "path": "src/selfevals/api/queries/experiments.py"
       },
       {
         "detail": "get_entity call",
-        "line": 501,
-        "path": "src/selfevals/api/queries.py"
+        "line": 216,
+        "path": "src/selfevals/api/queries/experiments.py"
       },
       {
         "detail": "get_entity call",
-        "line": 532,
-        "path": "src/selfevals/api/queries.py"
+        "line": 250,
+        "path": "src/selfevals/api/queries/experiments.py"
       },
       {
         "detail": "get_entity call",
-        "line": 566,
-        "path": "src/selfevals/api/queries.py"
+        "line": 251,
+        "path": "src/selfevals/api/queries/experiments.py"
       },
       {
         "detail": "get_entity call",
-        "line": 567,
-        "path": "src/selfevals/api/queries.py"
+        "line": 53,
+        "path": "src/selfevals/api/queries/traces.py"
       },
       {
         "detail": "get_entity call",
-        "line": 634,
-        "path": "src/selfevals/api/queries.py"
+        "line": 246,
+        "path": "src/selfevals/api/queries/traces.py"
       },
       {
         "detail": "get_entity call",
-        "line": 689,
-        "path": "src/selfevals/api/queries.py"
+        "line": 301,
+        "path": "src/selfevals/api/queries/traces.py"
       },
       {
         "detail": "get_entity call",
-        "line": 869,
-        "path": "src/selfevals/api/queries.py"
+        "line": 25,
+        "path": "src/selfevals/api/queries/workspaces.py"
       },
       {
         "detail": "get_entity call",
@@ -271,22 +271,22 @@
       },
       {
         "detail": "get_entity call",
-        "line": 776,
-        "path": "src/selfevals/runner/launch.py"
+        "line": 91,
+        "path": "src/selfevals/runner/launch/datasets.py"
       },
       {
         "detail": "get_entity call",
-        "line": 834,
-        "path": "src/selfevals/runner/launch.py"
+        "line": 149,
+        "path": "src/selfevals/runner/launch/datasets.py"
       },
       {
         "detail": "get_entity call",
-        "line": 282,
+        "line": 279,
         "path": "src/selfevals/storage/interface.py"
       },
       {
         "detail": "get_entity call",
-        "line": 316,
+        "line": 314,
         "path": "src/selfevals/storage/postgres/storage.py"
       },
       {
@@ -398,13 +398,13 @@
     "json_extract": [
       {
         "detail": "json_extract usage",
-        "line": 146,
-        "path": "src/selfevals/api/queries.py"
+        "line": 71,
+        "path": "src/selfevals/api/queries/experiments.py"
       },
       {
         "detail": "json_extract usage",
-        "line": 218,
-        "path": "src/selfevals/api/queries.py"
+        "line": 141,
+        "path": "src/selfevals/api/queries/experiments.py"
       },
       {
         "detail": "json_extract usage",
@@ -424,44 +424,9 @@
     ],
     "large_files": [
       {
-        "detail": "1588 lines > limit 700",
-        "line": 1,
-        "path": "src/selfevals/api/app.py"
-      },
-      {
-        "detail": "905 lines > limit 700",
-        "line": 1,
-        "path": "src/selfevals/api/queries.py"
-      },
-      {
-        "detail": "989 lines > limit 700",
-        "line": 1,
-        "path": "src/selfevals/api/schemas.py"
-      },
-      {
         "detail": "764 lines > limit 700",
         "line": 1,
         "path": "src/selfevals/cli/commands.py"
-      },
-      {
-        "detail": "817 lines > limit 700",
-        "line": 1,
-        "path": "src/selfevals/cli/main.py"
-      },
-      {
-        "detail": "1121 lines > limit 700",
-        "line": 1,
-        "path": "src/selfevals/repo/loader.py"
-      },
-      {
-        "detail": "979 lines > limit 700",
-        "line": 1,
-        "path": "src/selfevals/runner/launch.py"
-      },
-      {
-        "detail": "803 lines > limit 700",
-        "line": 1,
-        "path": "src/selfevals/storage/postgres/mappers/trace.py"
       },
       {
         "detail": "730 lines > limit 700",
@@ -484,11 +449,6 @@
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
-        "detail": "1242 lines > limit 900",
-        "line": 1,
-        "path": "web/src/lib/api/client.ts"
-      },
-      {
         "detail": "1387 lines > limit 700",
         "line": 1,
         "path": "web/src/routes/[workspace]/experiments/[experiment]/+page.svelte"
@@ -500,16 +460,6 @@
       }
     ],
     "large_python_symbols": [
-      {
-        "detail": "function build_app has 1401 lines: def build_app(*, db_path: str | None = None) -> FastAPI:",
-        "line": 187,
-        "path": "src/selfevals/api/app.py"
-      },
-      {
-        "detail": "function _build_parser has 738 lines: def _build_parser() -> argparse.ArgumentParser:",
-        "line": 28,
-        "path": "src/selfevals/cli/main.py"
-      },
       {
         "detail": "function grade has 142 lines: async def grade(self, context: GraderContext) -> GradeResult:",
         "line": 199,
@@ -536,7 +486,7 @@
         "path": "src/selfevals/optimization/loop.py"
       },
       {
-        "detail": "class Executor has 355 lines: class Executor:",
+        "detail": "class Executor has 358 lines: class Executor:",
         "line": 134,
         "path": "src/selfevals/runner/executor.py"
       },
@@ -581,18 +531,13 @@
         "path": "src/selfevals/storage/postgres/mappers/iteration_record.py"
       },
       {
-        "detail": "class TraceMapper has 708 lines: class TraceMapper(EntityMapper[Trace]):",
-        "line": 92,
+        "detail": "class TraceMapper has 225 lines: class TraceMapper(EntityMapper[Trace]):",
+        "line": 79,
         "path": "src/selfevals/storage/postgres/mappers/trace.py"
       },
       {
-        "detail": "function _insert_span has 233 lines: def _insert_span(",
-        "line": 195,
-        "path": "src/selfevals/storage/postgres/mappers/trace.py"
-      },
-      {
-        "detail": "class PostgresStorage has 220 lines: class PostgresStorage(StorageInterface):",
-        "line": 44,
+        "detail": "class PostgresStorage has 217 lines: class PostgresStorage(StorageInterface):",
+        "line": 45,
         "path": "src/selfevals/storage/postgres/storage.py"
       },
       {
@@ -654,28 +599,28 @@
       },
       {
         "detail": "list_entities call",
-        "line": 94,
-        "path": "src/selfevals/api/queries.py"
+        "line": 51,
+        "path": "src/selfevals/api/queries/datasets.py"
       },
       {
         "detail": "list_entities call",
-        "line": 99,
-        "path": "src/selfevals/api/queries.py"
+        "line": 87,
+        "path": "src/selfevals/api/queries/datasets.py"
       },
       {
         "detail": "list_entities call",
-        "line": 714,
-        "path": "src/selfevals/api/queries.py"
+        "line": 312,
+        "path": "src/selfevals/api/queries/experiments.py"
       },
       {
         "detail": "list_entities call",
-        "line": 840,
-        "path": "src/selfevals/api/queries.py"
+        "line": 29,
+        "path": "src/selfevals/api/queries/workspaces.py"
       },
       {
         "detail": "list_entities call",
-        "line": 876,
-        "path": "src/selfevals/api/queries.py"
+        "line": 34,
+        "path": "src/selfevals/api/queries/workspaces.py"
       },
       {
         "detail": "list_entities call",
@@ -734,8 +679,8 @@
       },
       {
         "detail": "list_entities call",
-        "line": 788,
-        "path": "src/selfevals/runner/launch.py"
+        "line": 103,
+        "path": "src/selfevals/runner/launch/datasets.py"
       },
       {
         "detail": "list_entities call",
@@ -744,12 +689,12 @@
       },
       {
         "detail": "list_entities call",
-        "line": 286,
+        "line": 283,
         "path": "src/selfevals/storage/interface.py"
       },
       {
         "detail": "list_entities call",
-        "line": 334,
+        "line": 332,
         "path": "src/selfevals/storage/postgres/storage.py"
       },
       {
@@ -986,8 +931,8 @@
       },
       {
         "detail": "type ignore",
-        "line": 302,
-        "path": "src/selfevals/api/queries.py"
+        "line": 65,
+        "path": "src/selfevals/api/queries/traces.py"
       },
       {
         "detail": "type ignore",
@@ -1016,18 +961,18 @@
       },
       {
         "detail": "type ignore",
-        "line": 181,
-        "path": "src/selfevals/runner/launch.py"
+        "line": 57,
+        "path": "src/selfevals/runner/launch/adapters.py"
       },
       {
         "detail": "type ignore",
-        "line": 189,
-        "path": "src/selfevals/runner/launch.py"
+        "line": 65,
+        "path": "src/selfevals/runner/launch/adapters.py"
       },
       {
         "detail": "type ignore",
-        "line": 694,
-        "path": "src/selfevals/runner/launch.py"
+        "line": 203,
+        "path": "src/selfevals/runner/launch/adapters.py"
       },
       {
         "detail": "type ignore",

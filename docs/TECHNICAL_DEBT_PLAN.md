@@ -2,6 +2,14 @@
 
 Date: 2026-06-28
 
+> **Superseded 2026-07-08.** Phases 0–2 below closed as described. Phases
+> 3–8 closed via a separate, larger effort on `feat/split-api-surface`
+> (auth token mode, API/web/loader/launch/trace-mapper splits, CLI parser
+> split, coverage gate, docs freshness) — see the current state and
+> remaining debt in `docs/TECHNICAL_DEBT.md`. This document is kept as a
+> historical record of the original phase breakdown; it is not being
+> updated further.
+
 Source audit: `docs/TECHNICAL_DEBT.md`
 
 This plan turns the current debt inventory into executable work. The goal is to
