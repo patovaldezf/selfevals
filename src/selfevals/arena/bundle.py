@@ -17,6 +17,7 @@ from selfevals.analysis.bundle import first_error_span, grade, is_failed
 from selfevals.arena.schemas import (
     ArenaBundle,
     ArenaContract,
+    ArenaConvergence,
     ArenaSummary,
     BundleErrorSpanView,
     BundleMetrics,
@@ -29,6 +30,7 @@ from selfevals.arena.schemas import (
     RoundHistoryPoint,
     VariantCard,
 )
+from selfevals.optimization.loop import has_converged
 from selfevals.reporter.compare import compute_compare
 from selfevals.schemas.arena import Arena, ArenaRound, ArenaVariant
 from selfevals.schemas.iteration import IterationRecord
@@ -247,6 +249,34 @@ def _leaderboard_and_analysis(
     return leaderboard, pairwise, exemplars
 
 
+_CONVERGENCE_MIN_DELTA = 0.005
+_CONVERGENCE_PATIENCE = 3
+
+
+def _convergence_signal(cards: list[VariantCard]) -> ArenaConvergence:
+    """Best value per round across ALL variants, fed through the same plateau
+    check `OptimizationLoop` uses for early-stop — a round where the best
+    score barely moves for `patience` rounds in a row reads as "stop
+    proposing new variants," same as it does for a normal experiment.
+    """
+    best_by_round: dict[int, float] = {}
+    for card in cards:
+        for point in card.history:
+            if point.primary_value is None:
+                continue
+            current = best_by_round.get(point.round)
+            if current is None or point.primary_value > current:
+                best_by_round[point.round] = point.primary_value
+    ordered = [best_by_round[r] for r in sorted(best_by_round)]
+    return ArenaConvergence(
+        converged=has_converged(ordered, _CONVERGENCE_MIN_DELTA, _CONVERGENCE_PATIENCE),
+        rounds_observed=len(ordered),
+        min_delta=_CONVERGENCE_MIN_DELTA,
+        patience=_CONVERGENCE_PATIENCE,
+        best_value=ordered[-1] if ordered else None,
+    )
+
+
 def build_bundle(
     storage: StorageInterface,
     *,
@@ -306,6 +336,7 @@ def build_bundle(
         leaderboard=leaderboard,
         pairwise_vs_best=pairwise,
         exemplar_failures=exemplars,
+        convergence=_convergence_signal(cards),
         contract=ArenaContract(
             register_variant=f"/api/workspaces/{workspace_id}/arenas/{arena_id}/variants",
             launch_round=f"/api/workspaces/{workspace_id}/arenas/{arena_id}/rounds",

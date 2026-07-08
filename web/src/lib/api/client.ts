@@ -828,6 +828,14 @@ export type ArenaExemplarFailures = {
   }[];
 };
 
+export type ArenaConvergence = {
+  converged: boolean;
+  rounds_observed: number;
+  min_delta: number;
+  patience: number;
+  best_value: number | null;
+};
+
 export type ArenaBundle = {
   arena: ArenaSummary & {
     budget_rounds_remaining: number | null;
@@ -838,6 +846,7 @@ export type ArenaBundle = {
   leaderboard: ArenaLeaderboardRow[];
   pairwise_vs_best: ArenaPairwiseVsBest[];
   exemplar_failures: ArenaExemplarFailures[];
+  convergence: ArenaConvergence;
   contract: {
     register_variant: string;
     launch_round: string;

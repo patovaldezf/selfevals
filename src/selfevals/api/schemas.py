@@ -1088,3 +1088,8 @@ class GitRefView(BaseModel):
 class GitRefsResponse(BaseModel):
     repo_path: str
     refs: list[GitRefView]
+
+
+class RoundCostEstimateResponse(BaseModel):
+    estimated_usd: float | None
+    basis: str

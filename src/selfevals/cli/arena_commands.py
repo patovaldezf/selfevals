@@ -20,6 +20,7 @@ from selfevals.arena.bundle import build_bundle
 from selfevals.cli.commands import CommandError, _require_entity, _storage
 from selfevals.runner.launch import ensure_workspace_by_id
 from selfevals.schemas.arena import Arena, ArenaRound, ArenaVariant
+from selfevals.schemas.enums import ArenaVariantState
 from selfevals.storage.factory import resolve_storage_url
 from selfevals.storage.interface import ListFilter
 
@@ -189,6 +190,37 @@ def cmd_arena_round(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_arena_estimate_cost(args: argparse.Namespace) -> int:
+    variant_ids = args.variants.split(",") if args.variants else None
+    storage = _storage(args)
+    try:
+        with storage.open(args.workspace_id) as scope:
+            arena = _require_entity(scope, Arena, args.arena_id)
+            assert isinstance(arena, Arena)
+            target_ids = variant_ids
+            if target_ids is None:
+                target_ids = [
+                    v.id
+                    for v in scope.list_entities(ArenaVariant, ListFilter(where={"arena_id": args.arena_id}))
+                    if isinstance(v, ArenaVariant) and v.state == ArenaVariantState.READY
+                ]
+        estimate = arena_service.estimate_round_cost(
+            storage,
+            workspace_id=args.workspace_id,
+            arena_id=args.arena_id,
+            variant_ids=target_ids,
+            reps=args.reps,
+        )
+    finally:
+        storage.close()
+
+    if estimate.estimated_usd is None:
+        print(f"no estimate available: {estimate.basis}")
+    else:
+        print(f"estimated cost: ${estimate.estimated_usd:.4f}  ({estimate.basis})")
+    return 0
+
+
 def cmd_arena_bundle(args: argparse.Namespace) -> int:
     storage = _storage(args)
     try:
@@ -228,4 +260,27 @@ def cmd_arena_prune(args: argparse.Namespace) -> int:
     finally:
         storage.close()
     print(f"cleaned up worktrees for arena {args.arena_id} (state=archived)")
+    return 0
+
+
+def cmd_arena_gc(args: argparse.Namespace) -> int:
+    """Sweep `SELFEVALS_WORKTREES_DIR` for directories no live variant owns.
+
+    Global — not scoped to one workspace, since worktrees_root() is shared
+    across all of them. Safe to run any time; a worktree still owned by a
+    variant is never touched, only directories the DB has no record of.
+    """
+    storage = _storage(args)
+    try:
+        orphans = arena_service.gc_orphaned_worktrees(storage, dry_run=args.dry_run)
+    finally:
+        storage.close()
+
+    if not orphans:
+        print("no orphaned worktrees found")
+        return 0
+    verb = "would remove" if args.dry_run else "removed"
+    print(f"{verb} {len(orphans)} orphaned worktree(s):")
+    for orphan in orphans:
+        print(f"  {orphan.path}  ({orphan.reason})")
     return 0

@@ -122,6 +122,20 @@ class ArenaContract(BaseModel):
     promote: str
 
 
+class ArenaConvergence(BaseModel):
+    """Plateau signal over the arena's best-per-round value, so the driving
+    agent (or a human) doesn't have to eyeball `history` to decide whether to
+    keep proposing variants. Same semantics as an experiment's
+    `run.convergence` (`optimization.loop.has_converged`): the best value
+    hasn't improved by `min_delta` in the last `patience` rounds."""
+
+    converged: bool
+    rounds_observed: int
+    min_delta: float
+    patience: int
+    best_value: float | None = None
+
+
 class ArenaBundle(BaseModel):
     arena: ArenaSummary
     round: int | None = None
@@ -129,4 +143,5 @@ class ArenaBundle(BaseModel):
     leaderboard: list[LeaderboardRow] = Field(default_factory=list)
     pairwise_vs_best: list[PairwiseVsBest] = Field(default_factory=list)
     exemplar_failures: list[ExemplarFailures] = Field(default_factory=list)
+    convergence: ArenaConvergence
     contract: ArenaContract

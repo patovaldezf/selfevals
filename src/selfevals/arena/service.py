@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import shutil
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,8 +32,9 @@ from selfevals.repo.loader import LoaderError, build_spec_from_mapping
 from selfevals.schemas.arena import Arena, ArenaRound, ArenaVariant, RoundEntry
 from selfevals.schemas.enums import ArenaRoundState, ArenaState, ArenaVariantState, ExperimentState
 from selfevals.schemas.experiment import Experiment
+from selfevals.schemas.iteration import IterationRecord
 from selfevals.storage.factory import open_storage
-from selfevals.storage.interface import ListFilter, StorageInterface
+from selfevals.storage.interface import ListFilter, StorageInterface, WorkspaceScope
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +231,73 @@ def _build_variant_spec(arena: Arena, variant: ArenaVariant, round_index: int) -
     return spec
 
 
+@dataclass(frozen=True)
+class RoundCostEstimate:
+    estimated_usd: float | None
+    """None when no variant in this arena has ever reported a cost — there is
+    nothing to extrapolate from, and guessing a number would be dishonest."""
+    basis: str
+    """Human-readable note on how the estimate was derived, surfaced verbatim
+    to the caller (API/CLI) so a budget rejection is self-explanatory."""
+
+
+def estimate_round_cost(
+    storage: StorageInterface, *, workspace_id: str, arena_id: str, variant_ids: list[str], reps: int
+) -> RoundCostEstimate:
+    """Extrapolate a round's cost from this arena's own history.
+
+    Per selected variant: its own average per-round cost if it has run
+    before, else the arena-wide average across all variants that have. A
+    brand-new arena (nobody has run yet) has no history to extrapolate from
+    and returns `estimated_usd=None` rather than fabricating a number —
+    `launch_round` treats that as "unknown," never as "free."
+    """
+    with storage.open(workspace_id) as scope:
+        rounds = [
+            r
+            for r in scope.list_entities(ArenaRound, ListFilter(where={"arena_id": arena_id}))
+            if isinstance(r, ArenaRound)
+        ]
+        per_variant_costs: dict[str, list[float]] = {}
+        for round_ in rounds:
+            for entry in round_.entries:
+                if entry.experiment_id is None:
+                    continue
+                record = _latest_iteration_cost(scope, entry.experiment_id)
+                if record is not None:
+                    per_variant_costs.setdefault(entry.variant_id, []).append(record)
+
+    all_costs = [c for costs in per_variant_costs.values() for c in costs]
+    if not all_costs:
+        return RoundCostEstimate(estimated_usd=None, basis="no cost history yet for this arena")
+
+    arena_avg = sum(all_costs) / len(all_costs)
+    total = 0.0
+    for vid in variant_ids:
+        costs = per_variant_costs.get(vid)
+        per_round = (sum(costs) / len(costs)) if costs else arena_avg
+        total += per_round * reps
+    basis = (
+        f"extrapolated from {len(all_costs)} past round(s) across "
+        f"{len(per_variant_costs)} variant(s) in this arena"
+    )
+    return RoundCostEstimate(estimated_usd=total, basis=basis)
+
+
+def _latest_iteration_cost(scope: WorkspaceScope, experiment_id: str) -> float | None:
+    records = [
+        it
+        for it in scope.list_entities(IterationRecord, ListFilter(where={"experiment_id": experiment_id}))
+        if isinstance(it, IterationRecord)
+    ]
+    if not records:
+        return None
+    metrics = records[0].metrics
+    if metrics is None:
+        return None
+    return metrics.cost_usd
+
+
 def launch_round(
     storage: StorageInterface,
     *,
@@ -272,6 +341,20 @@ def launch_round(
             raise SelfEvalsUserError(f"variants not ready to run: {not_ready}")
         if not selected:
             raise SelfEvalsUserError(f"arena {arena_id} has no ready variants to launch")
+
+        if arena.budget.max_cost_usd is not None:
+            estimate = estimate_round_cost(
+                storage,
+                workspace_id=workspace_id,
+                arena_id=arena_id,
+                variant_ids=[v.id for v in selected],
+                reps=req.reps,
+            )
+            if estimate.estimated_usd is not None and estimate.estimated_usd > arena.budget.max_cost_usd:
+                raise SelfEvalsUserError(
+                    f"round estimated at ${estimate.estimated_usd:.4f} exceeds "
+                    f"budget.max_cost_usd=${arena.budget.max_cost_usd:.4f} ({estimate.basis})"
+                )
 
         round_index = arena.current_round
         round_ = ArenaRound(
@@ -410,3 +493,56 @@ def cleanup_arena(storage: StorageInterface, *, workspace_id: str, arena_id: str
             logger.warning("git worktree prune failed for arena %s", arena_id, exc_info=True)
         arena.state = ArenaState.ARCHIVED
         scope.put_entity(arena)
+
+
+@dataclass(frozen=True)
+class OrphanedWorktree:
+    path: str
+    reason: str
+
+
+def gc_orphaned_worktrees(storage: StorageInterface, *, dry_run: bool = False) -> list[OrphanedWorktree]:
+    """Reconcile `worktrees_root()` against every workspace's persisted variants.
+
+    `worktrees_root()` is one shared directory across all workspaces (worktree
+    paths are keyed `{root}/{arena_id}/{variant_id}`, not scoped per-workspace),
+    so this necessarily scans every workspace via
+    `list_workspace_summaries()` rather than taking one `workspace_id` — a
+    variant's worktree can go orphaned by a crash mid-`ensure_worktree`
+    (directory created, `put_entity` never ran) or by DB rows being removed
+    outside `cleanup_arena`. Returns what it removed (or would remove, with
+    `dry_run=True`) without raising on a single bad directory — GC always
+    finishes the sweep and reports partial failures via `reason`.
+    """
+    root = worktrees_root()
+    if not root.is_dir():
+        return []
+
+    live_paths: set[str] = set()
+    for ws in storage.list_workspace_summaries():
+        with storage.open(ws.id) as scope:
+            for v in scope.list_entities(ArenaVariant, ListFilter()):
+                if isinstance(v, ArenaVariant) and v.worktree_path:
+                    live_paths.add(str(Path(v.worktree_path).resolve()))
+
+    removed: list[OrphanedWorktree] = []
+    for arena_dir in root.iterdir():
+        if not arena_dir.is_dir():
+            continue
+        for variant_dir in arena_dir.iterdir():
+            if not variant_dir.is_dir():
+                continue
+            resolved = str(variant_dir.resolve())
+            if resolved in live_paths:
+                continue
+            if dry_run:
+                removed.append(OrphanedWorktree(path=resolved, reason="not registered to any variant"))
+                continue
+            try:
+                shutil.rmtree(variant_dir)
+                removed.append(OrphanedWorktree(path=resolved, reason="not registered to any variant"))
+            except OSError as exc:
+                logger.warning("failed to remove orphaned worktree %s: %s", variant_dir, exc)
+        if not dry_run and arena_dir.is_dir() and not any(arena_dir.iterdir()):
+            arena_dir.rmdir()
+    return removed

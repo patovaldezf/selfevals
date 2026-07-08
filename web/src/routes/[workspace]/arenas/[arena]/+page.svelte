@@ -203,6 +203,15 @@
           </p>
         </div>
       {:else}
+        {#if bundle.convergence.converged}
+          <div class="converged-banner">
+            <Badge tone="ok">Converged</Badge>
+            <span
+              >Best value hasn't moved by more than {bundle.convergence.min_delta} over the last
+              {bundle.convergence.patience} rounds — probably safe to stop trying new variants.</span
+            >
+          </div>
+        {/if}
         <div class="card table-wrap">
           <table>
             <thead>
@@ -593,6 +602,18 @@
     font-size: var(--text-sm);
     color: var(--color-text-2);
     max-width: 30rem;
+  }
+  .converged-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: var(--text-sm);
+    color: var(--color-text-2);
+    background: var(--color-ok-subtle);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 0.6rem 0.9rem;
+    margin-bottom: 0.75rem;
   }
   .matrix-list {
     display: flex;

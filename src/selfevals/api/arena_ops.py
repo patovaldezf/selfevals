@@ -21,11 +21,13 @@ from selfevals.api.schemas import (
     PromoteVariantRequest,
     PromoteVariantResponse,
     RegisterVariantRequest,
+    RoundCostEstimateResponse,
     RoundEntryView,
 )
 from selfevals.arena import service as arena_service
 from selfevals.arena.worktrees import WorktreeError, list_refs
 from selfevals.schemas.arena import Arena, ArenaRound, ArenaVariant
+from selfevals.schemas.enums import ArenaVariantState
 from selfevals.storage.errors import EntityNotFoundError
 from selfevals.storage.interface import ListFilter, StorageInterface
 
@@ -171,6 +173,30 @@ def launch_round(
     except SelfEvalsUserError as exc:
         raise ArenaOpError(str(exc)) from exc
     return _round_view(round_)
+
+
+def estimate_round_cost(
+    storage: StorageInterface,
+    *,
+    workspace_id: str,
+    arena_id: str,
+    variant_ids: list[str] | None,
+    reps: int,
+) -> RoundCostEstimateResponse:
+    with storage.open(workspace_id) as scope:
+        arena = scope.get_entity(Arena, arena_id)
+        assert isinstance(arena, Arena)
+        target_ids = variant_ids
+        if target_ids is None:
+            target_ids = [
+                v.id
+                for v in scope.list_entities(ArenaVariant, ListFilter(where={"arena_id": arena_id}))
+                if isinstance(v, ArenaVariant) and v.state == ArenaVariantState.READY
+            ]
+    result = arena_service.estimate_round_cost(
+        storage, workspace_id=workspace_id, arena_id=arena_id, variant_ids=target_ids, reps=reps
+    )
+    return RoundCostEstimateResponse(estimated_usd=result.estimated_usd, basis=result.basis)
 
 
 def list_rounds(

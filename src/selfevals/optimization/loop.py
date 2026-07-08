@@ -376,7 +376,7 @@ class OptimizationLoop:
             if baseline is None or aggregate.primary_value > baseline.primary_value:
                 baseline = aggregate
 
-            if early_stop_enabled and _has_converged(
+            if early_stop_enabled and has_converged(
                 recent_primary, convergence.min_delta, convergence.patience
             ):
                 result.terminated_reason = "converged"
@@ -646,7 +646,11 @@ def _early_stop_enabled(override: bool | None, proposer: Proposer) -> bool:
     return not isinstance(proposer, GridProposer)
 
 
-def _has_converged(values: Iterable[float], min_delta: float, patience: int) -> bool:
+def has_converged(values: Iterable[float], min_delta: float, patience: int) -> bool:
+    """True once the best value hasn't improved by `min_delta` over the last
+    `patience` observations. Shared with `arena.bundle`'s convergence signal —
+    same plateau semantics, applied to an arena's per-round best instead of
+    an experiment's per-iteration primary value."""
     seq = list(values)
     if len(seq) < patience + 1:
         return False

@@ -214,6 +214,11 @@ def test_bundle_reflects_leaderboard_pairwise_and_exemplar_failures(
         assert bundle.contract.register_variant == f"/api/workspaces/{WS}/arenas/{arena.id}/variants"
         assert bundle.contract.launch_round == f"/api/workspaces/{WS}/arenas/{arena.id}/rounds"
         assert bundle.contract.promote == f"/api/workspaces/{WS}/arenas/{arena.id}/promote"
+
+        # One round is nowhere near patience=3 — never claim convergence early.
+        assert bundle.convergence.converged is False
+        assert bundle.convergence.rounds_observed == 1
+        assert bundle.convergence.best_value == 1.0
     finally:
         storage.close()
 
@@ -259,5 +264,46 @@ def test_bundle_for_arena_with_no_rounds_lists_variants_without_results(
         assert bundle.leaderboard == []
         assert bundle.pairwise_vs_best == []
         assert bundle.round is None
+
+        # No round has ever scored anything — no history to extrapolate a
+        # plateau from, so convergence must read as "not converged," not "yes."
+        assert bundle.convergence.converged is False
+        assert bundle.convergence.rounds_observed == 0
+        assert bundle.convergence.best_value is None
     finally:
         storage.close()
+
+
+def test_convergence_signal_plateau_reads_as_converged() -> None:
+    # Pure unit test of the plateau math, no storage: a flat best-per-round
+    # series over enough rounds must read as converged.
+    from selfevals.arena.bundle import _convergence_signal
+    from selfevals.arena.schemas import RoundHistoryPoint, VariantCard
+
+    card = VariantCard(
+        variant_id="var_a",
+        name="a",
+        git_ref="main",
+        state="ready",
+        history=[RoundHistoryPoint(round=i, primary_value=0.8) for i in range(5)],
+    )
+    signal = _convergence_signal([card])
+    assert signal.converged is True
+    assert signal.rounds_observed == 5
+    assert signal.best_value == 0.8
+
+
+def test_convergence_signal_improving_series_is_not_converged() -> None:
+    from selfevals.arena.bundle import _convergence_signal
+    from selfevals.arena.schemas import RoundHistoryPoint, VariantCard
+
+    card = VariantCard(
+        variant_id="var_a",
+        name="a",
+        git_ref="main",
+        state="ready",
+        history=[RoundHistoryPoint(round=i, primary_value=0.1 * (i + 1)) for i in range(5)],
+    )
+    signal = _convergence_signal([card])
+    assert signal.converged is False
+    assert signal.best_value == pytest.approx(0.5)

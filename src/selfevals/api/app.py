@@ -153,6 +153,7 @@ from selfevals.api.schemas import (
     RegisterVariantRequest,
     RegressionCheckRequest,
     RegressionResultResponse,
+    RoundCostEstimateResponse,
     RunExperimentRequest,
     RunExperimentResponse,
     RunTournamentRequest,
@@ -664,6 +665,32 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         finally:
             storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/arenas/{arena_id}/estimate-cost",
+        response_model=RoundCostEstimateResponse,
+        tags=["arena"],
+    )
+    def arena_estimate_cost(
+        workspace_id: str,
+        arena_id: str,
+        variant_ids: Annotated[
+            str | None, Query(description="Comma-separated variant ids; default: all ready variants.")
+        ] = None,
+        reps: Annotated[int, Query(ge=1)] = 1,
+        storage: StorageInterface = Depends(_storage),
+        _user: UserHeader = None,
+    ) -> RoundCostEstimateResponse:
+        try:
+            return arena_ops.estimate_round_cost(
+                storage,
+                workspace_id=workspace_id,
+                arena_id=arena_id,
+                variant_ids=variant_ids.split(",") if variant_ids else None,
+                reps=reps,
+            )
+        except EntityNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"arena {arena_id} not found") from exc
 
     @app.get(
         "/api/workspaces/{workspace_id}/arenas/{arena_id}/rounds",

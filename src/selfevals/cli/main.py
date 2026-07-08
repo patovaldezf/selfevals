@@ -513,6 +513,25 @@ def _build_parser() -> argparse.ArgumentParser:
     p_arena_round.add_argument("--reps", type=int, default=1, help="Repetitions per case (default 1).")
     p_arena_round.set_defaults(func=arena_commands.cmd_arena_round)
 
+    p_arena_estimate = arena_sub.add_parser(
+        "estimate-cost",
+        help="Estimate a round's cost from this arena's own run history.",
+        description=(
+            "Extrapolate a round's cost from past rounds in this arena: each "
+            "variant's own average if it has run before, else the arena-wide "
+            "average. Returns no estimate (not zero) when nothing has run yet."
+        ),
+        epilog="Example:\n  selfevals arena estimate-cost ws_01HZZZ... arn_01H...",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_arena_estimate.add_argument("workspace_id")
+    p_arena_estimate.add_argument("arena_id")
+    p_arena_estimate.add_argument(
+        "--variants", default=None, help="Comma-separated variant ids (default: all ready variants)."
+    )
+    p_arena_estimate.add_argument("--reps", type=int, default=1, help="Repetitions per case (default 1).")
+    p_arena_estimate.set_defaults(func=arena_commands.cmd_arena_estimate_cost)
+
     p_arena_bundle = arena_sub.add_parser(
         "bundle",
         help="Print the cross-variant bundle as JSON (leaderboard, pairwise diffs, failures).",
@@ -557,6 +576,23 @@ def _build_parser() -> argparse.ArgumentParser:
     p_arena_prune.add_argument("workspace_id")
     p_arena_prune.add_argument("arena_id")
     p_arena_prune.set_defaults(func=arena_commands.cmd_arena_prune)
+
+    p_arena_gc = arena_sub.add_parser(
+        "gc",
+        help="Sweep SELFEVALS_WORKTREES_DIR for orphaned worktrees, across all workspaces.",
+        description=(
+            "Remove worktree directories no live ArenaVariant references — left "
+            "behind by a crash mid-registration or DB rows removed outside "
+            "`cleanup_arena`. Global: scans every workspace, since the worktrees "
+            "directory is shared, not per-workspace."
+        ),
+        epilog="Example:\n  selfevals arena gc --dry-run",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_arena_gc.add_argument(
+        "--dry-run", action="store_true", help="List what would be removed without deleting."
+    )
+    p_arena_gc.set_defaults(func=arena_commands.cmd_arena_gc)
 
     p_report = make_subparser(
         sub,
