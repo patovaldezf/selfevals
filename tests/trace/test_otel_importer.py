@@ -13,6 +13,7 @@ from selfevals.schemas.trace import (
     RetrievalSpan,
     RunInfo,
     ToolCallSpan,
+    Trace,
 )
 from selfevals.trace.otel_importer import import_otel_spans
 
@@ -21,7 +22,7 @@ T0 = datetime(2026, 5, 16, 12, 0, 0, tzinfo=UTC).isoformat()
 T1 = datetime(2026, 5, 16, 12, 0, 1, tzinfo=UTC).isoformat()
 
 
-def _imp(spans: list[dict]) -> object:
+def _imp(spans: list[dict]) -> Trace:
     return import_otel_spans(
         spans,
         workspace_id=WS,
@@ -32,7 +33,7 @@ def _imp(spans: list[dict]) -> object:
 
 def test_import_empty_list_builds_completed_trace() -> None:
     trace = _imp([])
-    assert trace.spans == []  # type: ignore[attr-defined]
+    assert trace.spans == []
 
 
 def test_llm_span_recognized_via_gen_ai_attrs() -> None:
@@ -58,8 +59,8 @@ def test_llm_span_recognized_via_gen_ai_attrs() -> None:
             }
         ]
     )
-    assert len(trace.spans) == 1  # type: ignore[attr-defined]
-    s = trace.spans[0]  # type: ignore[attr-defined]
+    assert len(trace.spans) == 1
+    s = trace.spans[0]
     assert isinstance(s, LLMCallSpan)
     assert s.provider == "anthropic"
     assert s.model == "claude-sonnet-4-6"
@@ -107,7 +108,7 @@ def test_tool_span_recognized() -> None:
     # The OTel importer cannot know about LLM tool_use_requested, so the
     # importer leaves tool_use_id set; the call site is responsible for
     # populating LLMOutput.tool_use_requested if it wants strict linkage.
-    tool_span = next(s for s in trace.spans if isinstance(s, ToolCallSpan))  # type: ignore[attr-defined]
+    tool_span = next(s for s in trace.spans if isinstance(s, ToolCallSpan))
     assert tool_span.tool_name == "search"
     assert tool_span.tool_use_id == "toolu_xyz"
     assert tool_span.status == ToolCallStatus.OK
@@ -129,7 +130,7 @@ def test_retrieval_span_recognized() -> None:
             }
         ]
     )
-    s = trace.spans[0]  # type: ignore[attr-defined]
+    s = trace.spans[0]
     assert isinstance(s, RetrievalSpan)
     assert s.retriever == "bm25"
     assert s.top_k_requested == 5
@@ -147,7 +148,7 @@ def test_unknown_kind_becomes_custom_span() -> None:
             }
         ]
     )
-    s = trace.spans[0]  # type: ignore[attr-defined]
+    s = trace.spans[0]
     assert isinstance(s, CustomSpan)
     assert s.payload == {"foo": "bar"}
 
@@ -164,7 +165,7 @@ def test_agent_chain_recognized_as_agent_turn() -> None:
             }
         ]
     )
-    assert isinstance(trace.spans[0], AgentTurnSpan)  # type: ignore[attr-defined]
+    assert isinstance(trace.spans[0], AgentTurnSpan)
 
 
 def test_parent_child_preserved() -> None:
@@ -187,7 +188,7 @@ def test_parent_child_preserved() -> None:
             },
         ]
     )
-    spans = trace.spans  # type: ignore[attr-defined]
+    spans = trace.spans
     by_id = {s.id: s for s in spans}
     assert by_id["sp_b"].parent_id == "sp_a"
 
@@ -213,7 +214,7 @@ def test_messages_extracted_via_openinference_native_attrs() -> None:
             }
         ]
     )
-    s = trace.spans[0]  # type: ignore[attr-defined]
+    s = trace.spans[0]
     assert isinstance(s, LLMCallSpan)
     msgs_in = s.provider_metadata["selfevals.messages_in"]
     assert msgs_in == [
@@ -249,7 +250,7 @@ def test_messages_extracted_via_gen_ai_alias_attrs() -> None:
             }
         ]
     )
-    s = trace.spans[0]  # type: ignore[attr-defined]
+    s = trace.spans[0]
     assert isinstance(s, LLMCallSpan)
     assert s.provider_metadata["selfevals.messages_in"] == [
         {"role": "user", "content": "What is 2+2?"}
@@ -268,7 +269,7 @@ def test_message_index_order_is_numeric_not_lexical() -> None:
     trace = _imp(
         [{"span_id": "sp_1", "name": "model", "start_time": T0, "end_time": T1, "attributes": attrs}]
     )
-    s = trace.spans[0]  # type: ignore[attr-defined]
+    s = trace.spans[0]
     contents = [m["content"] for m in s.provider_metadata["selfevals.messages_in"]]
     assert contents == [f"msg{i}" for i in range(12)]
 
@@ -292,7 +293,7 @@ def test_openinference_native_wins_when_both_families_present() -> None:
             }
         ]
     )
-    s = trace.spans[0]  # type: ignore[attr-defined]
+    s = trace.spans[0]
     assert s.provider_metadata["selfevals.messages_in"] == [{"role": "user", "content": "native"}]
 
 
@@ -308,7 +309,7 @@ def test_no_messages_leaves_hashes_none() -> None:
             }
         ]
     )
-    s = trace.spans[0]  # type: ignore[attr-defined]
+    s = trace.spans[0]
     assert s.messages_hash is None
     assert s.output.content_hash is None
     assert "selfevals.messages_in" not in s.provider_metadata
@@ -331,7 +332,7 @@ def test_thread_id_detected_from_openinference_session_id() -> None:
             }
         ]
     )
-    assert trace.run.thread_id == "sess_abc"  # type: ignore[attr-defined]
+    assert trace.run.thread_id == "sess_abc"
 
 
 def test_thread_id_detected_from_gen_ai_conversation_id() -> None:
@@ -350,7 +351,7 @@ def test_thread_id_detected_from_gen_ai_conversation_id() -> None:
             }
         ]
     )
-    assert trace.run.thread_id == "conv_42"  # type: ignore[attr-defined]
+    assert trace.run.thread_id == "conv_42"
 
 
 def test_explicit_thread_id_on_run_is_not_overwritten() -> None:
@@ -387,7 +388,7 @@ def test_no_session_attr_leaves_thread_id_none() -> None:
             }
         ]
     )
-    assert trace.run.thread_id is None  # type: ignore[attr-defined]
+    assert trace.run.thread_id is None
 
 
 def test_unrecognized_finish_reason_returns_none() -> None:
@@ -406,7 +407,7 @@ def test_unrecognized_finish_reason_returns_none() -> None:
             }
         ]
     )
-    s = trace.spans[0]  # type: ignore[attr-defined]
+    s = trace.spans[0]
     assert isinstance(s, LLMCallSpan)
     assert s.output.stop_reason is None
 
@@ -430,7 +431,7 @@ def test_epoch_seconds_and_nanos_both_parsed() -> None:
             },
         ]
     )
-    spans = trace.spans  # type: ignore[attr-defined]
+    spans = trace.spans
     # Same instant, encoded differently.
     assert spans[0].started_at == spans[1].started_at
 
@@ -458,6 +459,6 @@ def test_classification_falls_back_to_kind_field() -> None:
             },
         ]
     )
-    assert isinstance(trace.spans[0], ToolCallSpan)  # type: ignore[attr-defined]
+    assert isinstance(trace.spans[0], ToolCallSpan)
     # Sanity: kind enum membership inferred.
     assert SpanKind.TOOL_CALL == "tool_call"

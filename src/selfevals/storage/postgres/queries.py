@@ -16,6 +16,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from selfevals.schemas.enums import Role
 from selfevals.schemas.eval_case import EvalCase
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.trace import Trace
@@ -83,6 +84,21 @@ def workspace_by_slug_owner(conn: Any, *, slug: str, user_id: str) -> Any | None
         if row is None:
             return None
         return ws_mapper.load(cur, row[0], row[0])
+
+
+def workspace_member_roles(conn: Any, *, workspace_id: str, user_id: str) -> list[Role] | None:
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM workspaces WHERE id = %s LIMIT 1", (workspace_id,))
+        if cur.fetchone() is None:
+            return None
+        cur.execute(
+            """
+            SELECT role FROM members
+            WHERE workspace_id = %s AND user_id = %s AND deleted_at IS NULL
+            """,
+            (workspace_id, user_id),
+        )
+        return [Role(str(row[0])) for row in cur.fetchall()]
 
 
 def list_experiments_page(
@@ -280,3 +296,27 @@ def touch_run_job_lease(
             (owner, lease_expires_at, lease_expires_at, job_id, workspace_id),
         )
         return bool(cur.rowcount > 0)
+
+
+def queued_run_jobs(conn: Any, *, limit: int = 100) -> list[tuple[str, str]]:
+    """Cross-workspace listing of durable jobs still waiting to be leased.
+
+    This is the recovery path for Redis dispatch failures after the run job has
+    already been persisted. Workers still prefer Redis stream messages, but when
+    the stream is empty they can poll this durable queue and let
+    ``lease_run_job`` arbitrate ownership.
+    """
+    return [
+        (str(ws_id), str(job_id))
+        for ws_id, job_id in _fetchall(
+            conn,
+            """
+            SELECT workspace_id, id FROM run_jobs
+            WHERE status = 'queued'
+              AND deleted_at IS NULL
+            ORDER BY created_at ASC
+            LIMIT %s
+            """,
+            [limit],
+        )
+    ]

@@ -38,7 +38,7 @@ from selfevals.api.run_jobs import (
     mark_run_job_running,
     mark_run_job_succeeded,
 )
-from selfevals.api.run_queue import REDIS_URL_ENV, configured_run_queue
+from selfevals.api.run_queue import REDIS_URL_ENV, RunQueueUnavailableError, configured_run_queue
 from selfevals.api.schemas import RunExperimentRequest, RunExperimentResponse
 from selfevals.cli import _friendly
 from selfevals.repo.loader import (
@@ -103,10 +103,35 @@ def launch_experiment_run(
     finally:
         storage.close()
 
-    queue = configured_run_queue()
-    if queue is not None:
-        queue.enqueue(job)
-        dispatch = "redis-worker"
+    queue_unavailable = False
+    try:
+        queue = configured_run_queue()
+    except RunQueueUnavailableError:
+        queue_unavailable = True
+        queue = None
+
+    if queue_unavailable:
+        dispatch = "dispatch-pending"
+        logger.warning(
+            "experiment %s persisted as job %s but Redis queue initialization failed; "
+            "a run worker can recover it from durable queued jobs",
+            spec.experiment.id,
+            job.id,
+        )
+    elif queue is not None:
+        try:
+            queue.enqueue(job)
+        except RunQueueUnavailableError:
+            dispatch = "dispatch-pending"
+            logger.warning(
+                "experiment %s persisted as job %s but Redis dispatch failed; "
+                "a run worker can recover it from durable queued jobs",
+                spec.experiment.id,
+                job.id,
+                exc_info=True,
+            )
+        else:
+            dispatch = "redis-worker"
         # A job enqueued with no worker consuming it sits in the stream
         # silently and the experiment never leaves `draft`. Surface that the
         # moment it happens instead of forcing an `XINFO GROUPS` autopsy.
@@ -115,7 +140,7 @@ def launch_experiment_run(
         # None on any Redis error and never fails the launch. False positive to
         # accept: a lone worker busy in a >60s job looks idle, so a launch in
         # that window may warn even though a worker exists — informational only.
-        if queue.active_consumers() == 0:
+        if dispatch == "redis-worker" and queue.active_consumers() == 0:
             logger.warning(
                 "experiment %s queued to redis (%s) but no worker is consuming — "
                 "start one with 'selfevals worker runs' (and make sure it points at "
@@ -174,9 +199,12 @@ def _override_dataset(spec: ExperimentSpec, dataset_id: str) -> ExperimentSpec:
 
     from selfevals.schemas._base import EntityRef
 
+    ref = EntityRef(id=dataset_id)
+    spec.experiment.datasets.optimization = ref
+    spec.experiment.frozen.datasets = [ref]
     return replace(
         spec,
-        dataset_source=RefDatasetSource(ref=EntityRef(id=dataset_id)),
+        dataset_source=RefDatasetSource(ref=ref),
         cases=[],
     )
 

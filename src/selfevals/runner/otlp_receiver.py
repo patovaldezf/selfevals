@@ -125,11 +125,11 @@ class ReceiverHandle:
         self._stopped = True
         try:
             self._server.shutdown()
-        except Exception as exc:
+        except Exception as exc:  # audit:ignore[broad_exception_catches] — teardown must not raise
             logger.warning("OTLP receiver shutdown error: %s", exc)
         try:
             self._server.server_close()
-        except Exception as exc:
+        except Exception as exc:  # audit:ignore[broad_exception_catches] — teardown must not raise
             logger.warning("OTLP receiver close error: %s", exc)
         self._thread.join(timeout=self._flush_timeout)
 
@@ -171,7 +171,7 @@ class _SpanIngest:
             return
         try:
             publisher.mark_active(workspace_id, run_id)
-        except Exception as exc:
+        except Exception as exc:  # audit:ignore[broad_exception_catches] — publisher notify is best-effort
             logger.warning("span publisher mark_active raised: %s", exc)
 
     def notify_complete(self, workspace_id: str, run_id: str) -> None:
@@ -181,7 +181,7 @@ class _SpanIngest:
             return
         try:
             publisher.close(workspace_id, run_id)
-        except Exception as exc:
+        except Exception as exc:  # audit:ignore[broad_exception_catches] — publisher notify is best-effort
             logger.warning("span publisher close raised: %s", exc)
 
     def bind(self, recorder: Any) -> None:
@@ -195,7 +195,7 @@ class _SpanIngest:
             run_id = getattr(run, "run_id", None) if run is not None else None
             if ws and run_id:
                 keys = (str(ws), str(run_id))
-        except Exception as exc:
+        except Exception as exc:  # audit:ignore[broad_exception_catches] — recorder is duck-typed; missing attrs must not break bind
             logger.debug("ingest.bind: cannot extract publish keys: %s", exc)
         with self._lock:
             self._recorder = recorder
@@ -247,7 +247,7 @@ class _SpanIngest:
         for span in spans:
             try:
                 publisher.publish(ws, run, dict(span.payload))
-            except Exception as exc:
+            except Exception as exc:  # audit:ignore[broad_exception_catches] — one bad span must not drop the rest
                 logger.warning("span publisher raised: %s", exc)
 
 
@@ -271,7 +271,7 @@ def _make_handler(ingest: _SpanIngest, stats: ReceiverStats) -> type[BaseHTTPReq
             body = self.rfile.read(length) if length else b""
             try:
                 spans = decode_otlp_protobuf(body)
-            except Exception as exc:
+            except Exception as exc:  # audit:ignore[broad_exception_catches] — untrusted wire input → 400, never crash the handler
                 stats.decode_errors += 1
                 logger.warning("OTLP decode error: %s", exc)
                 self.send_error(400, f"decode error: {exc}")

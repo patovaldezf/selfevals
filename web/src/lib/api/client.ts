@@ -707,6 +707,13 @@ type RequestInitX = Omit<RequestInit, 'body'> & {
   form?: FormData;
 };
 
+function authHeaders(extra?: HeadersInit): Record<string, string> {
+  return {
+    'X-SelfEvals-User': 'local',
+    ...((extra as Record<string, string>) ?? {})
+  };
+}
+
 async function request<T>(path: string, init?: RequestInitX): Promise<T> {
   const f = init?.fetch ?? fetch;
   const { fetch: _f, json, form, headers, ...rest } = init ?? {};
@@ -715,11 +722,10 @@ async function request<T>(path: string, init?: RequestInitX): Promise<T> {
   // mutation either serializes `json` (JSON content type) or passes `form`
   // through *without* setting Content-Type so the browser appends the
   // multipart boundary itself — setting it by hand corrupts the upload.
-  const mergedHeaders: Record<string, string> = {
-    'X-SelfEvals-User': 'local',
+  const mergedHeaders = authHeaders({
     ...(form ? {} : { 'Content-Type': 'application/json' }),
     ...((headers as Record<string, string>) ?? {})
-  };
+  });
 
   const res = await f(DEFAULT_BASE + path, {
     ...rest,
@@ -873,9 +879,7 @@ export const api = {
     const f = fetch ?? globalThis.fetch;
     const url = `/api/workspaces/${workspaceId}/payloads?pointer=${encodeURIComponent(pointer)}`;
     const res = await f(url, {
-      headers: {
-        'X-SelfEvals-User': 'local'
-      }
+      headers: authHeaders()
     });
     if (!res.ok) {
       // Reuse the same body-reading discipline as request() — read once

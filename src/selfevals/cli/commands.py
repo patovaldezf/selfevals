@@ -254,7 +254,7 @@ def cmd_skills_sync(args: argparse.Namespace) -> int:
     return 0
 
 
-_EXAMPLE_NAMES = {"pingpong", "showcase"}
+_EXAMPLE_NAMES = {"field_sales_copilot", "pingpong", "sentiment_live", "showcase"}
 
 
 def cmd_examples_copy(args: argparse.Namespace) -> int:

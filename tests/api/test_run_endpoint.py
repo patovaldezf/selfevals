@@ -264,6 +264,18 @@ class _FakeRedisQueue:
         return 0
 
 
+class _FailingRedisQueue:
+    redis_label = "redis://localhost:6380/15"
+
+    def enqueue(self, job: object) -> None:
+        from selfevals.api.run_queue import RunQueueUnavailableError
+
+        raise RunQueueUnavailableError("redis down")
+
+    def active_consumers(self) -> int:
+        raise AssertionError("active_consumers should not run after enqueue failure")
+
+
 def test_run_dispatch_redis_worker_and_orphan_warning(
     client: tuple[TestClient, str],
     monkeypatch: pytest.MonkeyPatch,
@@ -292,6 +304,27 @@ def test_run_dispatch_redis_worker_and_orphan_warning(
     assert any("no worker is consuming" in m for m in warnings)
     # The warning names the redis target (with DB) and never leaks credentials.
     assert any("redis://localhost:6380/15" in m for m in warnings)
+
+
+def test_run_dispatch_pending_when_redis_enqueue_fails(
+    client: tuple[TestClient, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from selfevals.api import run_launcher
+
+    monkeypatch.setattr(run_launcher, "configured_run_queue", lambda: _FailingRedisQueue())
+
+    c, db_url = client
+    res = c.post(f"/api/workspaces/{WS}/experiments/run", json={"spec_inline": _inline_spec()})
+    assert res.status_code == 202
+    body = res.json()
+    assert body["dispatch"] == "dispatch-pending"
+
+    storage = open_storage(db_url)
+    try:
+        assert (WS, body["job_id"]) in storage.queued_run_jobs()
+    finally:
+        storage.close()
 
 
 def test_run_with_dataset_id_override(client: tuple[TestClient, str]) -> None:

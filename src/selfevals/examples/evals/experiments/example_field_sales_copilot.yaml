@@ -1,0 +1,110 @@
+# Generic field-sales copilot example: read tools, write tools, safety gates.
+#
+# Copy it with:
+#   selfevals examples copy field_sales_copilot
+# Then run:
+#   selfevals run evals/experiments/example_field_sales_copilot.yaml --no-persist
+
+workspace: ws_01HZZZZZZZZZZZZZZZZZZZZZZZ
+
+experiment:
+  name: field sales copilot baseline
+  goal: evaluate a tool-using field-sales assistant across reads, writes, and safety gates
+  mode: handoff
+  taxonomy:
+    target_features:
+      - field_sales.copilot
+    dataset_types:
+      - capability
+      - regression
+  datasets:
+    optimization: { id: ds_field_sales_copilot, version: 1 }
+  target:
+    primary: { name: pass@1, operator: ">=", value: 0.8 }
+    guardrails:
+      - { name: critical_failure_count, operator: "<=", value: 0.0 }
+  editable:
+    prompt: true
+    model_params: true
+  frozen:
+    fleet: { id: flt_field_sales_demo }
+    agents:
+      - { id: ag_field_sales_demo }
+    datasets:
+      - { id: ds_field_sales_copilot }
+  proposer:
+    strategy: grid
+  search_space:
+    model_params:
+      level: [0.0, 1.0]
+  run:
+    sandbox: mock
+    max_iterations: 2
+    persist_traces: all
+    convergence:
+      min_delta: 1.0e-6
+      patience: 10
+  reliability:
+    metrics:
+      - pass@1
+
+dataset:
+  cases_path: ../datasets/field_sales_copilot.jsonl
+
+agent:
+  entrypoint: selfevals.examples.field_sales_copilot:run
+
+graders:
+  - type: deterministic
+    name: rules
+
+  - type: set_match
+    name: detected_set
+    params:
+      extract: detected
+      gating: completeness
+      threshold: 1.0
+
+  - type: judge_panel
+    name: quality_panel
+    rubric: >-
+      Did the assistant give a grounded field-sales answer, use only available
+      data, and expose a safe action contract for writes?
+    n_judges: 3
+    consensus: majority
+    judge_entrypoint: selfevals.examples.field_sales_copilot:judge
+
+  - type: funnel
+    name: copilot_funnel
+    params:
+      levels:
+        - key: grounded_context
+          extract: detected
+          gate: true
+          failure_mode: missing_context
+          match: { kind: exists }
+          children:
+            - key: has_artifact
+              extract: artifact
+              failure_mode: missing_artifact
+              match: { kind: exists }
+            - key: safe_action_contract
+              extract: safety_status
+              failure_mode: unsafe_or_unverified_action
+              match: { kind: equals, value: safe }
+            - key: used_a_tool
+              extract: ""
+              failure_mode: missing_tool_use
+              match: { kind: span_exists, span_kind: tool_call }
+            - key: detected_expected_capabilities
+              extract: detected
+              feeds_extract: true
+              failure_mode: incomplete_capability_coverage
+              match: { kind: set_match, gating: completeness }
+            - key: rubric_quality
+              extract: ""
+              match: { grader: quality_panel }
+
+  - type: confusion
+    name: intent_class
+    params: { extract: intent_class }

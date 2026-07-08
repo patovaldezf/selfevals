@@ -1,6 +1,6 @@
 # Examples
 
-Four runnable examples, in increasing realism. Run them from a **source
+Six runnable examples, in increasing realism. Run them from a **source
 checkout** (the `hello_*` examples import `examples.hello_*.agent`, which
 needs the repo on `sys.path`).
 
@@ -8,6 +8,8 @@ needs the repo on `sys.path`).
 | --------------- | --------- | ------------ | ------------------------------------------------------------------------------------------------- |
 | `pingpong`      | none      | no           | The smallest possible loop — an in-process echo agent. Start here.                                |
 | `showcase`      | none      | no           | The kitchen sink — one grader of every type and a funnel with every match kind, all offline.      |
+| `field_sales_copilot` | none | no           | A realistic tool-using workflow: read tools, write tools, route gates, artifacts, and actions.    |
+| `sentiment_live` | Anthropic | yes         | Same offline `set_match` shape as `showcase`, but every case is a real Claude call — watch a live trace populate in the web UI. |
 | `hello_llm/`    | Anthropic | optional     | A real agent + LLM judge over three task types, with a deterministic fake fallback.               |
 | `hello_openai/` | OpenAI    | optional     | The exact same experiment as `hello_llm`, swapped to OpenAI — a side-by-side provider comparison. |
 
@@ -44,6 +46,48 @@ calls, and a deterministic `judge` lets `judge_panel` run fully offline. Driven
 by `model_params.level`, the grid proposer improves from `level=0.0` (the funnel
 gate fails, its children are SKIPPED — the short-circuit) to `level=1.0` (every
 level passes). It's the reference for _how each grader is configured in YAML_.
+
+## field_sales_copilot — an agentic workflow
+
+Also ships inside the package:
+
+```bash
+selfevals examples copy field_sales_copilot
+selfevals run evals/experiments/example_field_sales_copilot.yaml --no-persist
+```
+
+This is the practical example for integrating selfevals with a real agentic
+flow. The deterministic agent (`selfevals.examples.field_sales_copilot:run`)
+models a field-sales assistant that reads route/account/task context, edits a
+route after a feasibility check, rejects an infeasible write without saving, and
+turns an insight into recovery tasks. It emits `structured_output` with
+`detected`, `intent_class`, `artifact`, and `safety_status`, plus `tool_uses`
+for the read/write tools. The spec combines deterministic rules, set matching,
+a funnel over the action contract, a judge panel, and a confusion matrix for the
+intent class.
+
+Use it as the template for "one prompt" integrations: write user stories as
+cases, expose the app through an adapter, return structured artifacts, and let
+selfevals grade both the answer and the path the agent took.
+
+## sentiment_live — a real Claude call per case
+
+Ships inside the package, but needs a key (unlike `pingpong`/`showcase`/
+`field_sales_copilot`, which are fully offline):
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+selfevals examples copy sentiment_live
+selfevals run evals/experiments/example_sentiment_live.yaml
+```
+
+Same grading shape as `showcase`'s `set_match` case — the agent
+(`selfevals.examples.sentiment_live:run`) classifies a product review's
+sentiment and returns the label under `structured_output["detected"]` — but
+every case is a genuine `client.messages.create` call (forced into
+`sentiment`/`confidence`/`rationale` via a single-tool `tool_choice`), so a
+real model-request span opens and closes in the web UI's live trace view
+instead of the deterministic offline agents the other examples use.
 
 ## hello_llm / hello_openai — a realistic eval
 
