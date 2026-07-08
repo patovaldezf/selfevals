@@ -26,6 +26,7 @@ from selfevals.storage.postgres.mappers import mapper_for
 
 if TYPE_CHECKING:
     from selfevals.api.schemas import WorkspaceSummary
+    from selfevals.schemas.workspace import Workspace
 
 
 def _fetchall(conn: Any, sql: str, params: list[Any] | None = None) -> list[tuple[Any, ...]]:
@@ -73,7 +74,7 @@ def list_workspace_summaries(conn: Any) -> list[WorkspaceSummary]:
     return out
 
 
-def workspace_by_slug_owner(conn: Any, *, slug: str, user_id: str) -> Any | None:
+def workspace_by_slug_owner(conn: Any, *, slug: str, user_id: str) -> Workspace | None:
     from selfevals.schemas.workspace import Workspace
 
     ws_mapper = mapper_for(Workspace)
@@ -122,9 +123,7 @@ def list_experiments_page(
         clauses.append("%s = ANY(taxonomy_target_features)")
         params.append(feature)
     where = " AND ".join(clauses)
-    total = int(
-        _fetchall(conn, f"SELECT COUNT(1) FROM experiments WHERE {where}", params)[0][0]
-    )
+    total = int(_fetchall(conn, f"SELECT COUNT(1) FROM experiments WHERE {where}", params)[0][0])
     id_rows = _fetchall(
         conn,
         f"SELECT id FROM experiments WHERE {where} ORDER BY updated_at DESC LIMIT %s OFFSET %s",
@@ -152,9 +151,7 @@ def list_experiments_page(
     return experiments, total, counts
 
 
-def eval_cases_for_experiment(
-    conn: Any, workspace_id: str, experiment_id: str
-) -> list[EvalCase]:
+def eval_cases_for_experiment(conn: Any, workspace_id: str, experiment_id: str) -> list[EvalCase]:
     mapper = mapper_for(EvalCase)
     id_rows = _fetchall(
         conn,
@@ -244,9 +241,7 @@ def traces_by_thread_id(conn: Any, workspace_id: str, thread_id: str) -> list[Tr
     return out
 
 
-def expired_run_job_leases(
-    conn: Any, *, now: datetime, limit: int = 100
-) -> list[tuple[str, str]]:
+def expired_run_job_leases(conn: Any, *, now: datetime, limit: int = 100) -> list[tuple[str, str]]:
     """Cross-workspace listing of run jobs whose lease has lapsed.
 
     Returns ``(workspace_id, job_id)`` for jobs that are mid-flight
@@ -530,8 +525,15 @@ _OUTCOME_FIELD_COLUMNS: tuple[str, ...] = (
     "cache_hit_count",
 )
 _OUTCOME_JSONB = frozenset(
-    {"labels", "scores", "per_grader_labels", "failure_modes", "breakdowns",
-     "failure_weights", "critical_failure_modes"}
+    {
+        "labels",
+        "scores",
+        "per_grader_labels",
+        "failure_modes",
+        "breakdowns",
+        "failure_weights",
+        "critical_failure_modes",
+    }
 )
 
 
@@ -553,20 +555,34 @@ def write_scenario_outcome(
     scenario job overwrites rather than duplicates. JSONB columns are wrapped;
     scalars pass through.
     """
-    cols = ["id", "workspace_id", "version", "created_at", "updated_at",
-            "run_job_id", "scenario_job_id", "experiment_id", "iteration",
-            *_OUTCOME_FIELD_COLUMNS]
+    cols = [
+        "id",
+        "workspace_id",
+        "version",
+        "created_at",
+        "updated_at",
+        "run_job_id",
+        "scenario_job_id",
+        "experiment_id",
+        "iteration",
+        *_OUTCOME_FIELD_COLUMNS,
+    ]
     values: list[Any] = [
-        outcome_id, workspace_id, 1, now, now,
-        run_job_id, scenario_job_id, experiment_id, iteration,
+        outcome_id,
+        workspace_id,
+        1,
+        now,
+        now,
+        run_job_id,
+        scenario_job_id,
+        experiment_id,
+        iteration,
     ]
     for col in _OUTCOME_FIELD_COLUMNS:
         v = fields[col]
         values.append(Jsonb(v) if col in _OUTCOME_JSONB else v)
     placeholders = ", ".join(["%s"] * len(cols))
-    updates = ", ".join(
-        f"{c} = EXCLUDED.{c}" for c in cols if c not in ("id", "created_at")
-    )
+    updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in cols if c not in ("id", "created_at"))
     with conn.cursor() as cur:
         cur.execute(
             f"""
