@@ -6,3 +6,5 @@ package-lock.json
 test-results
 playwright-report
 e2e/.fixtures
+openapi.json
+src/lib/api/types.gen.ts

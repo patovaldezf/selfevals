@@ -50,12 +50,22 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --all-extras --dev
+        working-directory: .
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
+      # Fails if the OpenAPI schema (hence generated types) drifted from the
+      # committed snapshot — a reminder to run `npm run gen:api` after a
+      # backend schema change, not a hard type-safety gate on its own.
+      - run: npm run gen:api:check
       - run: npm run lint
       - run: npm run check
       - run: npm run build

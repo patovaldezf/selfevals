@@ -14,7 +14,9 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:report": "playwright show-report",
     "e2e:seed": "bash e2e/fixtures/seed.sh",
-    "test": "npm run check && npm run test:e2e"
+    "test": "npm run check && npm run test:e2e",
+    "gen:api": "uv run python ../scripts/export_openapi.py && openapi-typescript openapi.json -o src/lib/api/types.gen.ts",
+    "gen:api:check": "npm run gen:api && git diff --exit-code openapi.json src/lib/api/types.gen.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
@@ -29,6 +31,7 @@
     "eslint-config-prettier": "^9.1.2",
     "eslint-plugin-svelte": "^2.46.1",
     "globals": "^15.15.0",
+    "openapi-typescript": "^7.13.0",
     "prettier": "^3.8.3",
     "prettier-plugin-svelte": "^3.5.2",
     "svelte": "^5.55.9",
