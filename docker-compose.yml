@@ -30,6 +30,25 @@ services:
       timeout: 3s
       retries: 30
 
+  # Sharded execution worker. `selfevals run` (and the API) enqueue a coordinator
+  # run-job; this worker claims it, shards each iteration into scenario jobs, and
+  # drains them. Scale with `docker compose up -d --scale worker=N` — the SKIP
+  # LOCKED claim splits the per-case frontier across replicas.
+  worker:
+    build: .
+    container_name: selfevals-worker
+    command: ["selfevals", "worker", "runs"]
+    environment:
+      # Talk to the sibling containers (in-network ports, not the host mappings).
+      SELFEVALS_STORAGE_URL: postgresql://selfevals:selfevals@postgres:5432/selfevals
+      SELFEVALS_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   selfevals-postgres-data:
   selfevals-redis-data:

@@ -11,7 +11,7 @@ from selfevals._internal.time import utc_now
 from selfevals.repo.loader import ExperimentSpec, serialize_experiment_spec
 from selfevals.schemas.enums import ExperimentState
 from selfevals.schemas.experiment import Experiment
-from selfevals.schemas.job import RunJob, RunJobStatus
+from selfevals.schemas.job import RunJob, RunJobStatus, ScenarioJob
 from selfevals.storage.errors import EntityNotFoundError
 from selfevals.storage.interface import ListFilter, StorageInterface, WorkspaceScope
 
@@ -43,6 +43,39 @@ def create_run_job(
     with storage.open(spec.workspace_id) as scope:
         scope.put_entity(job)
     return job
+
+
+def plan_scenario_jobs(
+    storage: StorageInterface,
+    *,
+    run_job: RunJob,
+    case_ids: list[str],
+    iteration: int,
+    parameter_overrides: dict[str, object],
+    reps: int,
+) -> int:
+    """Seed one ScenarioJob per case for an iteration. Idempotent.
+
+    The coordinator calls this at the start of each iteration; workers then claim
+    the rows. Re-planning (a coordinator restarted by the sweeper) is a no-op
+    because ``insert_scenario_jobs`` conflicts on (run_job_id, iteration, case_id).
+    Returns how many rows were newly inserted.
+    """
+    jobs = [
+        ScenarioJob(
+            id=ScenarioJob.make_id(),
+            workspace_id=run_job.workspace_id,
+            run_job_id=run_job.id,
+            experiment_id=run_job.experiment_id,
+            iteration=iteration,
+            case_id=case_id,
+            reps=reps,
+            max_attempts=run_job.max_attempts,
+            parameter_overrides=dict(parameter_overrides),
+        )
+        for case_id in case_ids
+    ]
+    return storage.insert_scenario_jobs(jobs)
 
 
 def get_run_job(

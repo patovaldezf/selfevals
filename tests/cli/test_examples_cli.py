@@ -35,17 +35,15 @@ def test_examples_copy_showcase_writes_runnable_files(
     assert "example_showcase.yaml --no-persist" in stdout
 
 
-def test_examples_copy_field_sales_copilot_writes_runnable_files(
+def test_examples_copy_route_ops_copilot_writes_runnable_files(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    rc, stdout, _ = _capture(
-        capsys, ["examples", "copy", "field_sales_copilot", "--to", str(tmp_path)]
-    )
+    rc, stdout, _ = _capture(capsys, ["examples", "copy", "route_ops_copilot", "--to", str(tmp_path)])
     assert rc == 0
-    assert "copied example 'field_sales_copilot'" in stdout
-    assert (tmp_path / "evals" / "experiments" / "example_field_sales_copilot.yaml").is_file()
-    assert (tmp_path / "evals" / "datasets" / "field_sales_copilot.jsonl").is_file()
-    assert "example_field_sales_copilot.yaml --no-persist" in stdout
+    assert "copied example 'route_ops_copilot'" in stdout
+    assert (tmp_path / "evals" / "experiments" / "example_route_ops_copilot.yaml").is_file()
+    assert (tmp_path / "evals" / "datasets" / "route_ops_copilot.jsonl").is_file()
+    assert "example_route_ops_copilot.yaml --no-persist" in stdout
 
 
 def test_examples_copy_sentiment_live_writes_runnable_files(

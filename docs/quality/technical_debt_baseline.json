@@ -1,44 +1,19 @@
 {
   "counts": {
-    "broad_exception_catches": 40,
+    "broad_exception_catches": 23,
     "direct_frontend_fetch": 0,
     "direct_user_header": 0,
     "docs_version_drift": 0,
-    "get_entity_calls": 51,
+    "get_entity_calls": 52,
     "json_extract": 5,
-    "large_files": 16,
-    "large_python_symbols": 20,
+    "large_files": 15,
+    "large_python_symbols": 21,
     "list_entities_calls": 65,
-    "type_ignores": 131
+    "type_ignores": 99
   },
   "description": "Baseline for scripts/audit_technical_debt.py. Decrease counts as debt is removed; do not increase without review.",
   "findings": {
     "broad_exception_catches": [
-      {
-        "detail": "broad except Exception",
-        "line": 189,
-        "path": "examples/hello_llm/agent.py"
-      },
-      {
-        "detail": "broad except Exception",
-        "line": 220,
-        "path": "examples/hello_llm/agent.py"
-      },
-      {
-        "detail": "broad except Exception",
-        "line": 430,
-        "path": "examples/hello_llm/agent.py"
-      },
-      {
-        "detail": "broad except Exception",
-        "line": 144,
-        "path": "examples/hello_openai/agent.py"
-      },
-      {
-        "detail": "broad except Exception",
-        "line": 308,
-        "path": "examples/hello_openai/agent.py"
-      },
       {
         "detail": "broad except Exception",
         "line": 70,
@@ -61,27 +36,22 @@
       },
       {
         "detail": "broad except Exception",
-        "line": 225,
+        "line": 256,
         "path": "src/selfevals/api/run_launcher.py"
       },
       {
         "detail": "broad except Exception",
-        "line": 299,
+        "line": 348,
         "path": "src/selfevals/api/run_launcher.py"
       },
       {
         "detail": "broad except Exception",
-        "line": 136,
+        "line": 151,
         "path": "src/selfevals/api/run_queue.py"
       },
       {
         "detail": "broad except Exception",
-        "line": 150,
-        "path": "src/selfevals/api/run_queue.py"
-      },
-      {
-        "detail": "broad except Exception",
-        "line": 294,
+        "line": 309,
         "path": "src/selfevals/cli/commands.py"
       },
       {
@@ -93,11 +63,6 @@
         "detail": "broad except Exception",
         "line": 62,
         "path": "src/selfevals/cli/migrate_commands.py"
-      },
-      {
-        "detail": "broad except Exception",
-        "line": 346,
-        "path": "src/selfevals/graders/funnel.py"
       },
       {
         "detail": "broad except Exception",
@@ -116,26 +81,6 @@
       },
       {
         "detail": "broad except Exception",
-        "line": 397,
-        "path": "src/selfevals/repo/loader.py"
-      },
-      {
-        "detail": "broad except Exception",
-        "line": 450,
-        "path": "src/selfevals/repo/loader.py"
-      },
-      {
-        "detail": "broad except Exception",
-        "line": 481,
-        "path": "src/selfevals/repo/loader.py"
-      },
-      {
-        "detail": "broad except Exception",
-        "line": 516,
-        "path": "src/selfevals/repo/loader.py"
-      },
-      {
-        "detail": "broad except Exception",
         "line": 217,
         "path": "src/selfevals/runner/adapters.py"
       },
@@ -146,48 +91,13 @@
       },
       {
         "detail": "broad except Exception",
-        "line": 728,
+        "line": 777,
         "path": "src/selfevals/runner/launch.py"
       },
       {
         "detail": "broad except Exception",
-        "line": 788,
+        "line": 837,
         "path": "src/selfevals/runner/launch.py"
-      },
-      {
-        "detail": "broad except Exception",
-        "line": 128,
-        "path": "src/selfevals/runner/otlp_receiver.py"
-      },
-      {
-        "detail": "broad except Exception",
-        "line": 132,
-        "path": "src/selfevals/runner/otlp_receiver.py"
-      },
-      {
-        "detail": "broad except Exception",
-        "line": 174,
-        "path": "src/selfevals/runner/otlp_receiver.py"
-      },
-      {
-        "detail": "broad except Exception",
-        "line": 184,
-        "path": "src/selfevals/runner/otlp_receiver.py"
-      },
-      {
-        "detail": "broad except Exception",
-        "line": 198,
-        "path": "src/selfevals/runner/otlp_receiver.py"
-      },
-      {
-        "detail": "broad except Exception",
-        "line": 250,
-        "path": "src/selfevals/runner/otlp_receiver.py"
-      },
-      {
-        "detail": "broad except Exception",
-        "line": 274,
-        "path": "src/selfevals/runner/otlp_receiver.py"
       },
       {
         "detail": "broad except Exception",
@@ -208,6 +118,11 @@
         "detail": "broad except Exception",
         "line": 97,
         "path": "src/selfevals/worker/lease_sweeper.py"
+      },
+      {
+        "detail": "broad except Exception",
+        "line": 157,
+        "path": "src/selfevals/worker/scenario_runner.py"
       },
       {
         "detail": "broad except Exception",
@@ -316,22 +231,22 @@
       },
       {
         "detail": "get_entity call",
-        "line": 57,
-        "path": "src/selfevals/api/run_jobs.py"
-      },
-      {
-        "detail": "get_entity call",
-        "line": 117,
-        "path": "src/selfevals/api/run_jobs.py"
-      },
-      {
-        "detail": "get_entity call",
-        "line": 226,
-        "path": "src/selfevals/api/run_jobs.py"
-      },
-      {
-        "detail": "get_entity call",
         "line": 90,
+        "path": "src/selfevals/api/run_jobs.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 150,
+        "path": "src/selfevals/api/run_jobs.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 259,
+        "path": "src/selfevals/api/run_jobs.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 93,
         "path": "src/selfevals/api/run_launcher.py"
       },
       {
@@ -346,7 +261,7 @@
       },
       {
         "detail": "get_entity call",
-        "line": 293,
+        "line": 308,
         "path": "src/selfevals/cli/commands.py"
       },
       {
@@ -356,28 +271,33 @@
       },
       {
         "detail": "get_entity call",
-        "line": 727,
+        "line": 776,
         "path": "src/selfevals/runner/launch.py"
       },
       {
         "detail": "get_entity call",
-        "line": 785,
+        "line": 834,
         "path": "src/selfevals/runner/launch.py"
       },
       {
         "detail": "get_entity call",
-        "line": 211,
+        "line": 282,
         "path": "src/selfevals/storage/interface.py"
       },
       {
         "detail": "get_entity call",
-        "line": 216,
+        "line": 316,
         "path": "src/selfevals/storage/postgres/storage.py"
       },
       {
         "detail": "get_entity call",
         "line": 199,
         "path": "src/selfevals/storage/seed.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 137,
+        "path": "src/selfevals/worker/scenario_runner.py"
       },
       {
         "detail": "get_entity call",
@@ -504,7 +424,7 @@
     ],
     "large_files": [
       {
-        "detail": "1539 lines > limit 700",
+        "detail": "1588 lines > limit 700",
         "line": 1,
         "path": "src/selfevals/api/app.py"
       },
@@ -514,24 +434,19 @@
         "path": "src/selfevals/api/queries.py"
       },
       {
-        "detail": "988 lines > limit 700",
+        "detail": "989 lines > limit 700",
         "line": 1,
         "path": "src/selfevals/api/schemas.py"
       },
       {
-        "detail": "707 lines > limit 700",
+        "detail": "764 lines > limit 700",
         "line": 1,
         "path": "src/selfevals/cli/commands.py"
       },
       {
-        "detail": "763 lines > limit 700",
+        "detail": "817 lines > limit 700",
         "line": 1,
         "path": "src/selfevals/cli/main.py"
-      },
-      {
-        "detail": "765 lines > limit 700",
-        "line": 1,
-        "path": "src/selfevals/optimization/loop.py"
       },
       {
         "detail": "1121 lines > limit 700",
@@ -539,7 +454,7 @@
         "path": "src/selfevals/repo/loader.py"
       },
       {
-        "detail": "924 lines > limit 700",
+        "detail": "979 lines > limit 700",
         "line": 1,
         "path": "src/selfevals/runner/launch.py"
       },
@@ -564,12 +479,12 @@
         "path": "tests/repo/test_loader.py"
       },
       {
-        "detail": "827 lines > limit 700",
+        "detail": "887 lines > limit 700",
         "line": 1,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
-        "detail": "1238 lines > limit 900",
+        "detail": "1242 lines > limit 900",
         "line": 1,
         "path": "web/src/lib/api/client.ts"
       },
@@ -586,13 +501,13 @@
     ],
     "large_python_symbols": [
       {
-        "detail": "function build_app has 1359 lines: def build_app(*, db_path: str | None = None) -> FastAPI:",
-        "line": 180,
+        "detail": "function build_app has 1401 lines: def build_app(*, db_path: str | None = None) -> FastAPI:",
+        "line": 187,
         "path": "src/selfevals/api/app.py"
       },
       {
-        "detail": "function _build_parser has 713 lines: def _build_parser() -> argparse.ArgumentParser:",
-        "line": 27,
+        "detail": "function _build_parser has 738 lines: def _build_parser() -> argparse.ArgumentParser:",
+        "line": 28,
         "path": "src/selfevals/cli/main.py"
       },
       {
@@ -611,17 +526,17 @@
         "path": "src/selfevals/graders/trajectory.py"
       },
       {
-        "detail": "class OptimizationLoop has 476 lines: class OptimizationLoop:",
-        "line": 127,
+        "detail": "class OptimizationLoop has 496 lines: class OptimizationLoop:",
+        "line": 128,
         "path": "src/selfevals/optimization/loop.py"
       },
       {
         "detail": "function _run_iterations has 136 lines: async def _run_iterations(self) -> OptimizationResult:",
-        "line": 205,
+        "line": 255,
         "path": "src/selfevals/optimization/loop.py"
       },
       {
-        "detail": "class Executor has 343 lines: class Executor:",
+        "detail": "class Executor has 355 lines: class Executor:",
         "line": 134,
         "path": "src/selfevals/runner/executor.py"
       },
@@ -674,6 +589,11 @@
         "detail": "function _insert_span has 233 lines: def _insert_span(",
         "line": 195,
         "path": "src/selfevals/storage/postgres/mappers/trace.py"
+      },
+      {
+        "detail": "class PostgresStorage has 220 lines: class PostgresStorage(StorageInterface):",
+        "line": 44,
+        "path": "src/selfevals/storage/postgres/storage.py"
       },
       {
         "detail": "class TraceRecorder has 431 lines: class TraceRecorder:",
@@ -759,12 +679,12 @@
       },
       {
         "detail": "list_entities call",
-        "line": 70,
+        "line": 103,
         "path": "src/selfevals/api/run_jobs.py"
       },
       {
         "detail": "list_entities call",
-        "line": 86,
+        "line": 119,
         "path": "src/selfevals/api/run_jobs.py"
       },
       {
@@ -774,27 +694,27 @@
       },
       {
         "detail": "list_entities call",
-        "line": 95,
+        "line": 94,
         "path": "src/selfevals/cli/commands.py"
       },
       {
         "detail": "list_entities call",
-        "line": 110,
+        "line": 109,
         "path": "src/selfevals/cli/commands.py"
       },
       {
         "detail": "list_entities call",
-        "line": 299,
+        "line": 314,
         "path": "src/selfevals/cli/commands.py"
       },
       {
         "detail": "list_entities call",
-        "line": 308,
+        "line": 323,
         "path": "src/selfevals/cli/commands.py"
       },
       {
         "detail": "list_entities call",
-        "line": 333,
+        "line": 348,
         "path": "src/selfevals/cli/commands.py"
       },
       {
@@ -809,12 +729,12 @@
       },
       {
         "detail": "list_entities call",
-        "line": 588,
+        "line": 609,
         "path": "src/selfevals/optimization/loop.py"
       },
       {
         "detail": "list_entities call",
-        "line": 739,
+        "line": 788,
         "path": "src/selfevals/runner/launch.py"
       },
       {
@@ -824,12 +744,12 @@
       },
       {
         "detail": "list_entities call",
-        "line": 215,
+        "line": 286,
         "path": "src/selfevals/storage/interface.py"
       },
       {
         "detail": "list_entities call",
-        "line": 234,
+        "line": 334,
         "path": "src/selfevals/storage/postgres/storage.py"
       },
       {
@@ -864,12 +784,12 @@
       },
       {
         "detail": "list_entities call",
-        "line": 69,
+        "line": 63,
         "path": "tests/cli/test_cli_run.py"
       },
       {
         "detail": "list_entities call",
-        "line": 70,
+        "line": 64,
         "path": "tests/cli/test_cli_run.py"
       },
       {
@@ -949,17 +869,17 @@
       },
       {
         "detail": "list_entities call",
-        "line": 95,
+        "line": 98,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "list_entities call",
-        "line": 238,
+        "line": 241,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "list_entities call",
-        "line": 273,
+        "line": 276,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
@@ -1071,22 +991,22 @@
       },
       {
         "detail": "type ignore",
-        "line": 293,
-        "path": "src/selfevals/cli/commands.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 299,
-        "path": "src/selfevals/cli/commands.py"
-      },
-      {
-        "detail": "type ignore",
         "line": 308,
         "path": "src/selfevals/cli/commands.py"
       },
       {
         "detail": "type ignore",
-        "line": 333,
+        "line": 314,
+        "path": "src/selfevals/cli/commands.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 323,
+        "path": "src/selfevals/cli/commands.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 348,
         "path": "src/selfevals/cli/commands.py"
       },
       {
@@ -1106,7 +1026,7 @@
       },
       {
         "detail": "type ignore",
-        "line": 645,
+        "line": 694,
         "path": "src/selfevals/runner/launch.py"
       },
       {
@@ -1126,12 +1046,12 @@
       },
       {
         "detail": "type ignore",
-        "line": 81,
+        "line": 92,
         "path": "src/selfevals/runner/throttle.py"
       },
       {
         "detail": "type ignore",
-        "line": 85,
+        "line": 96,
         "path": "src/selfevals/runner/throttle.py"
       },
       {
@@ -1266,122 +1186,47 @@
       },
       {
         "detail": "type ignore",
-        "line": 104,
-        "path": "tests/runner/test_adapters.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 128,
-        "path": "tests/runner/test_adapters.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 215,
-        "path": "tests/runner/test_adapters.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 219,
-        "path": "tests/runner/test_adapters.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 238,
-        "path": "tests/runner/test_adapters.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 243,
-        "path": "tests/runner/test_adapters.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 275,
-        "path": "tests/runner/test_adapters.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 280,
-        "path": "tests/runner/test_adapters.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 93,
-        "path": "tests/runner/test_baseline.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 154,
-        "path": "tests/runner/test_baseline.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 167,
-        "path": "tests/runner/test_baseline.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 174,
-        "path": "tests/runner/test_baseline.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 193,
-        "path": "tests/runner/test_baseline.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 206,
-        "path": "tests/runner/test_baseline.py"
-      },
-      {
-        "detail": "type ignore",
         "line": 304,
         "path": "tests/runner/test_executor.py"
       },
       {
         "detail": "type ignore",
-        "line": 164,
+        "line": 167,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 166,
+        "line": 169,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 195,
+        "line": 198,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 233,
+        "line": 236,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 235,
+        "line": 238,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 247,
+        "line": 250,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 251,
+        "line": 254,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 252,
-        "path": "tests/runner/test_launch_wiring.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 267,
+        "line": 255,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
@@ -1391,62 +1236,67 @@
       },
       {
         "detail": "type ignore",
-        "line": 481,
+        "line": 273,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 495,
+        "line": 484,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 605,
+        "line": 498,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 629,
+        "line": 608,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 657,
+        "line": 632,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 700,
+        "line": 660,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 724,
+        "line": 703,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 748,
+        "line": 727,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 763,
+        "line": 751,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 777,
+        "line": 766,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 810,
+        "line": 780,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 823,
+        "line": 813,
+        "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 826,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
@@ -1516,6 +1366,11 @@
       },
       {
         "detail": "type ignore",
+        "line": 28,
+        "path": "tests/schemas/test_job.py"
+      },
+      {
+        "detail": "type ignore",
         "line": 23,
         "path": "tests/schemas/test_pairwise_verdict.py"
       },
@@ -1573,101 +1428,6 @@
         "detail": "type ignore",
         "line": 194,
         "path": "tests/storage/test_postgres_storage.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 35,
-        "path": "tests/trace/test_otel_importer.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 61,
-        "path": "tests/trace/test_otel_importer.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 62,
-        "path": "tests/trace/test_otel_importer.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 110,
-        "path": "tests/trace/test_otel_importer.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 132,
-        "path": "tests/trace/test_otel_importer.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 150,
-        "path": "tests/trace/test_otel_importer.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 167,
-        "path": "tests/trace/test_otel_importer.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 190,
-        "path": "tests/trace/test_otel_importer.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 216,
-        "path": "tests/trace/test_otel_importer.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 252,
-        "path": "tests/trace/test_otel_importer.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 271,
-        "path": "tests/trace/test_otel_importer.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 295,
-        "path": "tests/trace/test_otel_importer.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 311,
-        "path": "tests/trace/test_otel_importer.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 334,
-        "path": "tests/trace/test_otel_importer.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 353,
-        "path": "tests/trace/test_otel_importer.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 390,
-        "path": "tests/trace/test_otel_importer.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 409,
-        "path": "tests/trace/test_otel_importer.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 433,
-        "path": "tests/trace/test_otel_importer.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 461,
-        "path": "tests/trace/test_otel_importer.py"
       }
     ]
   }

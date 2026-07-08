@@ -18,12 +18,12 @@ def _capture(capsys: pytest.CaptureFixture[str], argv: list[str]) -> tuple[int, 
     return rc, out.out, out.err
 
 
-def test_run_example_no_persist_markdown(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+def test_run_example_markdown(
+    db_url: str, synchronous_run_queue: None, capsys: pytest.CaptureFixture[str]
 ) -> None:
     rc, stdout, _ = _capture(
         capsys,
-        ["run", str(REPO_EXAMPLE), "--no-persist", "--max-iterations", "2"],
+        ["--db", db_url, "run", str(REPO_EXAMPLE), "--max-iterations", "2"],
     )
     assert rc == 0
     assert "# Experiment: pingpong baseline" in stdout
@@ -31,18 +31,12 @@ def test_run_example_no_persist_markdown(
     assert "pass@1 = 1" in stdout
 
 
-def test_run_example_no_persist_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_run_example_json(
+    db_url: str, synchronous_run_queue: None, capsys: pytest.CaptureFixture[str]
+) -> None:
     rc, stdout, _ = _capture(
         capsys,
-        [
-            "run",
-            str(REPO_EXAMPLE),
-            "--no-persist",
-            "--max-iterations",
-            "2",
-            "--format",
-            "json",
-        ],
+        ["--db", db_url, "run", str(REPO_EXAMPLE), "--max-iterations", "2", "--format", "json"],
     )
     assert rc == 0
     payload = json.loads(stdout)
@@ -52,7 +46,7 @@ def test_run_example_no_persist_json(tmp_path: Path, capsys: pytest.CaptureFixtu
 
 
 def test_run_persists_iterations_to_storage(
-    db_url: str, capsys: pytest.CaptureFixture[str]
+    db_url: str, synchronous_run_queue: None, capsys: pytest.CaptureFixture[str]
 ) -> None:
     rc, _, _ = _capture(
         capsys,
@@ -77,7 +71,7 @@ def test_run_persists_iterations_to_storage(
 def test_run_missing_spec_reports_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     rc, _, stderr = _capture(
         capsys,
-        ["run", str(tmp_path / "nope.yaml"), "--no-persist"],
+        ["run", str(tmp_path / "nope.yaml")],
     )
     assert rc == 2
     assert "not found" in stderr
@@ -86,14 +80,14 @@ def test_run_missing_spec_reports_error(tmp_path: Path, capsys: pytest.CaptureFi
 def test_run_invalid_max_iterations(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     rc, _, stderr = _capture(
         capsys,
-        ["run", str(REPO_EXAMPLE), "--no-persist", "--max-iterations", "0"],
+        ["run", str(REPO_EXAMPLE), "--max-iterations", "0"],
     )
     assert rc == 2
     assert ">= 1" in stderr
 
 
 def test_run_user_callable_returning_str_is_wrapped(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, db_url: str, synchronous_run_queue: None, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Spec that points to a stdlib function returning a str — we expect
     # the loader to wrap it as AdapterResponse.
@@ -147,7 +141,7 @@ agent:
 """
     )
     rc, stdout, stderr = _capture(
-        capsys, ["run", str(yaml_path), "--no-persist", "--format", "json"]
+        capsys, ["--db", db_url, "run", str(yaml_path), "--format", "json"]
     )
     assert rc == 0, stderr
     payload = json.loads(stdout)
@@ -209,7 +203,7 @@ agent:
 
 
 def test_report_rehydrates_failure_reasons_from_storage(
-    tmp_path: Path, db_url: str, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, db_url: str, synchronous_run_queue: None, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The agent returns "pong" but the case requires "WONTMATCH" → the
     # deterministic grader FAILs with a reason. With persist_traces=failed

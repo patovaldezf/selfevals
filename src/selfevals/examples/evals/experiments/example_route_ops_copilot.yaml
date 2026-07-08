@@ -1,24 +1,24 @@
-# Generic field-sales copilot example: read tools, write tools, safety gates.
+# Generic route-ops copilot example: read tools, write tools, safety gates.
 #
 # Copy it with:
-#   selfevals examples copy field_sales_copilot
+#   selfevals examples copy route_ops_copilot
 # Then run:
-#   selfevals run evals/experiments/example_field_sales_copilot.yaml --no-persist
+#   selfevals run evals/experiments/example_route_ops_copilot.yaml --no-persist
 
 workspace: ws_01HZZZZZZZZZZZZZZZZZZZZZZZ
 
 experiment:
-  name: field sales copilot baseline
-  goal: evaluate a tool-using field-sales assistant across reads, writes, and safety gates
+  name: route ops copilot baseline
+  goal: evaluate a tool-using route-ops assistant across reads, writes, and safety gates
   mode: handoff
   taxonomy:
     target_features:
-      - field_sales.copilot
+      - route_ops.copilot
     dataset_types:
       - capability
       - regression
   datasets:
-    optimization: { id: ds_field_sales_copilot, version: 1 }
+    optimization: { id: ds_route_ops_copilot, version: 1 }
   target:
     primary: { name: pass@1, operator: ">=", value: 0.8 }
     guardrails:
@@ -27,11 +27,11 @@ experiment:
     prompt: true
     model_params: true
   frozen:
-    fleet: { id: flt_field_sales_demo }
+    fleet: { id: flt_route_ops_demo }
     agents:
-      - { id: ag_field_sales_demo }
+      - { id: ag_route_ops_demo }
     datasets:
-      - { id: ds_field_sales_copilot }
+      - { id: ds_route_ops_copilot }
   proposer:
     strategy: grid
   search_space:
@@ -49,10 +49,10 @@ experiment:
       - pass@1
 
 dataset:
-  cases_path: ../datasets/field_sales_copilot.jsonl
+  cases_path: ../datasets/route_ops_copilot.jsonl
 
 agent:
-  entrypoint: selfevals.examples.field_sales_copilot:run
+  entrypoint: selfevals.examples.route_ops_copilot:run
 
 graders:
   - type: deterministic
@@ -68,11 +68,11 @@ graders:
   - type: judge_panel
     name: quality_panel
     rubric: >-
-      Did the assistant give a grounded field-sales answer, use only available
+      Did the assistant give a grounded route-ops answer, use only available
       data, and expose a safe action contract for writes?
     n_judges: 3
     consensus: majority
-    judge_entrypoint: selfevals.examples.field_sales_copilot:judge
+    judge_entrypoint: selfevals.examples.route_ops_copilot:judge
 
   - type: funnel
     name: copilot_funnel

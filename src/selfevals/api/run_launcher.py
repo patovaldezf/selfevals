@@ -41,6 +41,7 @@ from selfevals.api.run_jobs import (
 from selfevals.api.run_queue import REDIS_URL_ENV, RunQueueUnavailableError, configured_run_queue
 from selfevals.api.schemas import RunExperimentRequest, RunExperimentResponse
 from selfevals.cli import _friendly
+from selfevals.optimization.coordinator import RunCoordinator
 from selfevals.repo.loader import (
     ExperimentSpec,
     LoaderError,
@@ -57,6 +58,7 @@ from selfevals.runner.launch import (
 from selfevals.schemas.enums import ExperimentState
 from selfevals.schemas.experiment import Experiment
 from selfevals.storage.factory import open_storage
+from selfevals.worker.scenario_runner import drain_self
 
 logger = logging.getLogger(__name__)
 
@@ -323,13 +325,24 @@ def execute_run_job(
                 payload_router=payload_router,
                 redis_url=redis_url,
             )
+            # The run-job IS the coordinator: it shards each iteration into
+            # scenario jobs and aggregates from storage. The drain runs this same
+            # process's worker over the iteration's frontier (single worker / a
+            # local run); with N workers the claim SKIP LOCKED splits the work
+            # and this drain just races them.
+            coordinator = RunCoordinator(
+                base=loop,
+                storage=storage,
+                run_job=job,
+                drain=drain_self(storage_url, spec.workspace_id),
+            )
             with _lease_heartbeat(
                 storage_url=storage_url,
                 workspace_id=job.workspace_id,
                 job_id=job.id,
                 owner=owner,
             ):
-                asyncio.run(loop.run())
+                asyncio.run(coordinator.run())
             mark_run_job_succeeded(storage, job=job)
             return True
         except Exception as exc:

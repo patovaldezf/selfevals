@@ -123,20 +123,21 @@ def test_build_runner_uses_injected_fake() -> None:
 
 
 def test_cli_run_example_end_to_end(
-    capsys: pytest.CaptureFixture[str],
+    db_url: str, synchronous_run_queue: None, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`selfevals run examples/hello_llm/experiment.yaml --no-persist` must
-    complete and produce a JSON OptimizationResult with one iteration per
-    temperature value, and the cool temperature must be best."""
+    """`selfevals run examples/hello_llm/experiment.yaml` must complete and
+    produce a JSON OptimizationResult with one iteration per temperature value,
+    and the cool temperature must be best."""
     # Don't leak registered grader names across tests.
     for name in ("rules", "rubric_judge"):
         unregister_grader(name)
 
     rc = app(
         [
+            "--db",
+            db_url,
             "run",
             str(EXPERIMENT),
-            "--no-persist",
             "--format",
             "json",
         ]
@@ -157,14 +158,14 @@ def test_cli_run_example_end_to_end(
 
 
 def test_cli_run_unregisters_specs_after_run(
-    capsys: pytest.CaptureFixture[str],
+    db_url: str, synchronous_run_queue: None, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The CLI must clean the grader registry after `run` so consecutive
     invocations don't leak named factories."""
     for name in ("rules", "rubric_judge"):
         unregister_grader(name)
     before = set(available_graders())
-    rc = app(["run", str(EXPERIMENT), "--no-persist", "--format", "json"])
+    rc = app(["--db", db_url, "run", str(EXPERIMENT), "--format", "json"])
     assert rc == 0, capsys.readouterr().err
     capsys.readouterr()  # drain stdout
     after = set(available_graders())

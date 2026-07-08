@@ -1,7 +1,7 @@
-"""Offline field-sales copilot example.
+"""Offline route-ops copilot example.
 
 This example is intentionally domain-generic: it models the patterns common to
-field-sales assistants without naming any real product, company, or customer.
+route-ops assistants without naming any real product, company, or customer.
 It is meant to teach how to evaluate an agentic workflow, not a toy classifier:
 
 - read tools gather route/account/task context,
@@ -23,7 +23,7 @@ from selfevals.runner.adapters import AdapterRequest, AdapterResponse, AdapterTo
 
 
 def run(req: AdapterRequest) -> AdapterResponse:
-    """Run a deterministic field-sales copilot turn."""
+    """Run a deterministic route-ops copilot turn."""
     level = float(req.get_model_param("level", 0.0))
     complete = level >= 0.5
     story = str((req.context or {}).get("story", "route_read"))
@@ -217,5 +217,5 @@ def _response(
         stop_reason="end_turn",
         tokens_input=42,
         tokens_output=24,
-        provider_metadata={"provider": "offline", "model": "field-sales-copilot-fixture"},
+        provider_metadata={"provider": "offline", "model": "route-ops-copilot-fixture"},
     )

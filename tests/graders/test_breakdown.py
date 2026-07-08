@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from selfevals.graders.base import BreakdownNode, GradeLabel, GradeResult
-from selfevals.optimization.loop import _to_trace_grader_result
+from selfevals.optimization.scenario_exec import to_trace_grader_result
 
 
 def _sample_tree() -> BreakdownNode:
@@ -102,7 +102,7 @@ def test_conversion_to_persistible_preserves_breakdown_as_dict() -> None:
         score=0.6,
         breakdown=_sample_tree(),
     )
-    persisted = _to_trace_grader_result(grade)
+    persisted = to_trace_grader_result(grade)
     assert persisted.breakdown is not None
     # round-trips back into a BreakdownNode equal to the original
     assert BreakdownNode.from_dict(persisted.breakdown) == _sample_tree()
@@ -113,5 +113,5 @@ def test_conversion_to_persistible_preserves_breakdown_as_dict() -> None:
 
 def test_conversion_to_persistible_breakdown_none_when_absent() -> None:
     grade = GradeResult(grader="g", label=GradeLabel.PASS, reason="ok", score=1.0)
-    persisted = _to_trace_grader_result(grade)
+    persisted = to_trace_grader_result(grade)
     assert persisted.breakdown is None
