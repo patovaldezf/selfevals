@@ -177,10 +177,21 @@ def list_rounds(
     storage: StorageInterface, *, workspace_id: str, arena_id: str
 ) -> list[ArenaRoundResponse]:
     with storage.open(workspace_id) as scope:
-        rounds = scope.list_entities(
-            ArenaRound, ListFilter(where={"arena_id": arena_id}, order_by="index", order_desc=False)
-        )
-    return [_round_view(r) for r in rounds if isinstance(r, ArenaRound)]
+        round_ids = [
+            r.id
+            for r in scope.list_entities(
+                ArenaRound, ListFilter(where={"arena_id": arena_id}, order_by="index", order_desc=False)
+            )
+            if isinstance(r, ArenaRound)
+        ]
+    # Sync each round against its child experiments' current state — a listed
+    # round otherwise never advances past "running" once launch_round returns.
+    rounds = [
+        arena_service.refresh_round_status(storage, workspace_id=workspace_id, round_id=rid)
+        for rid in round_ids
+    ]
+    rounds.sort(key=lambda r: r.index)
+    return [_round_view(r) for r in rounds]
 
 
 def get_round(

@@ -227,6 +227,14 @@ def test_register_variant_and_launch_round_end_to_end(
         time.sleep(0.2)
     assert final_round["state"] == "completed"
 
+    # The list endpoint must reflect the same synced state as the detail
+    # endpoint — regression coverage for a bug where GET .../rounds returned
+    # the round frozen at its dispatch-time "running" snapshot forever.
+    list_res = c.get(f"/api/workspaces/{WS}/arenas/{arena_id}/rounds")
+    assert list_res.status_code == 200
+    listed_round = next(r for r in list_res.json() if r["id"] == round_id)
+    assert listed_round["state"] == "completed"
+
     bundle_res = c.get(f"/api/workspaces/{WS}/arenas/{arena_id}/bundle")
     assert bundle_res.status_code == 200, bundle_res.text
     bundle = bundle_res.json()
