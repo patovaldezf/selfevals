@@ -5,10 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [0.14.0] - 2026-07-09
 
 ### Added
 
+- **Feature Arena (F1-F5): bake-offs paralelos entre variantes de código.**
+  Corre el mismo dataset contra distintas variantes de código (checkouts en
+  git worktrees aislados) y compara resultados lado a lado:
+  - **F1 — bake-offs vía git worktrees.** `arena/service.py` +
+    `arena/worktrees.py` materializan cada variante registrada (sobre un git
+    ref) en un worktree detached propio; cada ronda lanza un `Experiment`
+    independiente por variante a través del pipeline de runs existente.
+  - **F2 — bundle cross-variante + skill `arena-iterate`.** Un bundle JSON
+    agrega leaderboard, costo y failure modes de todas las variantes de una
+    ronda para que un coding agent decida el siguiente paso sin tocar HTTP.
+  - **F3 — CLI `selfevals arena`.** `create`/`variant add`/`round`/`bundle`/
+    `promote`, más el fix de estado stale en rounds.
+  - **F4 — pantalla Arena en el web UI.** Alta, variantes, rondas y
+    leaderboard visual sobre el mismo `arena/service.py`.
+  - **F5 — GC de worktrees, convergencia y presupuesto de costo.** Detecta
+    convergencia entre variantes para no seguir corriendo rondas inútiles,
+    gatea una ronda contra un presupuesto de costo, y libera disco de
+    worktrees de variantes ya terminadas.
+  - `promote_winner` nunca mutza git — devuelve comandos copy-paste para que
+    el merge lo decida un humano (o el propio coding agent) deliberadamente.
 - **Conjunto de skills de consumo + auto-instalación.** Las skills agent-facing
   pasan de 2 a 7 y cubren el ciclo completo para que un coding agent exprima el
   framework: `evaluate-this-repo` (arranque autónomo "monta evals para este
@@ -26,8 +46,27 @@ Versions follow [SemVer](https://semver.org/).
 
 ### Changed
 
+- **Cierre de deuda técnica (8 PRs).** `cli/commands.py` (764 líneas) partido
+  por dominio en `cli/*_commands.py` + `cli/_common.py`; mappers Postgres
+  (`experiment`/`eval_case`/`iteration_record`) con el patrón
+  free-function-delegate ya usado en `trace.py`; `Executor`/
+  `MultiTurnExecutor`/`UserSimulator`/`TraceMapper`/`TraceRecorder` reducidos;
+  `OptimizationLoop`/`JudgePanelGrader`/`TrajectoryGrader`/
+  `deterministic.grade` partidos; ambas páginas Svelte pesadas (experiment
+  1387→197 líneas, trace 967→117) extraídas a componentes; **`tests/` bajo
+  `mypy --strict`** (bajó de ~280 errores en 37 archivos a 0 — `mypy.files`
+  ahora cubre `src/selfevals` y `tests`, gate de CI sobre ambos). E2E de CI
+  arreglado (Redis + worker en el job).
+- **Fix de CI: `pytest-cov` bajo Arena.** Cuando `pytest-cov` no resuelve su
+  config file por auto-detect, propaga `COV_CORE_CONFIG` sin path — un
+  subproceso Python con `cwd` distinto (el worktree de una variante Arena)
+  no encuentra `pyproject.toml` ahí y arranca su propia sesión de coverage
+  sin `branch=True`, rompiendo el combine final. CI ahora pasa
+  `--cov-config=pyproject.toml` explícito; `CliCommandAdapter` además limpia
+  las vars `COV_CORE_*` del entorno que hereda el subproceso del agente,
+  como defensa adicional.
 - **Docs Postgres-only (freshness).** Barrido de referencias stale a SQLite como
-  storage default: `docs/STATUS.md` (→v0.13.0), `docs/eval_config.md`,
+  storage default: `docs/STATUS.md`, `docs/eval_config.md`,
   `docs/json_report_schema.md`, `docs/api_reference.md` (§Storage, sin fallback
   SQLite ni `db_path` SQLite), `ARCHITECTURE.md`, `docs/FRONTEND.md` (diagrama
   Postgres; API read-write; `selfevals serve` existe), `docs/troubleshooting.md`

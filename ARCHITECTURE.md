@@ -1,6 +1,6 @@
 # selfevals — Arquitectura
 
-> Estado: documento de arquitectura (selfevals v0.13.0, Postgres-only). Es la fuente de
+> Estado: documento de arquitectura (selfevals v0.14.0, Postgres-only). Es la fuente de
 > verdad sobre **qué vive dónde y por qué** en el repo. No describe la
 > implementación de cada módulo; fija las piezas, sus fronteras y las utilidades
 > reusables. Regla del repo: **verificar reportes contra el código antes de
@@ -102,9 +102,10 @@ Antes de escribir un helper, revisa si ya existe aquí (combate duplicación).
 
 ## Estado
 
-v0.13.0 (Postgres-only). Per-grader scoring, grid-exhaust, datasets de primer
-orden, error-analysis loop y graders many-to-many/funnel implementados; core +
-CLI + storage (Postgres) + reporter vivos. API web y captura de traces tras
-extras opcionales. `web/` y `landing/` son subproyectos JS independientes.
-`docs/STATUS.md` manda sobre qué funciona hoy; verifica ahí (y en el código)
-antes de tratar un reporte como bug.
+v0.14.0 (Postgres-only). Per-grader scoring, grid-exhaust, datasets de primer
+orden, error-analysis loop, graders many-to-many/funnel y Feature Arena
+(bake-offs paralelos sobre variantes de código vía git worktrees, F1-F5)
+implementados; core + CLI + storage (Postgres) + reporter vivos. API web y
+captura de traces tras extras opcionales. `web/` y `landing/` son
+subproyectos JS independientes. `docs/STATUS.md` manda sobre qué funciona
+hoy; verifica ahí (y en el código) antes de tratar un reporte como bug.

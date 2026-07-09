@@ -1,4 +1,4 @@
-# Status — v0.13.0
+# Status — v0.14.0
 
 This file is the honest snapshot of what selfevals can and cannot do
 today. Updated on every release; the CHANGELOG records what _changed_,
@@ -7,9 +7,17 @@ this file records what _is_.
 ## What works end-to-end
 
 - **CLI**: `init`, `workspace`, `experiment`, `iteration`, `report`,
-  `run`, `compare`, `estimate`, `baseline`, `regression`. Every
+  `run`, `compare`, `estimate`, `baseline`, `regression`, `arena`. Every
   subcommand has a one-line description and a copy-paste `Example:`
   epilog.
+- **Feature Arena** (F1-F5): parallel bake-offs between code variants —
+  register variants on different git refs (materialized into isolated
+  worktrees), launch a round that runs one `Experiment` per variant
+  through the existing run pipeline, compare leaderboards, and promote a
+  winner (copy-paste git commands, never an auto-merge). CLI (`selfevals
+  arena`), HTTP API (`/arenas`), and a web screen all share
+  `arena/service.py`. Cost budget + convergence detection gate a round
+  before it launches; worktree GC reclaims disk for finished variants.
 - **Regression gate + dataset baseline**: the first run that completes
   on a dataset auto-registers its best iteration as that dataset's
   baseline (`DatasetBaseline`, idempotent — a later better run does not

@@ -4,7 +4,7 @@
 
 Framework de evals AI-native auto-mejorante para agentes. Corre experimentos
 (search space x cases x reps) con grading concurrente, optimiza y reporta.
-Python >=3.12, uv, version 0.13.0. Layout `src/`, package `selfevals`.
+Python >=3.12, uv, version 0.14.0. Layout `src/`, package `selfevals`.
 Deps core mínimas (pydantic, pyyaml, httpx); extras opcionales por proveedor
 (`[anthropic]`, `[openai]`, `[telemetry]`, `[web]`...) que se lazy-importan.
 Repo: github.com/patovaldezf/selfevals.
@@ -13,12 +13,14 @@ Repo: github.com/patovaldezf/selfevals.
 
 - NO hay `config/`. El authoring surface es YAML (`evals/experiments/*.yaml`);
   `repo/loader.py` lo hidrata a `ExperimentSpec` (Pydantic). El loader solo
-  parsea/valida shape — la construcción real de adapters ocurre en `cli/commands.py`.
+  parsea/valida shape — la construcción real de adapters ocurre en `runner/launch.py`.
 - Subpaquetes clave: `graders/` (registrados en `graders/registry.py`),
   `optimization/` (loop, proposers, sampling, aggregator), `runner/` (adapters
   embedded/cli/http, executor, otlp), `storage/` (Postgres-only, migrations,
-  typed mappers, filesystem object store),
-  `repo/loader.py`, `reporter/`, `analysis/`, `api/` (FastAPI, opcional), `cli/`.
+  typed mappers, filesystem object store), `arena/` (bake-offs sobre
+  variantes de código vía git worktrees), `repo/loader.py`, `reporter/`,
+  `analysis/`, `api/` (FastAPI, opcional), `cli/` (comandos partidos por
+  dominio en `cli/*_commands.py` + `cli/_common.py`).
 - **per-grader scoring** (v0.5.0): cada grader puntúa por separado.
 - **grid-exhaust**: el grid proposer agota combinaciones y lanza
   `SearchSpaceExhaustedError` (ver `optimization/proposers.py`).
@@ -40,6 +42,13 @@ Repo: github.com/patovaldezf/selfevals.
   `structured_output`/trace (path selector `graders/_select.py`) y lo puntúa con
   un match builtin o cualquier grader anidado, con gate short-circuit y failure
   modes por nivel.
+- **Feature Arena** (v0.14.0): `arena/service.py` corre bake-offs paralelos
+  entre variantes de código sobre el mismo dataset — cada variante se
+  registra sobre un git ref, se materializa en un worktree aislado
+  (`arena/worktrees.py`), y cada ronda lanza un `Experiment` por variante vía
+  el pipeline de runs existente (`run_launcher.py`). CLI (`selfevals arena`),
+  API (`api/routes/arena.py`) y pantalla web (`web/.../arenas/`) comparten el
+  mismo `arena/service.py`.
 
 ## Convenciones
 
@@ -69,7 +78,7 @@ uv run selfevals --help             # CLI (o `selfevals` con venv activo)
 
 CLI: `init`, `run`, `report`, `compare`, `estimate`, `analyze`, `experiment`,
 `iteration`, `workspace`, `dataset`, `baseline`, `regression`, `failuremode`,
-`skills`, `examples`, `serve`.
+`skills`, `examples`, `serve`, `arena`.
 
 ## Subproyectos (DISTINTOS del core Python)
 
