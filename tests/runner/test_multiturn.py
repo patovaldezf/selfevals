@@ -204,7 +204,9 @@ async def test_collapse_preserves_grader_breakdown_under_turn() -> None:
         [GradeResult(grader="g", label=GradeLabel.PASS, reason="t0", score=1.0, breakdown=rule_tree)]
     ]
     _, collapsed_grades = collapse_conversation_turns(run, grades_per_turn)
-    turn_0 = collapsed_grades[0][0].breakdown.children[0]
+    breakdown = collapsed_grades[0][0].breakdown
+    assert breakdown is not None
+    turn_0 = breakdown.children[0]
     assert turn_0.key == "turn_0"
     # The grader tree's children are grafted under the turn (root level dropped).
     assert [c.key for c in turn_0.children] == ["must_include"]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
@@ -22,7 +23,7 @@ T0 = datetime(2026, 5, 16, 12, 0, 0, tzinfo=UTC).isoformat()
 T1 = datetime(2026, 5, 16, 12, 0, 1, tzinfo=UTC).isoformat()
 
 
-def _imp(spans: list[dict]) -> Trace:
+def _imp(spans: list[dict[str, Any]]) -> Trace:
     return import_otel_spans(
         spans,
         workspace_id=WS,
@@ -270,6 +271,7 @@ def test_message_index_order_is_numeric_not_lexical() -> None:
         [{"span_id": "sp_1", "name": "model", "start_time": T0, "end_time": T1, "attributes": attrs}]
     )
     s = trace.spans[0]
+    assert isinstance(s, LLMCallSpan)
     contents = [m["content"] for m in s.provider_metadata["selfevals.messages_in"]]
     assert contents == [f"msg{i}" for i in range(12)]
 
@@ -294,6 +296,7 @@ def test_openinference_native_wins_when_both_families_present() -> None:
         ]
     )
     s = trace.spans[0]
+    assert isinstance(s, LLMCallSpan)
     assert s.provider_metadata["selfevals.messages_in"] == [{"role": "user", "content": "native"}]
 
 
@@ -310,6 +313,7 @@ def test_no_messages_leaves_hashes_none() -> None:
         ]
     )
     s = trace.spans[0]
+    assert isinstance(s, LLMCallSpan)
     assert s.messages_hash is None
     assert s.output.content_hash is None
     assert "selfevals.messages_in" not in s.provider_metadata
@@ -461,4 +465,4 @@ def test_classification_falls_back_to_kind_field() -> None:
     )
     assert isinstance(trace.spans[0], ToolCallSpan)
     # Sanity: kind enum membership inferred.
-    assert SpanKind.TOOL_CALL == "tool_call"
+    assert SpanKind.TOOL_CALL.value == "tool_call"

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from datetime import UTC, datetime
 
 import pytest
 
 from selfevals.graders.artifact import ArtifactCompletenessGrader
-from selfevals.graders.base import GradeLabel, GraderContext
+from selfevals.graders.base import BreakdownNode, GradeLabel, GraderContext
 from selfevals.graders.llm_judge import LLMJudgeGrader, RubricTemplate
 from selfevals.runner.adapters import AdapterRequest, AdapterResponse, EmbeddedAdapter
 from selfevals.schemas.enums import (
@@ -73,12 +74,14 @@ def _trace() -> Trace:
     )
 
 
-def _ctx(case: EvalCase, artifact: dict[str, object] | None) -> GraderContext:
-    response = AdapterResponse(content=None, structured_output=artifact)
+def _ctx(case: EvalCase, artifact: Mapping[str, object] | None) -> GraderContext:
+    response = AdapterResponse(
+        content=None, structured_output=dict(artifact) if artifact is not None else None
+    )
     return GraderContext(case=case, trace=_trace(), response=response)
 
 
-def _section_child(res_breakdown, section: str):  # type: ignore[no-untyped-def]
+def _section_child(res_breakdown: BreakdownNode | None, section: str) -> BreakdownNode:
     assert res_breakdown is not None
     for child in res_breakdown.children:
         if child.key == f"section:{section}":
@@ -216,6 +219,7 @@ async def test_one_child_per_required_section() -> None:
     case = _case(Expected(required_sections=["a", "b", "c"]))
     res = await ArtifactCompletenessGrader().grade(_ctx(case, {"a": "x", "b": "y", "c": "z"}))
     assert res.label == GradeLabel.PASS
+    assert res.breakdown is not None
     section_children = [c for c in res.breakdown.children if c.key.startswith("section:")]
     assert len(section_children) == 3
     assert {c.key for c in section_children} == {"section:a", "section:b", "section:c"}
@@ -230,6 +234,7 @@ async def test_no_sections_validates_schema_only() -> None:
     res = await ArtifactCompletenessGrader().grade(_ctx(case, {"x": "hello"}))
     assert res.label == GradeLabel.PASS
     assert res.score == 1.0
+    assert res.breakdown is not None
     section_children = [c for c in res.breakdown.children if c.key.startswith("section:")]
     assert section_children == []
 
@@ -261,6 +266,7 @@ async def test_quality_judge_is_advisory_and_never_flips_verdict() -> None:
     assert res.label == GradeLabel.PASS
     assert res.score == 1.0
     # The advisory judge rides along as a weight-0 child and a details entry.
+    assert res.breakdown is not None
     quality_children = [c for c in res.breakdown.children if c.key.startswith("quality:")]
     assert len(quality_children) == 1
     assert quality_children[0].weight == 0.0
@@ -283,6 +289,7 @@ async def test_quality_judge_attached_even_on_fail() -> None:
     # Empty artifact -> deterministic FAIL; judge says PASS but must not flip it.
     res = await ArtifactCompletenessGrader(quality_judge=judge).grade(_ctx(case, {}))
     assert res.label == GradeLabel.FAIL
+    assert res.breakdown is not None
     quality_children = [c for c in res.breakdown.children if c.key.startswith("quality:")]
     assert len(quality_children) == 1
     assert res.details["quality"]["label"] == "pass"

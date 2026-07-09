@@ -66,6 +66,7 @@ def test_agent_turn_captures_parent_child_chain(tmp_path: Path) -> None:
     turn = by_kind[AgentTurnSpan]
     llm_span = by_kind[LLMCallSpan]
     tool_span = by_kind[ToolCallSpan]
+    assert isinstance(tool_span, ToolCallSpan)
     assert llm_span.parent_id == turn.id
     assert tool_span.parent_id == turn.id
     # tool_use_id linkage holds — schema validator passes on build().

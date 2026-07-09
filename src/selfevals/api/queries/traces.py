@@ -14,7 +14,7 @@ from selfevals.api.schemas import (
     ThreadResponse,
     TraceResponse,
 )
-from selfevals.cli.commands import _experiment_iterations
+from selfevals.cli._common import _experiment_iterations
 from selfevals.schemas.eval_case import EvalCase
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.trace import LLMCallSpan, ToolCallSpan, Trace

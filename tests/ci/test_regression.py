@@ -118,7 +118,7 @@ def test_changed_primary_metric_is_flagged_not_silently_passed() -> None:
 
 
 def test_from_confusion_extracts_per_label_f1_dropping_none() -> None:
-    confusion = {
+    confusion: dict[str, object] = {
         "per_label_f1": {"refund": 0.9, "ship": None, "track": 0.7},
     }
     m = BaselineMetrics.from_confusion(

@@ -45,12 +45,14 @@ def test_claim_then_run_then_succeed() -> None:
 
     started = utc_now()
     job.mark_running(worker_id="w1", lease_until=until, started_at=started)
-    assert job.status == ScenarioJobStatus.RUNNING
+    status: ScenarioJobStatus = job.status
+    assert status == ScenarioJobStatus.RUNNING
     assert job.started_at == started
 
     when = utc_now()
     job.mark_succeeded(when)
-    assert job.status == ScenarioJobStatus.SUCCEEDED
+    status2: ScenarioJobStatus = job.status
+    assert status2 == ScenarioJobStatus.SUCCEEDED
     assert job.is_terminal
     assert job.finished_at == when
     assert job.worker_id is None and job.lease_until is None and job.error is None

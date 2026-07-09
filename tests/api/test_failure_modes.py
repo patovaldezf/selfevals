@@ -8,6 +8,8 @@ gate + merge invariant the CLI guarantees.
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -44,12 +46,12 @@ def ctx(db_url: str) -> tuple[TestClient, str]:
     return TestClient(build_app(db_path=db_url)), ws_id
 
 
-def _candidate(client: TestClient, ws: str) -> dict:
+def _candidate(client: TestClient, ws: str) -> dict[str, Any]:
     resp = client.get(f"/api/workspaces/{ws}/failure-modes", params={"status": "candidate"})
     assert resp.status_code == 200, resp.text
     items = resp.json()["items"]
     assert items, "expected a seeded candidate"
-    return items[0]
+    return cast(dict[str, Any], items[0])
 
 
 def test_list_filters_by_status(ctx: tuple[TestClient, str]) -> None:

@@ -15,7 +15,7 @@ import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import yaml
@@ -39,7 +39,7 @@ def _inline_spec(*, max_iterations: int = 2) -> dict[str, Any]:
     rows = [json.loads(line) for line in CASES.read_text().splitlines() if line.strip()]
     raw["dataset"] = {"cases_inline": rows}
     raw["experiment"]["run"]["max_iterations"] = max_iterations
-    return raw
+    return cast(dict[str, Any], raw)
 
 
 @pytest.fixture
@@ -62,7 +62,7 @@ def _poll_state(c: TestClient, ws: str, exp_id: str, *, timeout: float = 15.0) -
     while time.monotonic() < deadline:
         res = c.get(f"/api/workspaces/{ws}/experiments/{exp_id}")
         if res.status_code == 200:
-            state = res.json()["summary"]["state"]
+            state = cast(str, res.json()["summary"]["state"])
             if state in {"completed", "aborted"}:
                 return state
         time.sleep(0.1)

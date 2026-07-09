@@ -36,7 +36,7 @@ from selfevals.api.schemas import (
     TournamentCandidateBody,
 )
 from selfevals.cli import _friendly
-from selfevals.cli.commands import CommandError, _ensure_cwd_on_path, _storage
+from selfevals.cli._common import CommandError, _ensure_cwd_on_path, _storage
 from selfevals.runner.launch import build_loop, ensure_workspace, payload_router_for_db
 from selfevals.storage.factory import resolve_storage_url
 from selfevals.storage.interface import StorageInterface

@@ -75,13 +75,13 @@ from selfevals.schemas.enums import (
 from selfevals.schemas.eval_case import CaseTaxonomy, EvalCase
 
 
-def test_end_to_end_chain_constructable() -> None:
-    # 1. Workspace
+def _make_workspace() -> Workspace:
     ws_id = Workspace.make_id()
-    ws = Workspace(id=ws_id, workspace_id=ws_id, slug="pato", name="Pato workspace")
+    return Workspace(id=ws_id, workspace_id=ws_id, slug="pato", name="Pato workspace")
 
-    # 2. Feature
-    feature = FeatureRegistry(
+
+def _make_feature(ws: Workspace) -> FeatureRegistry:
+    return FeatureRegistry(
         id=FeatureRegistry.make_id(),
         workspace_id=ws.id,
         kind=FeatureKind.PRODUCT_FEATURE,
@@ -89,9 +89,9 @@ def test_end_to_end_chain_constructable() -> None:
         description="Resolve a customer mention to a SKU.",
         default_risk=RiskProfile(overall="medium"),
     )
-    assert feature.primary_feature == "commerce.product_resolution"
 
-    # 3. Agent + Fleet
+
+def _make_agent_and_fleet(ws: Workspace) -> tuple[Agent, AgentFleet]:
     agent = Agent(
         id=Agent.make_id(),
         workspace_id=ws.id,
@@ -108,8 +108,10 @@ def test_end_to_end_chain_constructable() -> None:
         agents=[EntityRef(id=agent.id, version=agent.version)],
         features=["commerce.product_resolution"],
     )
+    return agent, fleet
 
-    # 4. Dataset + Case
+
+def _make_dataset_and_case(ws: Workspace) -> tuple[Dataset, EvalCase]:
     case = EvalCase(
         id=EvalCase.make_id(),
         workspace_id=ws.id,
@@ -134,9 +136,13 @@ def test_end_to_end_chain_constructable() -> None:
         manifest_hash="sha256:deadbeef",
         status=DatasetStatus.ACTIVE,
     )
+    return dataset, case
 
-    # 5. Experiment (handoff, prompt-only)
-    exp = Experiment(
+
+def _make_experiment(
+    ws: Workspace, *, fleet: AgentFleet, agent: Agent, dataset: Dataset
+) -> Experiment:
+    return Experiment(
         id=Experiment.make_id(),
         workspace_id=ws.id,
         name="raise-pass1",
@@ -158,16 +164,10 @@ def test_end_to_end_chain_constructable() -> None:
         run=RunSpec(sandbox=SandboxMode.DRY_RUN),
     )
 
-    # 6. Proposal cleared by editable contract
-    proposal = Proposal(
-        parameters={"prompt": "improved prompt v2"},
-        hypothesis="Adding few-shot examples raises recall.",
-    )
-    proposal.validate_against(exp)
 
-    # 7. Trace from running that proposal
+def _make_trace(ws: Workspace, *, exp: Experiment, agent: Agent, case: EvalCase) -> Trace:
     started = datetime(2026, 5, 16, 12, 0, 0, tzinfo=UTC)
-    trace = Trace(
+    return Trace(
         id=Trace.make_id(),
         workspace_id=ws.id,
         run=RunInfo(
@@ -211,7 +211,10 @@ def test_end_to_end_chain_constructable() -> None:
         ],
     )
 
-    # 8. Iteration + Decision
+
+def _make_iteration_and_decision(
+    ws: Workspace, *, exp: Experiment, trace: Trace, hypothesis: str
+) -> tuple[IterationRecord, DecisionRecord]:
     itr = IterationRecord(
         id=IterationRecord.make_id(),
         workspace_id=ws.id,
@@ -219,7 +222,7 @@ def test_end_to_end_chain_constructable() -> None:
         iteration=1,
         state=IterationState.COMPLETED,
         proposer=ProposerInputs(type=ProposerStrategy.GRID),
-        hypothesis=proposal.hypothesis,
+        hypothesis=hypothesis,
         execution=ExecutionInfo(variant_id="v1", trace_run_ids=[trace.run.run_id]),
         metrics=IterationMetrics(
             primary=MetricObservation(name="pass@1", value=0.87, delta_vs_baseline=0.02),
@@ -238,8 +241,31 @@ def test_end_to_end_chain_constructable() -> None:
         outcome=DecisionOutcome.KEEP_CANDIDATE,
         rationale=DecisionRationale(automated="pass@1=0.87 >= target 0.85, guardrails ok"),
         metrics_snapshot={"pass@1": 0.87},
-        affected_artifacts=[agent.id],
+        affected_artifacts=[],
     )
+    return itr, decision_record
+
+
+def test_end_to_end_chain_constructable() -> None:
+    ws = _make_workspace()
+    feature = _make_feature(ws)
+    assert feature.primary_feature == "commerce.product_resolution"
+
+    agent, fleet = _make_agent_and_fleet(ws)
+    dataset, case = _make_dataset_and_case(ws)
+    exp = _make_experiment(ws, fleet=fleet, agent=agent, dataset=dataset)
+
+    proposal = Proposal(
+        parameters={"prompt": "improved prompt v2"},
+        hypothesis="Adding few-shot examples raises recall.",
+    )
+    proposal.validate_against(exp)
+
+    trace = _make_trace(ws, exp=exp, agent=agent, case=case)
+    itr, decision_record = _make_iteration_and_decision(
+        ws, exp=exp, trace=trace, hypothesis=proposal.hypothesis
+    )
+    decision_record = decision_record.model_copy(update={"affected_artifacts": [agent.id]})
 
     # Everything binds together by workspace_id; ids stay distinct.
     ids = [

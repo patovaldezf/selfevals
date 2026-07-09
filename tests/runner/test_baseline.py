@@ -88,7 +88,7 @@ def _result(spec_dataset_id: str, *, primary: float = 0.8) -> tuple[Optimization
         aggregate=_aggregate(primary),
         case_runs=[],
         iteration_record=record,
-        decision_record=SimpleNamespace(),  # unused by the baseline path
+        decision_record=SimpleNamespace(),  # type: ignore[arg-type]  # unused by the baseline path
     )
     result = OptimizationResult(experiment=SimpleNamespace())  # type: ignore[arg-type]  # audit:ignore[type_ignores] — SimpleNamespace fake stands in for Experiment; the baseline path never reads it
     result.iterations.append(outcome)

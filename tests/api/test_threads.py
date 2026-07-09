@@ -5,11 +5,13 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 
 from selfevals.api.queries import load_thread
 from selfevals.schemas.enums import SandboxMode, TraceState
+from selfevals.schemas.eval_case import EvalCase
 from selfevals.schemas.trace import (
     AgentSnapshotRef,
     EnvironmentInfo,
@@ -19,6 +21,7 @@ from selfevals.schemas.trace import (
     Trace,
 )
 from selfevals.storage.factory import open_storage
+from selfevals.storage.interface import StorageInterface
 from selfevals.storage.seed import seed_workspace
 
 T0 = datetime(2026, 5, 25, 12, 0, 0, tzinfo=UTC)
@@ -59,7 +62,7 @@ def _trace(
 
 
 @pytest.fixture
-def seeded_storage(db_url: str) -> Iterator[object]:
+def seeded_storage(db_url: str) -> Iterator[tuple[StorageInterface, str]]:
     st = open_storage(db_url)
     seeded = seed_workspace(st, slug="t", name="t", user_id="local")
     ws = seeded.workspace
@@ -70,16 +73,17 @@ def seeded_storage(db_url: str) -> Iterator[object]:
         scope.put_entity(_trace(ws.id, thread_id="th_1", position=0, started_offset_s=10, grade="pass"))
         scope.put_entity(_trace(ws.id, thread_id="th_1", position=1, started_offset_s=20, grade="fail"))
         scope.put_entity(_trace(ws.id, thread_id="th_other", position=0, started_offset_s=5))
-    st._test_workspace_id = ws.id  # type: ignore[attr-defined]
     try:
-        yield st
+        yield st, ws.id
     finally:
         st.close()
 
 
-def test_load_thread_orders_by_position_and_projects_grades(seeded_storage: object) -> None:
-    ws_id = seeded_storage._test_workspace_id  # type: ignore[attr-defined]
-    thread = load_thread(seeded_storage, workspace_id=ws_id, thread_id="th_1")
+def test_load_thread_orders_by_position_and_projects_grades(
+    seeded_storage: tuple[StorageInterface, str],
+) -> None:
+    storage, ws_id = seeded_storage
+    thread = load_thread(storage, workspace_id=ws_id, thread_id="th_1")
     assert thread is not None
     assert thread.thread_id == "th_1"
     assert thread.turn_count == 3
@@ -107,12 +111,12 @@ def test_load_thread_falls_back_to_started_at_without_positions(db_url: str) -> 
     st.close()
 
 
-def test_load_thread_unknown_returns_none(seeded_storage: object) -> None:
-    ws_id = seeded_storage._test_workspace_id  # type: ignore[attr-defined]
-    assert load_thread(seeded_storage, workspace_id=ws_id, thread_id="nope") is None
+def test_load_thread_unknown_returns_none(seeded_storage: tuple[StorageInterface, str]) -> None:
+    storage, ws_id = seeded_storage
+    assert load_thread(storage, workspace_id=ws_id, thread_id="nope") is None
 
 
-def _conversation_case(workspace_id: str) -> object:
+def _conversation_case(workspace_id: str) -> EvalCase:
     from selfevals.schemas.enums import (
         DatasetSource,
         DatasetType,
@@ -146,7 +150,9 @@ def _conversation_case(workspace_id: str) -> object:
     )
 
 
-def _turn_trace(workspace_id: str, *, case_id: str, position: int, structured: dict) -> Trace:
+def _turn_trace(
+    workspace_id: str, *, case_id: str, position: int, structured: dict[str, Any]
+) -> Trace:
     from selfevals.schemas.trace import TraceOutputs
 
     started = T0 + timedelta(seconds=position * 10)

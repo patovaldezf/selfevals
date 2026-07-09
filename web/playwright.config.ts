@@ -9,14 +9,21 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  *
  * Topology (mirrors `selfevals serve`):
  *
- *   FastAPI  :8000  ── reads ──▶  e2e/.fixtures/e2e.sqlite
+ *   FastAPI  :8000  ── reads ──▶  Postgres fixture db
  *      ▲
  *      │  /api/* proxied by hooks.server.ts (SELFEVALS_API_BASE)
  *      │
  *   SvelteKit preview :4173  ◀── Playwright drives this
  *
- * Playwright's `webServer` boots BOTH. `globalSetup` seeds the fixture
- * db first (via e2e/fixtures/seed.sh) so the API has real data to serve.
+ * `selfevals run` (used by the seed script) shards execution onto Redis
+ * and needs a worker draining it — `globalSetup` starts a `selfevals
+ * worker runs` process before seeding (see e2e/global-setup.ts). Locally,
+ * `docker compose up -d postgres redis` provides both Postgres (:5433)
+ * and Redis (:6380); CI provides its own service containers.
+ *
+ * Playwright's `webServer` boots BOTH FastAPI and SvelteKit. `globalSetup`
+ * seeds the fixture db first (via e2e/fixtures/seed.sh) so the API has
+ * real data to serve.
  *
  * Ports are deliberately off the dev defaults (8000→API is fine, but the
  * web uses 4173 not 5173) so an `npm run dev` session can run alongside
@@ -43,6 +50,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   globalSetup: './e2e/global-setup.ts',
+  globalTeardown: './e2e/global-teardown.ts',
 
   timeout: 30_000,
   expect: { timeout: 7_000 },

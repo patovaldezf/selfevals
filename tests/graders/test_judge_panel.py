@@ -151,7 +151,7 @@ class ContentEchoJudge(Grader):
 
 @pytest.mark.asyncio
 async def test_majority_two_of_three_passes() -> None:
-    judges = [
+    judges: list[Grader] = [
         FakeJudge("a", label=GradeLabel.PASS),
         FakeJudge("b", label=GradeLabel.PASS),
         FakeJudge("c", label=GradeLabel.FAIL),
@@ -167,7 +167,7 @@ async def test_majority_two_of_three_passes() -> None:
 
 @pytest.mark.asyncio
 async def test_majority_tie_resolves_conservatively() -> None:
-    judges = [
+    judges: list[Grader] = [
         FakeJudge("a", label=GradeLabel.PASS),
         FakeJudge("b", label=GradeLabel.FAIL),
     ]
@@ -179,7 +179,7 @@ async def test_majority_tie_resolves_conservatively() -> None:
 
 @pytest.mark.asyncio
 async def test_unanimous_single_fail_flips_panel() -> None:
-    judges = [
+    judges: list[Grader] = [
         FakeJudge("a", label=GradeLabel.PASS),
         FakeJudge("b", label=GradeLabel.PASS),
         FakeJudge("c", label=GradeLabel.FAIL),
@@ -191,7 +191,7 @@ async def test_unanimous_single_fail_flips_panel() -> None:
 
 @pytest.mark.asyncio
 async def test_unanimous_all_pass() -> None:
-    judges = [
+    judges: list[Grader] = [
         FakeJudge("a", label=GradeLabel.PASS),
         FakeJudge("b", label=GradeLabel.PASS),
     ]
@@ -203,7 +203,7 @@ async def test_unanimous_all_pass() -> None:
 @pytest.mark.asyncio
 async def test_weighted_pesos_decide() -> None:
     # Two fail votes but the single heavy pass outweighs them.
-    judges = [
+    judges: list[Grader] = [
         FakeJudge("heavy", label=GradeLabel.PASS),
         FakeJudge("light1", label=GradeLabel.FAIL),
         FakeJudge("light2", label=GradeLabel.FAIL),
@@ -223,7 +223,7 @@ async def test_weighted_pesos_decide() -> None:
 
 @pytest.mark.asyncio
 async def test_error_and_skipped_excluded_from_vote() -> None:
-    judges = [
+    judges: list[Grader] = [
         FakeJudge("a", label=GradeLabel.PASS),
         FakeJudge("b", label=GradeLabel.ERROR),
         FakeJudge("c", label=GradeLabel.SKIPPED),
@@ -236,7 +236,7 @@ async def test_error_and_skipped_excluded_from_vote() -> None:
 
 @pytest.mark.asyncio
 async def test_all_excluded_yields_error() -> None:
-    judges = [
+    judges: list[Grader] = [
         FakeJudge("a", label=GradeLabel.ERROR),
         FakeJudge("b", label=GradeLabel.SKIPPED),
     ]
@@ -257,11 +257,12 @@ async def test_member_raise_is_captured_as_error() -> None:
         async def grade(self, context: GraderContext) -> GradeResult:
             raise RuntimeError("kaboom")
 
-    judges = [FakeJudge("a", label=GradeLabel.PASS), Boom()]
+    judges: list[Grader] = [FakeJudge("a", label=GradeLabel.PASS), Boom()]
     panel = JudgePanelGrader("panel", judges=judges, consensus_rule="majority")
     res = await panel.grade(_ctx())
     # boom excluded, a wins
     assert res.label == GradeLabel.PASS
+    assert res.breakdown is not None
     boom_child = next(c for c in res.breakdown.children if c.key == "boom")
     assert boom_child.label == GradeLabel.ERROR
     assert "kaboom" in boom_child.reason
@@ -273,7 +274,7 @@ async def test_member_raise_is_captured_as_error() -> None:
 @pytest.mark.asyncio
 async def test_counterfactual_low_variance_keeps_confidence() -> None:
     # Stable judges -> zero variance -> confidence not degraded.
-    judges = [FakeJudge("a", label=GradeLabel.PASS, confidence=0.8)]
+    judges: list[Grader] = [FakeJudge("a", label=GradeLabel.PASS, confidence=0.8)]
     panel = JudgePanelGrader(
         "panel",
         judges=judges,
@@ -317,6 +318,7 @@ async def test_counterfactual_high_variance_is_advisory_does_not_flip() -> None:
     # confidence degraded (0.9 -> 0.45) but label intact
     assert res.confidence == pytest.approx(0.45)
     # advisory weight=0 counterfactual child present
+    assert res.breakdown is not None
     cf_child = next(c for c in res.breakdown.children if c.key == "counterfactual_variance")
     assert cf_child.weight == 0.0
     assert "judge_instability" in cf_child.failure_modes
@@ -327,7 +329,7 @@ async def test_counterfactual_high_variance_is_advisory_does_not_flip() -> None:
 
 @pytest.mark.asyncio
 async def test_spot_check_seeded_emits_annotation_when_selected() -> None:
-    judges = [FakeJudge("a", label=GradeLabel.PASS)]
+    judges: list[Grader] = [FakeJudge("a", label=GradeLabel.PASS)]
     # sample_rate=1.0 always selects; deterministic given the seed.
     panel = JudgePanelGrader(
         "panel",
@@ -350,7 +352,7 @@ async def test_spot_check_seeded_emits_annotation_when_selected() -> None:
 
 @pytest.mark.asyncio
 async def test_spot_check_not_selected_when_rate_zero() -> None:
-    judges = [FakeJudge("a", label=GradeLabel.PASS)]
+    judges: list[Grader] = [FakeJudge("a", label=GradeLabel.PASS)]
     panel = JudgePanelGrader(
         "panel",
         judges=judges,
@@ -368,7 +370,7 @@ async def test_spot_check_not_selected_when_rate_zero() -> None:
 
 @pytest.mark.asyncio
 async def test_calibration_advisory_when_human_label_reachable() -> None:
-    judges = [FakeJudge("a", label=GradeLabel.PASS)]
+    judges: list[Grader] = [FakeJudge("a", label=GradeLabel.PASS)]
     panel = JudgePanelGrader("panel", judges=judges, consensus_rule="majority")
     res = await panel.grade(_ctx(context={"human_label": "pass"}))
     cal = res.details["calibration"]
@@ -381,7 +383,7 @@ async def test_calibration_advisory_when_human_label_reachable() -> None:
 
 @pytest.mark.asyncio
 async def test_calibration_absent_without_human_label() -> None:
-    judges = [FakeJudge("a", label=GradeLabel.PASS)]
+    judges: list[Grader] = [FakeJudge("a", label=GradeLabel.PASS)]
     panel = JudgePanelGrader("panel", judges=judges, consensus_rule="majority")
     res = await panel.grade(_ctx())
     assert "calibration" not in res.details
@@ -454,7 +456,7 @@ async def test_from_defenses_consumes_schema_fields() -> None:
         counterfactuals=CounterfactualSpec(enabled=True, pairs_per_case=2),
         human_spot_check=HumanSpotCheckSpec(enabled=True, sample_rate=1.0),
     )
-    judges = [
+    judges: list[Grader] = [
         FakeJudge("a", label=GradeLabel.PASS),
         FakeJudge("b", label=GradeLabel.FAIL),
     ]
@@ -495,6 +497,7 @@ async def test_panel_reuses_real_llm_judges_via_gather() -> None:
     # weighted mean of explicit member scores (equal weights for majority)
     assert res.score == pytest.approx((0.9 + 0.8 + 0.1) / 3)
     # one breakdown child per real judge, carrying member scores
+    assert res.breakdown is not None
     assert {c.key for c in res.breakdown.children} == {"j1", "j2", "j3"}
     j1 = next(c for c in res.breakdown.children if c.key == "j1")
     assert j1.score == 0.9

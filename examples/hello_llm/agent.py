@@ -170,7 +170,7 @@ def _judge_context(req: AdapterRequest) -> PromptContext:
 
 
 def _call_anthropic_judge(ctx: PromptContext, *, model: str) -> AdapterResponse:
-    import anthropic  # type: ignore[import-not-found]
+    import anthropic
 
     client = anthropic.Anthropic()
     kwargs: dict[str, Any] = {
@@ -200,7 +200,7 @@ def _call_anthropic_judge(ctx: PromptContext, *, model: str) -> AdapterResponse:
 
 
 def _call_anthropic_pairwise_judge(ctx: PromptContext, *, model: str) -> AdapterResponse:
-    import anthropic  # type: ignore[import-not-found]
+    import anthropic
 
     client = anthropic.Anthropic()
     kwargs: dict[str, Any] = {

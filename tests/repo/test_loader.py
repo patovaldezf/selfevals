@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -23,7 +24,7 @@ from selfevals.schemas.enums import DatasetType
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
 
-def _experiment_block() -> dict:
+def _experiment_block() -> dict[str, Any]:
     return {
         "name": "optimize prompt v2",
         "goal": "lift pass@1 on commerce.product_resolution",
@@ -51,7 +52,7 @@ def _experiment_block() -> dict:
     }
 
 
-def _inline_case() -> dict:
+def _inline_case() -> dict[str, Any]:
     return {
         "name": "t",
         "task_type": "x",
@@ -67,7 +68,7 @@ def _inline_case() -> dict:
     }
 
 
-def _write_yaml(tmp_path: Path, body: dict) -> Path:
+def _write_yaml(tmp_path: Path, body: dict[str, Any]) -> Path:
     import yaml as pyyaml
 
     p = tmp_path / "experiment.yaml"
@@ -245,7 +246,7 @@ def test_resolve_agent_callable_unknown_module() -> None:
         resolve_agent_callable(ep)
 
 
-def _body_with_agent(agent: dict) -> dict:
+def _body_with_agent(agent: dict[str, Any]) -> dict[str, Any]:
     return {
         "workspace": WS,
         "experiment": _experiment_block(),
@@ -507,7 +508,7 @@ def test_invalid_dataset_type_in_block_errors(tmp_path: Path) -> None:
 # --- grader spec parsing (set_match, judge_panel) -------------------------
 
 
-def _body_with_graders(graders: list[dict]) -> dict:
+def _body_with_graders(graders: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "workspace": WS,
         "experiment": _experiment_block(),
@@ -679,7 +680,7 @@ def test_unknown_grader_type_lists_supported(tmp_path: Path) -> None:
 # --- funnel grader parsing -------------------------------------------------
 
 
-def _funnel_two_level() -> dict:
+def _funnel_two_level() -> dict[str, Any]:
     return {
         "type": "funnel",
         "name": "identify_funnel",

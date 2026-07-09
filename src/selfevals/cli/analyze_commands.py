@@ -16,7 +16,7 @@ from selfevals._errors import SelfEvalsUserError
 from selfevals.analysis import build_bundle, ingest_result
 from selfevals.analysis.ingest import AnalysisIngestError
 from selfevals.analysis.schemas import AnalysisResult
-from selfevals.cli.commands import _require_entity, _storage
+from selfevals.cli._common import _require_entity, _storage
 from selfevals.schemas.enums import FailureModeStatus
 from selfevals.schemas.failure_mode import FailureMode
 from selfevals.storage.factory import object_store_base_for_storage_url, resolve_storage_url

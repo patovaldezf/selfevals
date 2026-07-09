@@ -196,7 +196,15 @@ class DeterministicGrader(Grader):
         else:
             self._regex = regex_match
 
-    async def grade(self, context: GraderContext) -> GradeResult:
+    def _collect_violations(
+        self, context: GraderContext
+    ) -> tuple[list[_Violation], dict[str, Any], int]:
+        """Run every deterministic rule against `context` and collect violations.
+
+        Returns `(violations, details, missing_required)` — `details` carries
+        loose hint metrics for debug, `missing_required` is the must_include
+        miss count the recall-mode branch in `grade` needs.
+        """
         expected: Expected = context.case.expected
         violations: list[_Violation] = []
 
@@ -263,6 +271,11 @@ class DeterministicGrader(Grader):
             "tools_invoked": invoked,
             "llm_call_count": _llm_call_count(context.trace),
         }
+        return violations, details, missing_required
+
+    async def grade(self, context: GraderContext) -> GradeResult:
+        expected: Expected = context.case.expected
+        violations, details, missing_required = self._collect_violations(context)
 
         # Keys of the rules that failed, so the funnel breakdown can mark each
         # leaf pass/fail. Built once and shared across all return paths.

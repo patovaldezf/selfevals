@@ -14,6 +14,13 @@
 # one workspace, one experiment, two iterations, four traces, two
 # decisions. Idempotent: the db is recreated from scratch every run.
 #
+# `selfevals run` shards execution onto Redis and blocks until a worker
+# drains the job — this script assumes one is already running against
+# $SELFEVALS_REDIS_URL (default the compose :6380). global-setup.ts starts
+# it before calling this script; running seed.sh by hand needs a worker up
+# separately, e.g. `docker compose up -d postgres redis` +
+# `selfevals worker runs --db "$E2E_DB_URL"` in another terminal.
+#
 # Requirements: the project's Python venv with selfevals installed.
 # Resolution order for the interpreter:
 #   1. $SELFEVALS_PYTHON if set

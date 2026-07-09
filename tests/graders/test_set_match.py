@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 
 import pytest
@@ -76,8 +77,10 @@ def _trace() -> Trace:
     )
 
 
-def _ctx(case: EvalCase, structured: dict[str, object] | None) -> GraderContext:
-    response = AdapterResponse(content=None, structured_output=structured)
+def _ctx(case: EvalCase, structured: Mapping[str, object] | None) -> GraderContext:
+    response = AdapterResponse(
+        content=None, structured_output=dict(structured) if structured is not None else None
+    )
     return GraderContext(case=case, trace=_trace(), response=response)
 
 

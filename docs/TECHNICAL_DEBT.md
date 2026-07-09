@@ -40,19 +40,21 @@ flagged as open is now closed.
 - `docs_version_drift` is 0: `pyproject.toml`, `docs/STATUS.md`, and this
   file agree on `0.13.0`. SQLite-era comments in `api/broker.py`,
   `api/sse.py`, `api/run_launcher.py` are gone.
-- `mypy --strict` runs clean on `src/selfevals` (219 source files) and is a
-  CI gate. Pytest coverage is now a CI gate too (`fail_under = 85`, measured
-  ~90%; see `[tool.coverage]` in `pyproject.toml`).
+- `mypy --strict` runs clean on `src/selfevals` and `tests/` (233 + 150
+  source files) and is a CI gate over both. Pytest coverage is now a CI gate
+  too (`fail_under = 85`, measured ~90%; see `[tool.coverage]` in
+  `pyproject.toml`).
 
 ## Verification Snapshot
 
 ```bash
 uv run python scripts/audit_technical_debt.py --json
 uv run ruff check .
-uv run mypy src/selfevals
+uv run mypy src/selfevals tests
 uv run pytest --cov=selfevals --cov-report=term-missing
 cd web && npm run lint && npm run check && npm run build && npm run gen:api:check
 cd landing && npm run lint && npm run build
+docker compose up -d postgres redis && cd web && npm run test:e2e   # E2E (Playwright)
 ```
 
 Audit counts (baseline updated 2026-07-08, after human review of this
@@ -61,9 +63,9 @@ closure effort):
 | Counter | Was (06-28) | Now | Target |
 | --- | ---: | ---: | --- |
 | `broad_exception_catches` | 40 | 23 | keep ≤23, lower opportunistically |
-| `type_ignores` | 131 | 99 | keep ≤99, lower opportunistically |
-| `large_files` | 15 | **7** | 0 or reviewed exceptions |
-| `large_python_symbols` | 20 | **18** | 0 or reviewed exceptions |
+| `type_ignores` | 131 | 81 | keep ≤81, lower opportunistically |
+| `large_files` | 15 | **4** | 0 or reviewed exceptions |
+| `large_python_symbols` | 20 | **6** | 0 or reviewed exceptions |
 | `json_extract` | 5 | 5 | no new usage |
 | `list_entities_calls` | 65 | 65 | prefer typed queries for hot paths |
 | `get_entity_calls` | 51 | 52 | prefer typed queries for hot paths |
@@ -75,67 +77,47 @@ closure effort):
 
 Ranked by what would move the needle most if picked up next.
 
-### 1. `large_files` — 7 remaining
+### 1. `large_files` — 4 remaining
 
-- `src/selfevals/cli/commands.py` (764 lines) — the actual command handler
-  bodies (as opposed to `cli/main.py`'s parser wiring, now split). Splitting
-  this needs the same "which domain does each handler belong to" grouping
-  used for `cli/parsers/`, but the handlers share more helper state.
 - `tests/optimization/test_aggregator.py`, `tests/optimization/test_loop.py`,
   `tests/repo/test_loader.py`, `tests/runner/test_launch_wiring.py` — large
   test files. Split only when touching the module they test, to avoid
   churn-only test reshuffles.
-- `web/src/routes/[workspace]/experiments/[experiment]/+page.svelte` (1387)
-  and `.../traces/[trace]/+page.svelte` (968) — the two heavy Svelte pages.
-  Explicitly deferred during the web split (Phase 3): extracting tab/panel
-  components here needs a careful read of each page's reactive state, higher
-  functional risk than the mechanical route/schema/CLI splits that shipped.
-  Candidate components: experiment header/tabs/drawer/polling hook; trace
-  header/span-panel/detail-panel/payload-renderer/promotion-modal/stream hook.
 
-### 2. `large_python_symbols` — 18 remaining
+`cli/commands.py` (split into domain handlers) and both heavy Svelte pages
+(`experiments/[experiment]/+page.svelte` 1387→197,
+`traces/[trace]/+page.svelte` 968→117) are resolved — see "Resolved Since
+2026-06-28".
 
-Mostly single cohesive classes with real shared state (not mechanically
-splittable the way the CLI parser or trace-span read/write were):
+### 2. `large_python_symbols` — 6 remaining
 
-- `optimization/loop.py::OptimizationLoop` (496) + `_run_iterations` (136) —
+Single cohesive classes with real shared state (not mechanically splittable
+the way the CLI parser or trace-span read/write were):
+
+- `optimization/loop.py::OptimizationLoop` (425) + `_run_iterations` (131) —
   the core loop; every method reads/writes `self.*` run state.
-- `runner/executor.py::Executor` (358), `runner/multiturn.py::MultiTurnExecutor`
-  (187) + `run_case` (177), `runner/simulator.py::UserSimulator` (185) —
-  same shape: cohesive runtime classes.
-- `trace/recorder.py::TraceRecorder` (431) — one recorder, one trace's worth
-  of accumulated state.
-- `storage/postgres/mappers/{experiment,eval_case,iteration_record}.py` and
-  `trace.py::TraceMapper` (post-split, 225) — each mapper is one
-  `EntityMapper` registered once; splitting further means either sub-classing
-  (adds indirection) or the free-function-delegate pattern already used for
-  `trace.py`'s spans (viable follow-up for `experiment.py`'s `upsert`/`_build`,
-  which are 125/175 lines).
+- `runner/executor.py::Executor` (201) — cohesive runtime class.
 - `storage/postgres/storage.py::PostgresStorage` (217) — the `StorageInterface`
   implementation; one class by design.
-- `graders/judge_panel.py::JudgePanelGrader` (405), `graders/trajectory.py::
-  TrajectoryGrader` (249), `graders/deterministic.py::grade` (142) — grader
-  logic; likely splittable into prompt-building/aggregation helpers without
-  changing the registry contract.
-- `tests/schemas/test_cross_entity.py::test_end_to_end_chain_constructable`
-  (193) — one big assertion chain; split by entity when next touched.
+- `trace/recorder.py::TraceRecorder` (392) — one recorder, one trace's worth
+  of accumulated state.
+- `graders/judge_panel.py::JudgePanelGrader` (210) — grader logic; likely
+  splittable into prompt-building/aggregation helpers without changing the
+  registry contract.
 
 None of these are correctness or safety debt — they're readability/size debt
 against the audit's mechanical thresholds. Pick up opportunistically when
 touching the file for a real change, per the plan's "ratchet, not rewrite"
 principle.
 
-### 3. `tests/` is not yet under `mypy --strict`
+### 3. `tests/` is now under `mypy --strict` (resolved)
 
-A first `--strict` pass over `tests/` found ~280 errors across 37 files —
+The first `--strict` pass over `tests/` found ~280 errors across 37 files —
 fixtures typed as `BaseEntity`/`object` instead of the concrete entity,
-`**dict[str, object]` construction of Pydantic models, a few genuinely stale
-`# type: ignore` comments. These are gaps in the tests' own typing, not
-production bugs, and not fixable by loosening `strict` globally (tried;
-even a heavily relaxed per-module override for `tests.*` still left ~280
-real errors). `mypy` `files` is `["src/selfevals"]` only for now. Re-add
-`tests` once a dedicated pass fixes these — do not add it back with a
-loosened `strict` config, that defeats the point.
+narrow `Literal` params on test helpers, untyped generator fixtures, and a
+handful of genuinely stale `# type: ignore` comments. All fixed without
+loosening `strict` anywhere; `mypy` `files` is now
+`["src/selfevals", "tests"]` and both are a clean, CI-gated pass.
 
 ### 4. Auth identity strength
 
@@ -165,6 +147,17 @@ where the volume justifies it.
 - `MultiTurnExecutor`/`Executor` private cross-object access closed.
 - `cli/main.py`'s `_build_parser()` split into `cli/parsers/*.py`.
 - Coverage gate added (`fail_under=85`, CI-enforced).
+- `cli/commands.py` split by domain into `cli/commands/*.py`.
+- Postgres mapper split (`experiment`/`eval_case`/`iteration_record`) applied
+  the free-function-delegate pattern already used for `trace.py`'s spans.
+- `runner`/`trace` symbol reduction: `Executor`/`MultiTurnExecutor`/
+  `UserSimulator`/`TraceMapper`/`TraceRecorder` split into smaller units.
+- `optimization`/`graders` split: `OptimizationLoop`, `JudgePanelGrader`,
+  `TrajectoryGrader`, `deterministic.grade` all reduced.
+- Both heavy Svelte pages extracted into components: experiment page
+  1387→197 lines, trace page 967→117 lines.
+- `tests/` brought under `mypy --strict` (see "Resolved" note above);
+  `mypy` `files` now covers both `src/selfevals` and `tests`.
 - Docs freshness: SQLite-era comments removed from `api/broker.py`,
   `api/sse.py`, `api/run_launcher.py`; `HealthResponse.storage_backend`
   default fixed (`"sqlite"` → `"postgres"`).

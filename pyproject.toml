@@ -191,13 +191,7 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 disallow_any_unimported = true
 no_implicit_reexport = true
-files = ["src/selfevals"]
-# tests/ is intentionally NOT type-checked yet: a first `--strict` pass found
-# ~280 pre-existing errors across 37 files (fixtures typed as BaseEntity/object
-# instead of the concrete entity, **dict(...) construction of Pydantic models,
-# etc.) — real gaps in the tests' own typing, not production bugs, and not
-# fixable by loosening strict globally. Tracked in docs/TECHNICAL_DEBT.md as a
-# dedicated follow-up; add `tests` back to `files` once that pass lands.
+files = ["src/selfevals", "tests"]
 
 [[tool.mypy.overrides]]
 # uvicorn is only present with the [web] extra; api/__main__ imports it under

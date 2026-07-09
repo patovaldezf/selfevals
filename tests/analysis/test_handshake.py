@@ -29,6 +29,7 @@ from selfevals.schemas.trace import (
     GraderResult,
     LLMCallSpan,
     RunInfo,
+    Span,
     Trace,
 )
 from selfevals.storage.factory import open_storage
@@ -40,7 +41,7 @@ EXP = "exp_1"
 
 
 def _failed_trace(ws: str, *, run_id: str, with_message: bool = True) -> Trace:
-    spans = []
+    spans: list[Span] = []
     if with_message:
         spans.append(
             LLMCallSpan(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from collections.abc import Awaitable, Callable
 
 import pytest
 
@@ -33,7 +34,7 @@ class _ScriptedAdapter(AgentAdapter):
         return AdapterResponse(content="ok")
 
 
-def _recording_sleep() -> tuple[list[float], object]:
+def _recording_sleep() -> tuple[list[float], Callable[[float], Awaitable[None]]]:
     recorded: list[float] = []
 
     async def fake_sleep(delay: float) -> None:
