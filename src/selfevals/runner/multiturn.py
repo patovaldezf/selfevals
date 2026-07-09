@@ -37,7 +37,7 @@ from selfevals.runner.adapters import AdapterError, AdapterRequest
 from selfevals.runner.executor import CaseRun, Executor, RepetitionResult
 from selfevals.runner.simulator import SimulatorSpec, UserSimulator
 from selfevals.schemas.enums import MessageRole
-from selfevals.schemas.trace import RunInfo
+from selfevals.schemas.trace import AgentSnapshotRef, RunInfo
 
 if TYPE_CHECKING:
     from selfevals.runner.adapters import AdapterResponse
@@ -115,37 +115,24 @@ class MultiTurnExecutor:
             # passed in a single UserSimulator we reset it at the boundary.
             if simulator is not None:
                 simulator.reset()
-            for position, boundary in enumerate(turns):
-                # Append the scripted messages up to and including this turn's
-                # driving (user/tool) message.
-                history.extend(_message_to_json(m) for m in scripted[boundary.start : boundary.end])
-                run_info = RunInfo(
-                    run_id=new_prefixed_id("run"),
-                    experiment_id=experiment_id,
-                    iteration=iteration,
-                    variant_id=variant_id,
-                    eval_case_id=case.id,
-                    repetition=rep,
-                    thread_id=thread_id,
-                    thread_position=position,
-                )
-                turn_input = _turn_input(case, history)
-                result = await self._executor.run_single(
-                    case=case,
-                    run_info=run_info,
-                    agent_ref=agent_ref,
-                    parameter_overrides=overrides,
-                    input_override=turn_input,
-                )
-                results.append(result)
-                if result.error is not None:
-                    # A turn cannot proceed without the prior reply; stop this
-                    # thread here. The failed turn is recorded.
-                    break
-                history.append(_assistant_reply(result.response))
+            last_result = await _run_scripted_turns(
+                executor=self._executor,
+                case=case,
+                scripted=scripted,
+                turns=turns,
+                history=history,
+                results=results,
+                agent_ref=agent_ref,
+                overrides=overrides,
+                experiment_id=experiment_id,
+                iteration=iteration,
+                variant_id=variant_id,
+                rep=rep,
+                thread_id=thread_id,
+            )
 
             # After scripted turns: optionally let the simulator keep driving.
-            if result.error is not None:
+            if last_result.error is not None:
                 continue
             if simulator is None:
                 # case.input may declare a `simulator:` spec for
@@ -155,75 +142,24 @@ class MultiTurnExecutor:
                 # simulation phase rather than error out.
                 continue
 
-            sim, owns_sim = _coerce_simulator(simulator, sim_spec)
-            position = len(turns)
-            while True:
-                # Termination check against the most recent SUT reply.
-                last_reply = _last_assistant_content(history)
-                if sim.spec.is_success(last_reply) or sim.spec.hit_stop_condition(last_reply):
-                    break
-
-                sim_request = AdapterRequest(
-                    workspace_id=self._executor.workspace_id,
-                    case_id=case.id,
-                    input={"messages": list(history)},
-                    context=case.context,
-                    tools_allowed=[],
-                    parameters={},
-                    metadata={"role_tag": "user_simulator"},
-                )
-                try:
-                    sim_response = await sim.invoke(sim_request)
-                except AdapterError:
-                    # Simulator failure stops the thread; surface as a
-                    # broken turn so callers see the error. We do not run
-                    # the SUT for a missing user turn.
-                    break
-
-                if not sim_response.content:
-                    # Simulator yields empty content => terminate (e.g.
-                    # max_turns hit, scripted_replies exhausted with no
-                    # judge fallback).
-                    break
-
-                simulator_cost_usd += sim_response.cost_usd
-                simulator_turns_emitted += 1
-                history.append(
-                    {
-                        "role": MessageRole.USER.value,
-                        "content": sim_response.content,
-                        "name": "simulator",
-                    }
-                )
-
-                run_info = RunInfo(
-                    run_id=new_prefixed_id("run"),
-                    experiment_id=experiment_id,
-                    iteration=iteration,
-                    variant_id=variant_id,
-                    eval_case_id=case.id,
-                    repetition=rep,
-                    thread_id=thread_id,
-                    thread_position=position,
-                )
-                turn_input = _turn_input(case, history)
-                result = await self._executor.run_single(
-                    case=case,
-                    run_info=run_info,
-                    agent_ref=agent_ref,
-                    parameter_overrides=overrides,
-                    input_override=turn_input,
-                )
-                results.append(result)
-                position += 1
-                if result.error is not None:
-                    break
-                history.append(_assistant_reply(result.response))
-
-            # Owned simulator (built from spec) is short-lived; drop the
-            # reference so a subsequent repetition gets a fresh counter.
-            if owns_sim:
-                sim.reset()
+            sim_cost, sim_turns = await _run_simulator_phase(
+                executor=self._executor,
+                case=case,
+                history=history,
+                results=results,
+                simulator=simulator,
+                sim_spec=sim_spec,
+                agent_ref=agent_ref,
+                overrides=overrides,
+                experiment_id=experiment_id,
+                iteration=iteration,
+                variant_id=variant_id,
+                rep=rep,
+                thread_id=thread_id,
+                start_position=len(turns),
+            )
+            simulator_cost_usd += sim_cost
+            simulator_turns_emitted += sim_turns
 
         return CaseRun(
             case_id=case.id,
@@ -231,6 +167,156 @@ class MultiTurnExecutor:
             simulator_cost_usd=simulator_cost_usd,
             simulator_turns=simulator_turns_emitted,
         )
+
+
+async def _run_scripted_turns(
+    *,
+    executor: Executor,
+    case: EvalCase,
+    scripted: list[Message],
+    turns: list[_Boundary],
+    history: list[dict[str, Any]],
+    results: list[RepetitionResult],
+    agent_ref: AgentSnapshotRef,
+    overrides: dict[str, object],
+    experiment_id: str | None,
+    iteration: int | None,
+    variant_id: str | None,
+    rep: int,
+    thread_id: str,
+) -> RepetitionResult:
+    """Replay one repetition's scripted user/tool turns against the SUT.
+
+    Mutates `history`/`results` in place (appending turns); returns the
+    last `RepetitionResult` so the caller can check whether the thread
+    stopped on an error.
+    """
+    result: RepetitionResult
+    for position, boundary in enumerate(turns):
+        # Append the scripted messages up to and including this turn's
+        # driving (user/tool) message.
+        history.extend(_message_to_json(m) for m in scripted[boundary.start : boundary.end])
+        run_info = RunInfo(
+            run_id=new_prefixed_id("run"),
+            experiment_id=experiment_id,
+            iteration=iteration,
+            variant_id=variant_id,
+            eval_case_id=case.id,
+            repetition=rep,
+            thread_id=thread_id,
+            thread_position=position,
+        )
+        turn_input = _turn_input(case, history)
+        result = await executor.run_single(
+            case=case,
+            run_info=run_info,
+            agent_ref=agent_ref,
+            parameter_overrides=overrides,
+            input_override=turn_input,
+        )
+        results.append(result)
+        if result.error is not None:
+            # A turn cannot proceed without the prior reply; stop this
+            # thread here. The failed turn is recorded.
+            break
+        history.append(_assistant_reply(result.response))
+    return result
+
+
+async def _run_simulator_phase(
+    *,
+    executor: Executor,
+    case: EvalCase,
+    history: list[dict[str, Any]],
+    results: list[RepetitionResult],
+    simulator: UserSimulator,
+    sim_spec: SimulatorSpec | None,
+    agent_ref: AgentSnapshotRef,
+    overrides: dict[str, object],
+    experiment_id: str | None,
+    iteration: int | None,
+    variant_id: str | None,
+    rep: int,
+    thread_id: str,
+    start_position: int,
+) -> tuple[float, int]:
+    """Drive simulator-produced turns past the scripted ones for one thread.
+
+    Mutates `history`/`results` in place (appending turns); returns the
+    simulator's aggregate cost and turn count for this repetition.
+    """
+    sim, owns_sim = _coerce_simulator(simulator, sim_spec)
+    position = start_position
+    simulator_cost_usd = 0.0
+    simulator_turns_emitted = 0
+    while True:
+        # Termination check against the most recent SUT reply.
+        last_reply = _last_assistant_content(history)
+        if sim.spec.is_success(last_reply) or sim.spec.hit_stop_condition(last_reply):
+            break
+
+        sim_request = AdapterRequest(
+            workspace_id=executor.workspace_id,
+            case_id=case.id,
+            input={"messages": list(history)},
+            context=case.context,
+            tools_allowed=[],
+            parameters={},
+            metadata={"role_tag": "user_simulator"},
+        )
+        try:
+            sim_response = await sim.invoke(sim_request)
+        except AdapterError:
+            # Simulator failure stops the thread; surface as a
+            # broken turn so callers see the error. We do not run
+            # the SUT for a missing user turn.
+            break
+
+        if not sim_response.content:
+            # Simulator yields empty content => terminate (e.g.
+            # max_turns hit, scripted_replies exhausted with no
+            # judge fallback).
+            break
+
+        simulator_cost_usd += sim_response.cost_usd
+        simulator_turns_emitted += 1
+        history.append(
+            {
+                "role": MessageRole.USER.value,
+                "content": sim_response.content,
+                "name": "simulator",
+            }
+        )
+
+        run_info = RunInfo(
+            run_id=new_prefixed_id("run"),
+            experiment_id=experiment_id,
+            iteration=iteration,
+            variant_id=variant_id,
+            eval_case_id=case.id,
+            repetition=rep,
+            thread_id=thread_id,
+            thread_position=position,
+        )
+        turn_input = _turn_input(case, history)
+        result = await executor.run_single(
+            case=case,
+            run_info=run_info,
+            agent_ref=agent_ref,
+            parameter_overrides=overrides,
+            input_override=turn_input,
+        )
+        results.append(result)
+        position += 1
+        if result.error is not None:
+            break
+        history.append(_assistant_reply(result.response))
+
+    # Owned simulator (built from spec) is short-lived; drop the
+    # reference so a subsequent repetition gets a fresh counter.
+    if owns_sim:
+        sim.reset()
+    return simulator_cost_usd, simulator_turns_emitted
 
 
 class _Boundary:

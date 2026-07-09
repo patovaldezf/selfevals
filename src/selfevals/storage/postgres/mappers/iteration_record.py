@@ -5,27 +5,30 @@ IterationDecision) become flat prefixed columns; free-form parameter dicts and
 the funnel/confusion breakdowns become JSONB; variable-length lists
 (trace_run_ids, guardrails, reliability, failure_mode_counts) become child
 tables. ``load`` reassembles the full nested Pydantic model.
+
+Row-flattening/child-table writes and read-side reassembly are split into
+`iteration_record_write.py`/`iteration_record_build.py` (same
+free-function-delegate pattern as `trace_spans_write.py`/
+`trace_spans_read.py`) — this class stays the single `EntityMapper`
+registered for `IterationRecord`, but its body is just the SQL statement +
+delegate calls.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from psycopg.types.json import Jsonb
-
-from selfevals.schemas.iteration import (
-    ExecutionInfo,
-    IterationDecision,
-    IterationMetrics,
-    IterationRecord,
-    MetricObservation,
-    ProposerInputs,
-)
+from selfevals.schemas.iteration import IterationRecord
 from selfevals.storage.postgres.mappers.base import (
     SHARED_COLUMNS,
     EntityMapper,
     register_mapper,
     shared_values,
+)
+from selfevals.storage.postgres.mappers.iteration_record_build import build_iteration_record
+from selfevals.storage.postgres.mappers.iteration_record_write import (
+    iteration_record_row_values,
+    write_iteration_record_children,
 )
 
 # Main-table columns after the shared ones, in insert order.
@@ -71,43 +74,7 @@ class IterationRecordMapper(EntityMapper[IterationRecord]):
     queryable_columns = frozenset({*SHARED_COLUMNS, "experiment_id", "iteration", "state"})
 
     def upsert(self, cur: Any, entity: IterationRecord) -> None:
-        e = entity
-        m = e.metrics
-        d = e.decision
-        values = [
-            *shared_values(e),
-            e.experiment_id,
-            e.iteration,
-            e.parent_iteration,
-            e.state.value,
-            e.hypothesis,
-            Jsonb(e.proposed_parameters),
-            e.duration_seconds,
-            e.cost_usd,
-            # ProposerInputs
-            e.proposer.type.value,
-            Jsonb(e.proposer.strategy_parameters),
-            list(e.proposer.iterations_consulted),
-            list(e.proposer.failure_modes_consulted),
-            # ExecutionInfo
-            e.execution.variant_id,
-            Jsonb(e.execution.ran_against),
-            # IterationMetrics
-            m is not None,
-            m.primary.name if m else None,
-            m.primary.value if m else None,
-            m.primary.delta_vs_baseline if m else None,
-            m.cost_usd if m else None,
-            m.duration_seconds if m else None,
-            m.error_rate if m else None,
-            Jsonb(m.funnel) if m else None,
-            Jsonb(m.confusion) if (m and m.confusion is not None) else None,
-            # IterationDecision
-            d is not None,
-            d.outcome.value if d else None,
-            d.rationale if d else None,
-            d.next_action if d else None,
-        ]
+        values = iteration_record_row_values(shared_values(entity), entity)
         placeholders = ", ".join(["%s"] * len(_ALL_COLUMNS))
         updates = ", ".join(
             f"{c} = EXCLUDED.{c}" for c in _ALL_COLUMNS if c not in ("id", "created_at")
@@ -120,46 +87,7 @@ class IterationRecordMapper(EntityMapper[IterationRecord]):
             """,
             values,
         )
-        # Replace child rows (idempotent on update).
-        cur.execute(
-            "DELETE FROM iteration_trace_runs WHERE iteration_record_id = %s", (e.id,)
-        )
-        for pos, trace_run_id in enumerate(e.execution.trace_run_ids):
-            cur.execute(
-                "INSERT INTO iteration_trace_runs "
-                "(iteration_record_id, position, trace_run_id) VALUES (%s, %s, %s)",
-                (e.id, pos, trace_run_id),
-            )
-        cur.execute(
-            "DELETE FROM iteration_guardrails WHERE iteration_record_id = %s", (e.id,)
-        )
-        cur.execute(
-            "DELETE FROM iteration_reliability WHERE iteration_record_id = %s", (e.id,)
-        )
-        cur.execute(
-            "DELETE FROM iteration_failure_mode_counts WHERE iteration_record_id = %s",
-            (e.id,),
-        )
-        if m is not None:
-            for pos, g in enumerate(m.guardrails):
-                cur.execute(
-                    "INSERT INTO iteration_guardrails "
-                    "(iteration_record_id, position, name, value, delta_vs_baseline) "
-                    "VALUES (%s, %s, %s, %s, %s)",
-                    (e.id, pos, g.name, g.value, g.delta_vs_baseline),
-                )
-            for metric_name, value in m.reliability.items():
-                cur.execute(
-                    "INSERT INTO iteration_reliability "
-                    "(iteration_record_id, metric_name, value) VALUES (%s, %s, %s)",
-                    (e.id, metric_name, value),
-                )
-            for failure_mode, count in m.failure_mode_counts.items():
-                cur.execute(
-                    "INSERT INTO iteration_failure_mode_counts "
-                    "(iteration_record_id, failure_mode, count) VALUES (%s, %s, %s)",
-                    (e.id, failure_mode, count),
-                )
+        write_iteration_record_children(cur, entity)
 
     def load(self, cur: Any, workspace_id: str, entity_id: str) -> IterationRecord | None:
         cur.execute(
@@ -170,7 +98,7 @@ class IterationRecordMapper(EntityMapper[IterationRecord]):
         row = cur.fetchone()
         if row is None:
             return None
-        return self._build(cur, row)
+        return build_iteration_record(cur, row, _ALL_COLUMNS)
 
     def load_many(
         self,
@@ -197,95 +125,7 @@ class IterationRecordMapper(EntityMapper[IterationRecord]):
             params.extend([limit, offset])
         cur.execute(sql, params)
         rows = cur.fetchall()
-        return [self._build(cur, row) for row in rows]
-
-    def _build(self, cur: Any, row: tuple[Any, ...]) -> IterationRecord:
-        d = dict(zip(_ALL_COLUMNS, row, strict=True))
-        rid = d["id"]
-        # Child rows.
-        cur.execute(
-            "SELECT trace_run_id FROM iteration_trace_runs "
-            "WHERE iteration_record_id = %s ORDER BY position",
-            (rid,),
-        )
-        trace_run_ids = [r[0] for r in cur.fetchall()]
-
-        metrics: IterationMetrics | None = None
-        if d["metrics_present"]:
-            cur.execute(
-                "SELECT name, value, delta_vs_baseline FROM iteration_guardrails "
-                "WHERE iteration_record_id = %s ORDER BY position",
-                (rid,),
-            )
-            guardrails = [
-                MetricObservation(name=n, value=v, delta_vs_baseline=dvb)
-                for n, v, dvb in cur.fetchall()
-            ]
-            cur.execute(
-                "SELECT metric_name, value FROM iteration_reliability "
-                "WHERE iteration_record_id = %s ORDER BY metric_name",
-                (rid,),
-            )
-            reliability = {name: value for name, value in cur.fetchall()}
-            cur.execute(
-                "SELECT failure_mode, count FROM iteration_failure_mode_counts "
-                "WHERE iteration_record_id = %s ORDER BY failure_mode",
-                (rid,),
-            )
-            failure_mode_counts = {fm: count for fm, count in cur.fetchall()}
-            metrics = IterationMetrics(
-                primary=MetricObservation(
-                    name=d["metrics_primary_name"],
-                    value=d["metrics_primary_value"],
-                    delta_vs_baseline=d["metrics_primary_delta_vs_baseline"],
-                ),
-                guardrails=guardrails,
-                reliability=reliability,
-                cost_usd=d["metrics_cost_usd"],
-                duration_seconds=d["metrics_duration_seconds"],
-                error_rate=d["metrics_error_rate"],
-                failure_mode_counts=failure_mode_counts,
-                funnel=d["metrics_funnel"] or {},
-                confusion=d["metrics_confusion"],
-            )
-
-        decision: IterationDecision | None = None
-        if d["decision_present"]:
-            decision = IterationDecision(
-                outcome=d["decision_outcome"],
-                rationale=d["decision_rationale"],
-                next_action=d["decision_next_action"],
-            )
-
-        return IterationRecord(
-            id=d["id"],
-            workspace_id=d["workspace_id"],
-            version=d["version"],
-            created_at=d["created_at"],
-            updated_at=d["updated_at"],
-            deleted_at=d["deleted_at"],
-            experiment_id=d["experiment_id"],
-            iteration=d["iteration"],
-            parent_iteration=d["parent_iteration"],
-            state=d["state"],
-            proposer=ProposerInputs(
-                type=d["proposer_type"],
-                strategy_parameters=d["proposer_strategy_parameters"],
-                iterations_consulted=d["proposer_iterations_consulted"],
-                failure_modes_consulted=d["proposer_failure_modes_consulted"],
-            ),
-            hypothesis=d["hypothesis"],
-            proposed_parameters=d["proposed_parameters"],
-            execution=ExecutionInfo(
-                variant_id=d["execution_variant_id"],
-                ran_against=d["execution_ran_against"],
-                trace_run_ids=trace_run_ids,
-            ),
-            metrics=metrics,
-            decision=decision,
-            duration_seconds=d["duration_seconds"],
-            cost_usd=d["cost_usd"],
-        )
+        return [build_iteration_record(cur, row, _ALL_COLUMNS) for row in rows]
 
 
 register_mapper(IterationRecordMapper())

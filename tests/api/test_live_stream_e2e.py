@@ -18,8 +18,9 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -37,7 +38,7 @@ _SUMMARY_KEYS = {"id", "parent_id", "kind", "name", "started_at", "duration_ms",
 
 
 @pytest.fixture(autouse=True)
-def _reset_broker() -> None:
+def _reset_broker() -> Generator[None, None, None]:
     reset_for_tests()
     yield
     reset_for_tests()
@@ -50,7 +51,7 @@ def _inline_spec() -> dict[str, Any]:
     rows = [json.loads(line) for line in CASES.read_text().splitlines() if line.strip()]
     raw["dataset"] = {"cases_inline": rows}
     raw["experiment"]["run"]["max_iterations"] = 1
-    return raw
+    return cast(dict[str, Any], raw)
 
 
 class _SpySink:
@@ -88,7 +89,7 @@ def _poll_state(c: TestClient, exp_id: str, *, timeout: float = 15.0) -> str:
     while time.monotonic() < deadline:
         res = c.get(f"/api/workspaces/{WS}/experiments/{exp_id}")
         if res.status_code == 200:
-            state = res.json()["summary"]["state"]
+            state = cast(str, res.json()["summary"]["state"])
             if state in {"completed", "aborted"}:
                 return state
         time.sleep(0.05)
@@ -108,7 +109,7 @@ def test_run_thread_feeds_the_broker(
             f"/api/workspaces/{WS}/experiments/run", json={"spec_inline": _inline_spec()}
         )
         assert res.status_code == 202
-        exp_id = res.json()["experiment_id"]
+        exp_id = cast(str, res.json()["experiment_id"])
         assert _poll_state(client, exp_id) == "completed"
 
     # The worker built at least one sink and drove its lifecycle (one per drain

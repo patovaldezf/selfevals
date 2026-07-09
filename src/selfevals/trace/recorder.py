@@ -47,20 +47,12 @@ from selfevals.schemas.trace import (
     AgentSnapshotRef,
     AgentTurnSpan,
     CostBreakdown,
-    DecisionSpan,
     EnvironmentInfo,
-    ErrorSpan,
     FinalState,
     GraderResult,
-    GuardrailCheckSpan,
-    HandoffSpan,
-    HumanInterventionSpan,
     LLMCallSpan,
     LLMOutput,
-    MemoryReadSpan,
-    MemoryWriteSpan,
     ReasoningBlock,
-    RetrievalSpan,
     RetrievedDoc,
     RunInfo,
     Span,
@@ -71,6 +63,16 @@ from selfevals.schemas.trace import (
     TraceLink,
     TraceMetrics,
     TraceOutputs,
+)
+from selfevals.trace.recorder_spans import (
+    build_decision_span,
+    build_error_span,
+    build_guardrail_check_span,
+    build_handoff_span,
+    build_human_intervention_span,
+    build_memory_read_span,
+    build_memory_write_span,
+    build_retrieval_span,
 )
 from selfevals.trace.span_sink import NO_OP_SINK, SpanSink
 from selfevals.trace.span_view import span_view
@@ -190,6 +192,81 @@ class _ToolSpanBuilder:
     retry_chain: list[str] = field(default_factory=list)
     sandboxed: bool = False
     side_effects: dict[str, Any] = field(default_factory=dict)
+
+
+def _build_llm_call_span(
+    *,
+    span_id: str,
+    parent_id: str | None,
+    name: str,
+    started_at: datetime,
+    duration_ms: int,
+    builder: _LLMSpanBuilder,
+) -> LLMCallSpan:
+    tokens_per_second = builder.tokens_per_second
+    if tokens_per_second is None and builder.tokens.output > 0 and duration_ms > 0:
+        # Derive throughput from wall-clock when the adapter did not measure
+        # it directly. TTFT stays None unless the adapter streamed and
+        # reported it — we never fabricate a TTFT.
+        tokens_per_second = builder.tokens.output / (duration_ms / 1000)
+    return LLMCallSpan(
+        id=span_id,
+        parent_id=parent_id,
+        name=name,
+        started_at=started_at,
+        duration_ms=duration_ms,
+        provider=builder.provider,
+        model=builder.model,
+        model_version_pinned=builder.model_version_pinned,
+        system_prompt_pointer=builder.system_prompt_pointer,
+        system_prompt_hash=builder.system_prompt_hash,
+        system_prompt_inline=builder.system_prompt_inline,
+        messages_pointer=builder.messages_pointer,
+        messages_hash=builder.messages_hash,
+        messages_inline=builder.messages_inline,
+        tools_offered=builder.tools_offered,
+        tools_offered_hash=builder.tools_offered_hash,
+        params=builder.params,
+        reasoning=builder.reasoning,
+        output=builder.output,
+        tokens=builder.tokens,
+        cost_usd=builder.cost,
+        time_to_first_token_ms=builder.time_to_first_token_ms,
+        tokens_per_second=tokens_per_second,
+        retries=builder.retries,
+        cache_hit=builder.cache_hit,
+        provider_metadata=builder.provider_metadata,
+    )
+
+
+def _build_tool_call_span(
+    *,
+    span_id: str,
+    parent_id: str | None,
+    name: str,
+    started_at: datetime,
+    duration_ms: int,
+    builder: _ToolSpanBuilder,
+) -> ToolCallSpan:
+    return ToolCallSpan(
+        id=span_id,
+        parent_id=parent_id,
+        name=name,
+        started_at=started_at,
+        duration_ms=duration_ms,
+        tool_name=builder.tool_name,
+        tool_version=builder.tool_version,
+        tool_use_id=builder.tool_use_id,
+        args_pointer=builder.args_pointer,
+        args_hash=builder.args_hash,
+        result_pointer=builder.result_pointer,
+        result_hash=builder.result_hash,
+        status=builder.status,
+        error=builder.error,
+        retry_chain=builder.retry_chain,
+        sandboxed=builder.sandboxed,
+        side_effects=builder.side_effects,
+    )
 
 
 class TraceRecorder:
@@ -362,39 +439,13 @@ class TraceRecorder:
         finally:
             self._open_parents.pop()
             duration_ms = int((time.perf_counter() - t0) * 1000)
-            tokens_per_second = builder.tokens_per_second
-            if tokens_per_second is None and builder.tokens.output > 0 and duration_ms > 0:
-                # Derive throughput from wall-clock when the adapter did not
-                # measure it directly. TTFT stays None unless the adapter
-                # streamed and reported it — we never fabricate a TTFT.
-                tokens_per_second = builder.tokens.output / (duration_ms / 1000)
-            span = LLMCallSpan(
-                id=span_id,
+            span = _build_llm_call_span(
+                span_id=span_id,
                 parent_id=parent,
                 name=name,
                 started_at=started_at,
                 duration_ms=duration_ms,
-                provider=builder.provider,
-                model=builder.model,
-                model_version_pinned=builder.model_version_pinned,
-                system_prompt_pointer=builder.system_prompt_pointer,
-                system_prompt_hash=builder.system_prompt_hash,
-                system_prompt_inline=builder.system_prompt_inline,
-                messages_pointer=builder.messages_pointer,
-                messages_hash=builder.messages_hash,
-                messages_inline=builder.messages_inline,
-                tools_offered=builder.tools_offered,
-                tools_offered_hash=builder.tools_offered_hash,
-                params=builder.params,
-                reasoning=builder.reasoning,
-                output=builder.output,
-                tokens=builder.tokens,
-                cost_usd=builder.cost,
-                time_to_first_token_ms=builder.time_to_first_token_ms,
-                tokens_per_second=tokens_per_second,
-                retries=builder.retries,
-                cache_hit=builder.cache_hit,
-                provider_metadata=builder.provider_metadata,
+                builder=builder,
             )
             self._record(span)
             self._llm_call_count += 1
@@ -432,24 +483,13 @@ class TraceRecorder:
             self._open_parents.pop()
             duration_ms = int((time.perf_counter() - t0) * 1000)
             self._record(
-                ToolCallSpan(
-                    id=span_id,
+                _build_tool_call_span(
+                    span_id=span_id,
                     parent_id=parent,
                     name=name,
                     started_at=started_at,
                     duration_ms=duration_ms,
-                    tool_name=builder.tool_name,
-                    tool_version=builder.tool_version,
-                    tool_use_id=builder.tool_use_id,
-                    args_pointer=builder.args_pointer,
-                    args_hash=builder.args_hash,
-                    result_pointer=builder.result_pointer,
-                    result_hash=builder.result_hash,
-                    status=builder.status,
-                    error=builder.error,
-                    retry_chain=builder.retry_chain,
-                    sandboxed=builder.sandboxed,
-                    side_effects=builder.side_effects,
+                    builder=builder,
                 )
             )
             self._tool_call_count += 1
@@ -465,16 +505,14 @@ class TraceRecorder:
         query_pointer: str | None = None,
         query_hash: str | None = None,
     ) -> None:
-        retrieved = retrieved or []
         self._record(
-            RetrievalSpan(
-                id=_new_span_id(),
+            build_retrieval_span(
+                span_id=_new_span_id(),
                 parent_id=self._current_parent(),
                 name=name,
                 started_at=utc_now(),
                 retriever=retriever,
                 top_k_requested=top_k_requested,
-                top_k_returned=len(retrieved),
                 retrieved=retrieved,
                 reranker=reranker,
                 query_pointer=query_pointer,
@@ -484,26 +522,26 @@ class TraceRecorder:
 
     def add_memory_read(self, name: str, *, store: str, hits: list[str], misses: list[str]) -> None:
         self._record(
-            MemoryReadSpan(
-                id=_new_span_id(),
+            build_memory_read_span(
+                span_id=_new_span_id(),
                 parent_id=self._current_parent(),
                 name=name,
                 started_at=utc_now(),
-                memory_store=store,
-                keys_hit=hits,
-                keys_missed=misses,
+                store=store,
+                hits=hits,
+                misses=misses,
             )
         )
 
     def add_memory_write(self, name: str, *, store: str, keys: list[str]) -> None:
         self._record(
-            MemoryWriteSpan(
-                id=_new_span_id(),
+            build_memory_write_span(
+                span_id=_new_span_id(),
                 parent_id=self._current_parent(),
                 name=name,
                 started_at=utc_now(),
-                memory_store=store,
-                keys_written=keys,
+                store=store,
+                keys=keys,
             )
         )
 
@@ -517,22 +555,22 @@ class TraceRecorder:
         confidence: float | None = None,
     ) -> None:
         self._record(
-            DecisionSpan(
-                id=_new_span_id(),
+            build_decision_span(
+                span_id=_new_span_id(),
                 parent_id=self._current_parent(),
                 name=name,
                 started_at=utc_now(),
                 decision_type=decision_type,
                 chosen=chosen,
-                alternatives_considered=alternatives or [],
+                alternatives=alternatives,
                 confidence=confidence,
             )
         )
 
     def add_handoff(self, name: str, *, target: str) -> None:
         self._record(
-            HandoffSpan(
-                id=_new_span_id(),
+            build_handoff_span(
+                span_id=_new_span_id(),
                 parent_id=self._current_parent(),
                 name=name,
                 started_at=utc_now(),
@@ -542,8 +580,8 @@ class TraceRecorder:
 
     def add_human_intervention(self, name: str, *, actor: str, action: str) -> None:
         self._record(
-            HumanInterventionSpan(
-                id=_new_span_id(),
+            build_human_intervention_span(
+                span_id=_new_span_id(),
                 parent_id=self._current_parent(),
                 name=name,
                 started_at=utc_now(),
@@ -554,8 +592,8 @@ class TraceRecorder:
 
     def add_guardrail_check(self, name: str, *, guardrail: str, passed: bool) -> None:
         self._record(
-            GuardrailCheckSpan(
-                id=_new_span_id(),
+            build_guardrail_check_span(
+                span_id=_new_span_id(),
                 parent_id=self._current_parent(),
                 name=name,
                 started_at=utc_now(),
@@ -568,8 +606,8 @@ class TraceRecorder:
         self, name: str, *, error_type: str, message: str, recoverable: bool = False
     ) -> None:
         self._record(
-            ErrorSpan(
-                id=_new_span_id(),
+            build_error_span(
+                span_id=_new_span_id(),
                 parent_id=self._current_parent(),
                 name=name,
                 started_at=utc_now(),

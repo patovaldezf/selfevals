@@ -271,49 +271,56 @@ class UserSimulator(AgentAdapter):
         request: AdapterRequest,
         history: list[dict[str, Any]],
     ) -> AdapterRequest:
-        """Construct the AdapterRequest passed to the judge adapter.
+        return build_judge_request(self._spec, request, history)
 
-        We forward workspace_id / case_id (so the judge's own trace, if it
-        builds one, attributes to the right scope) and embed the persona
-        prompt under `system_prompt` plus the running history under
-        `messages`. Anything else on the original request is dropped: the
-        judge adapter should not see SUT-internal context.
-        """
-        system_prompt = self._render_system_prompt()
-        return AdapterRequest(
-            workspace_id=request.workspace_id,
-            case_id=request.case_id,
-            input={
-                "system_prompt": system_prompt,
-                "messages": history,
-            },
-            context=None,
-            tools_allowed=[],
-            parameters={},
-            metadata={"role_tag": ROLE_TAG_USER_SIMULATOR},
-        )
 
-    def _render_system_prompt(self) -> str:
-        """Plain-text rendering of the spec for the judge adapter.
+def build_judge_request(
+    spec: SimulatorSpec,
+    request: AdapterRequest,
+    history: list[dict[str, Any]],
+) -> AdapterRequest:
+    """Construct the AdapterRequest passed to the judge adapter.
 
-        We keep this dumb on purpose: the simulator does not own prompt
-        engineering. Callers who want a fancier template can subclass and
-        override.
-        """
-        lines = [
-            "You are role-playing a user in a conversation with an AI agent.",
-            f"Persona: {self._spec.persona}",
-            f"Goal: {self._spec.goal}",
-        ]
-        if self._spec.success_criteria:
-            joined = "; ".join(self._spec.success_criteria)
-            lines.append(f"You succeed when the agent's reply includes: {joined}")
-        if self._spec.stop_condition:
-            lines.append(
-                "You give up and stop the conversation if the agent's reply "
-                f"contains: {self._spec.stop_condition}"
-            )
+    We forward workspace_id / case_id (so the judge's own trace, if it
+    builds one, attributes to the right scope) and embed the persona
+    prompt under `system_prompt` plus the running history under
+    `messages`. Anything else on the original request is dropped: the
+    judge adapter should not see SUT-internal context.
+    """
+    return AdapterRequest(
+        workspace_id=request.workspace_id,
+        case_id=request.case_id,
+        input={
+            "system_prompt": render_system_prompt(spec),
+            "messages": history,
+        },
+        context=None,
+        tools_allowed=[],
+        parameters={},
+        metadata={"role_tag": ROLE_TAG_USER_SIMULATOR},
+    )
+
+
+def render_system_prompt(spec: SimulatorSpec) -> str:
+    """Plain-text rendering of `spec` for the judge adapter.
+
+    We keep this dumb on purpose: the simulator does not own prompt
+    engineering. Callers who want a fancier template can build their own.
+    """
+    lines = [
+        "You are role-playing a user in a conversation with an AI agent.",
+        f"Persona: {spec.persona}",
+        f"Goal: {spec.goal}",
+    ]
+    if spec.success_criteria:
+        joined = "; ".join(spec.success_criteria)
+        lines.append(f"You succeed when the agent's reply includes: {joined}")
+    if spec.stop_condition:
         lines.append(
-            "Reply with ONLY the next user message — no narration, no quotes, no role labels."
+            "You give up and stop the conversation if the agent's reply "
+            f"contains: {spec.stop_condition}"
         )
-        return "\n".join(lines)
+    lines.append(
+        "Reply with ONLY the next user message — no narration, no quotes, no role labels."
+    )
+    return "\n".join(lines)

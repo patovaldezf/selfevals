@@ -23,7 +23,7 @@ from selfevals.api.schemas import (
     FunnelResponse,
     IterationSummary,
 )
-from selfevals.cli.commands import (
+from selfevals.cli._common import (
     _experiment_decisions,
     _experiment_iterations,
     _reconstruct_result,

@@ -60,6 +60,7 @@ from selfevals.schemas.fleet import Agent, ModelRef
 from selfevals.schemas.trace import Trace
 from selfevals.schemas.workspace import Workspace
 from selfevals.storage.factory import open_storage
+from selfevals.storage.interface import StorageInterface
 
 WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
@@ -150,7 +151,7 @@ def _passing_adapter() -> EmbeddedAdapter:
 
 def _scoped_loop(
     exp: Experiment, adapter: EmbeddedAdapter, db_url: str, *, workspace_id: str = WS
-) -> tuple[OptimizationLoop, object]:
+) -> tuple[OptimizationLoop, StorageInterface]:
     storage = open_storage(db_url)
     with storage.open(workspace_id) as scope:
         # Derive a unique slug from the workspace id: two loops in one test share
@@ -245,8 +246,8 @@ async def test_failure_modes_consulted_carries_prior_iteration(db_url: str) -> N
     ]
 
 
-def _persisted_traces(storage: object, workspace_id: str = WS) -> list[Trace]:
-    with storage.open(workspace_id) as s:  # type: ignore[attr-defined]
+def _persisted_traces(storage: StorageInterface, workspace_id: str = WS) -> list[Trace]:
+    with storage.open(workspace_id) as s:
         return [t for t in s.list_entities(Trace) if isinstance(t, Trace)]
 
 

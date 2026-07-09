@@ -72,7 +72,7 @@ def test_extra_fields_forbidden() -> None:
 def test_assignment_validated() -> None:
     e = _make()
     with pytest.raises(ValidationError):
-        e.version = -1  # type: ignore[assignment]
+        e.version = -1
 
 
 def test_entity_ref_requires_id() -> None:

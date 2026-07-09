@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import gc
 import urllib.request
+from collections.abc import Iterator
+from typing import Any
 from urllib.parse import urlparse
 
 import pytest
@@ -12,7 +14,7 @@ from selfevals.runner.otlp_receiver import start_receiver
 
 
 @pytest.fixture(autouse=True)
-def _force_gc() -> None:
+def _force_gc() -> Iterator[None]:
     """Force a GC cycle after each test so leftover urllib sockets are
     finalized inside the test rather than triggering a delayed
     ResourceWarning on a later test."""
@@ -20,7 +22,7 @@ def _force_gc() -> None:
     gc.collect()
 
 
-def _make_otlp_protobuf_request(spans: list[dict]) -> bytes:
+def _make_otlp_protobuf_request(spans: list[dict[str, Any]]) -> bytes:
     """Build a minimal ExportTraceServiceRequest protobuf payload."""
     from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
         ExportTraceServiceRequest,
@@ -57,7 +59,7 @@ def _make_otlp_protobuf_request(spans: list[dict]) -> bytes:
         ss.spans.append(proto)
     rs.scope_spans.append(ss)
     request.resource_spans.append(rs)
-    return request.SerializeToString()
+    return bytes(request.SerializeToString())
 
 
 def test_receiver_starts_on_free_port() -> None:
@@ -114,7 +116,7 @@ def test_receiver_buffers_spans_when_no_recorder_bound() -> None:
 def test_receiver_routes_spans_to_bound_recorder() -> None:
     from selfevals._internal.time import utc_now
     from selfevals.schemas.enums import SandboxMode
-    from selfevals.schemas.trace import AgentSnapshotRef, RunInfo
+    from selfevals.schemas.trace import AgentSnapshotRef, LLMCallSpan, RunInfo
     from selfevals.trace.recorder import TraceRecorder
 
     rec = TraceRecorder(
@@ -156,6 +158,7 @@ def test_receiver_routes_spans_to_bound_recorder() -> None:
     trace = rec.build()
     assert any(s.name == "anthropic.messages.create" for s in trace.spans)
     llm = next(s for s in trace.spans if s.name == "anthropic.messages.create")
+    assert isinstance(llm, LLMCallSpan)
     assert llm.provider == "anthropic"
     assert llm.model == "claude-sonnet-4-6"
     assert llm.tokens.input == 100

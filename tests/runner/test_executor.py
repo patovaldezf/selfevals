@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -503,7 +503,7 @@ def _otlp_payload_with_llm_span() -> bytes:
     ss.spans.append(proto)
     rs.scope_spans.append(ss)
     req.resource_spans.append(rs)
-    return req.SerializeToString()
+    return cast(bytes, req.SerializeToString())
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -24,7 +25,7 @@ from selfevals.storage.seed import seed_workspace
 
 
 @pytest.fixture(autouse=True)
-def _reset_broker() -> None:
+def _reset_broker() -> Generator[None, None, None]:
     reset_for_tests()
     yield
     reset_for_tests()
@@ -45,7 +46,7 @@ def _parse_events(body: str) -> list[tuple[str, str]]:
     return events
 
 
-def test_stream_emits_snapshot_and_complete(db_url):
+def test_stream_emits_snapshot_and_complete(db_url: str) -> None:
     """A subscriber to a closed run gets snapshot (empty) + complete."""
     app = build_app(db_path=db_url)
     with TestClient(app) as client:

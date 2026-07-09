@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 from fastapi.testclient import TestClient
@@ -48,7 +48,7 @@ def _inline_spec() -> dict[str, Any]:
     rows = [json.loads(line) for line in CASES.read_text().splitlines() if line.strip()]
     raw["dataset"] = {"cases_inline": rows}
     raw["experiment"]["run"]["max_iterations"] = 1
-    return raw
+    return cast(dict[str, Any], raw)
 
 
 def _seed_queued_job(db_url: str, monkeypatch: Any) -> str:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -22,7 +23,7 @@ def _capture(capsys: pytest.CaptureFixture[str], argv: list[str]) -> tuple[int, 
     return rc, out.out, out.err
 
 
-def _case_row() -> dict:
+def _case_row() -> dict[str, Any]:
     return {
         "name": "say pong",
         "task_type": "echo",

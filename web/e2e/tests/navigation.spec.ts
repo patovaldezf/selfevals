@@ -4,8 +4,12 @@ import { WORKSPACE_ID, gotoOk } from '../helpers';
 /**
  * Navigation flow: drive the app the way a user does — click through
  * from the workspace list down to an experiment, and across the sidebar
- * nav — instead of deep-linking. This catches broken hrefs and client
- * router regressions that direct `page.goto` would miss.
+ * nav — instead of deep-linking. This catches broken client router
+ * regressions that direct `page.goto` would miss.
+ *
+ * The workspace/experiment list rows navigate via a row click handler
+ * (`on:click={() => goto(...)}`), not `<a href>`, so we click on the
+ * visible row text rather than an anchor selector.
  */
 
 test.describe('navigation: click-through flows', () => {
@@ -13,12 +17,12 @@ test.describe('navigation: click-through flows', () => {
     await gotoOk(page, '/');
 
     // Enter the (only) workspace.
-    await page.locator(`a[href="/${WORKSPACE_ID}"]`).click();
+    await page.getByText(WORKSPACE_ID).first().click();
     await expect(page).toHaveURL(new RegExp(`/${WORKSPACE_ID}$`));
     await expect(page.getByRole('heading', { name: 'Recent experiments' })).toBeVisible();
 
     // Drill into the first experiment row.
-    await page.locator(`a[href^="/${WORKSPACE_ID}/experiments/"]`).first().click();
+    await page.getByText('pingpong baseline').first().click();
     await expect(page).toHaveURL(new RegExp(`/${WORKSPACE_ID}/experiments/exp_`));
     await expect(page.getByRole('heading', { name: 'pingpong baseline' })).toBeVisible();
   });

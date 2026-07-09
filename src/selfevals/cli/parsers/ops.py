@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 
-from selfevals.cli import commands
+from selfevals.cli import ops_commands
 from selfevals.cli._help import make_subparser
 
 
@@ -32,7 +32,7 @@ def add_skills(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
         epilog="Example:\n  selfevals skills list",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p_skills_list.set_defaults(func=commands.cmd_skills_list)
+    p_skills_list.set_defaults(func=ops_commands.cmd_skills_list)
     p_skills_path = skills_sub.add_parser(
         "path",
         help="Print the directory of a bundled skill.",
@@ -41,7 +41,7 @@ def add_skills(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p_skills_path.add_argument("name", help="Skill name, e.g. error-analysis.")
-    p_skills_path.set_defaults(func=commands.cmd_skills_path)
+    p_skills_path.set_defaults(func=ops_commands.cmd_skills_path)
     p_skills_sync = skills_sub.add_parser(
         "sync",
         help="Install the bundled consumer skills into a project skill directory.",
@@ -66,7 +66,7 @@ def add_skills(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
         action="store_true",
         help="Also install the selfevals-*-change repo-maintenance skills.",
     )
-    p_skills_sync.set_defaults(func=commands.cmd_skills_sync)
+    p_skills_sync.set_defaults(func=ops_commands.cmd_skills_sync)
 
 
 def add_examples(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -87,9 +87,9 @@ def add_examples(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
         epilog="Example:\n  selfevals examples copy pingpong",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p_examples_copy.add_argument("name", choices=sorted(commands._EXAMPLE_NAMES))
+    p_examples_copy.add_argument("name", choices=sorted(ops_commands._EXAMPLE_NAMES))
     p_examples_copy.add_argument("--to", default=".", help="Destination directory (default: cwd).")
-    p_examples_copy.set_defaults(func=commands.cmd_examples_copy)
+    p_examples_copy.set_defaults(func=ops_commands.cmd_examples_copy)
 
 
 def add_serve(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -131,7 +131,7 @@ def add_serve(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
         action="store_true",
         help="Enable uvicorn auto-reload (dev only).",
     )
-    p_serve.set_defaults(func=commands.cmd_serve)
+    p_serve.set_defaults(func=ops_commands.cmd_serve)
 
 
 def add_worker(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -162,7 +162,7 @@ def add_worker(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
         action="store_true",
         help="Process at most one available job and exit.",
     )
-    p_worker_runs.set_defaults(func=commands.cmd_worker_runs)
+    p_worker_runs.set_defaults(func=ops_commands.cmd_worker_runs)
 
     p_worker_sweeper = worker_sub.add_parser(
         "sweeper",
@@ -191,4 +191,4 @@ def add_worker(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
         action="store_true",
         help="Sweep one batch and exit.",
     )
-    p_worker_sweeper.set_defaults(func=commands.cmd_worker_sweeper)
+    p_worker_sweeper.set_defaults(func=ops_commands.cmd_worker_sweeper)

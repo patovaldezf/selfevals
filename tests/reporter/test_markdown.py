@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 
 from selfevals.decision.matrix import DecisionMatrixEvaluator
 from selfevals.graders.deterministic import DeterministicGrader
@@ -89,8 +90,8 @@ def _case(target: str = "pong") -> EvalCase:
     )
 
 
-def _experiment(**overrides) -> Experiment:
-    base = dict(
+def _experiment(**overrides: Any) -> Experiment:
+    base: dict[str, Any] = dict(
         id=Experiment.make_id(),
         workspace_id=WS,
         name="optimize prompt v2",

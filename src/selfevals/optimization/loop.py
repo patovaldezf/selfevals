@@ -329,7 +329,8 @@ class OptimizationLoop:
                 baseline=baseline,
             )
 
-            iteration_record = self._build_iteration_record(
+            iteration_record = _build_iteration_record(
+                experiment=self._experiment,
                 iteration=index,
                 proposal=proposal,
                 aggregate=aggregate,
@@ -340,19 +341,13 @@ class OptimizationLoop:
                 baseline=baseline,
                 failure_modes_consulted=prev_failure_modes,
             )
-            decision_record = DecisionRecord(
-                id=DecisionRecord.make_id(),
-                workspace_id=self._experiment.workspace_id,
-                experiment_id=self._experiment.id,
+            decision_record = _build_decision_record(
+                experiment=self._experiment,
                 iteration=index,
-                variant_id=iteration_record.execution.variant_id,
-                outcome=decision_outcome,
-                rationale=DecisionRationale(automated=rationale),
-                metrics_snapshot={
-                    aggregate.primary_metric: aggregate.primary_value,
-                    **aggregate.guardrails,
-                    **aggregate.reliability,
-                },
+                iteration_record=iteration_record,
+                aggregate=aggregate,
+                decision_outcome=decision_outcome,
+                rationale=rationale,
             )
             if self._scope is not None:
                 self._scope.put_entity(iteration_record)
@@ -499,72 +494,6 @@ class OptimizationLoop:
         self._scope.put_entity(rep.trace)
         return rep.trace.run.run_id
 
-    def _build_iteration_record(
-        self,
-        *,
-        iteration: int,
-        proposal: Proposal,
-        aggregate: IterationAggregate,
-        case_runs: list[CaseRun],
-        persisted_run_ids: list[str],
-        decision_outcome: DecisionOutcome,
-        rationale: str,
-        baseline: IterationAggregate | None,
-        failure_modes_consulted: list[str],
-    ) -> IterationRecord:
-        primary_delta: float | None = None
-        if baseline is not None:
-            primary_delta = aggregate.primary_value - baseline.primary_value
-        metrics = IterationMetrics(
-            primary=MetricObservation(
-                name=aggregate.primary_metric,
-                value=aggregate.primary_value,
-                delta_vs_baseline=primary_delta,
-            ),
-            guardrails=[
-                MetricObservation(name=k, value=v) for k, v in aggregate.guardrails.items()
-            ],
-            reliability=dict(aggregate.reliability),
-            error_rate=aggregate.error_rate,
-            cost_usd=aggregate.total_cost_usd or None,
-            duration_seconds=(
-                aggregate.total_duration_ms / 1000 if aggregate.total_duration_ms else None
-            ),
-            failure_mode_counts=dict(aggregate.failure_mode_counts),
-            funnel={key: node.to_dict() for key, node in aggregate.funnel.items()},
-            confusion=(aggregate.confusion.to_dict() if aggregate.confusion is not None else None),
-        )
-        variant_id = new_prefixed_id("var")
-        # Only the traces actually written to storage (see `_maybe_persist_trace`).
-        # Announcing every rep's run_id — including the ones `persist_traces`
-        # chose not to store — made `/traces/{run_id}` 404 on the unstored ones.
-        trace_run_ids = list(persisted_run_ids)
-        return IterationRecord(
-            id=IterationRecord.make_id(),
-            workspace_id=self._experiment.workspace_id,
-            experiment_id=self._experiment.id,
-            iteration=iteration,
-            state=IterationState.COMPLETED,
-            proposer=ProposerInputs(
-                type=self._experiment.proposer.strategy,
-                strategy_parameters=dict(self._experiment.proposer.parameters),
-                iterations_consulted=list(range(iteration)),
-                failure_modes_consulted=failure_modes_consulted,
-            ),
-            hypothesis=proposal.hypothesis,
-            proposed_parameters=dict(proposal.parameters),
-            execution=ExecutionInfo(
-                variant_id=variant_id,
-                ran_against={"case_count": len(case_runs)},
-                trace_run_ids=trace_run_ids,
-            ),
-            metrics=metrics,
-            decision=IterationDecision(
-                outcome=decision_outcome,
-                rationale=rationale,
-            ),
-        )
-
     def _maybe_stage_analysis(self, *, iteration: int, aggregate: IterationAggregate) -> None:
         """Persist an advisory staging marker when the trigger fires (§9).
 
@@ -621,6 +550,96 @@ class OptimizationLoop:
         for hyp in offered:
             if hyp.consumed_by_iteration is not None:
                 self._scope.put_entity(hyp)
+
+
+def _build_iteration_record(
+    *,
+    experiment: Experiment,
+    iteration: int,
+    proposal: Proposal,
+    aggregate: IterationAggregate,
+    case_runs: list[CaseRun],
+    persisted_run_ids: list[str],
+    decision_outcome: DecisionOutcome,
+    rationale: str,
+    baseline: IterationAggregate | None,
+    failure_modes_consulted: list[str],
+) -> IterationRecord:
+    primary_delta: float | None = None
+    if baseline is not None:
+        primary_delta = aggregate.primary_value - baseline.primary_value
+    metrics = IterationMetrics(
+        primary=MetricObservation(
+            name=aggregate.primary_metric,
+            value=aggregate.primary_value,
+            delta_vs_baseline=primary_delta,
+        ),
+        guardrails=[MetricObservation(name=k, value=v) for k, v in aggregate.guardrails.items()],
+        reliability=dict(aggregate.reliability),
+        error_rate=aggregate.error_rate,
+        cost_usd=aggregate.total_cost_usd or None,
+        duration_seconds=(
+            aggregate.total_duration_ms / 1000 if aggregate.total_duration_ms else None
+        ),
+        failure_mode_counts=dict(aggregate.failure_mode_counts),
+        funnel={key: node.to_dict() for key, node in aggregate.funnel.items()},
+        confusion=(aggregate.confusion.to_dict() if aggregate.confusion is not None else None),
+    )
+    variant_id = new_prefixed_id("var")
+    # Only the traces actually written to storage (see `_maybe_persist_trace`).
+    # Announcing every rep's run_id — including the ones `persist_traces`
+    # chose not to store — made `/traces/{run_id}` 404 on the unstored ones.
+    trace_run_ids = list(persisted_run_ids)
+    return IterationRecord(
+        id=IterationRecord.make_id(),
+        workspace_id=experiment.workspace_id,
+        experiment_id=experiment.id,
+        iteration=iteration,
+        state=IterationState.COMPLETED,
+        proposer=ProposerInputs(
+            type=experiment.proposer.strategy,
+            strategy_parameters=dict(experiment.proposer.parameters),
+            iterations_consulted=list(range(iteration)),
+            failure_modes_consulted=failure_modes_consulted,
+        ),
+        hypothesis=proposal.hypothesis,
+        proposed_parameters=dict(proposal.parameters),
+        execution=ExecutionInfo(
+            variant_id=variant_id,
+            ran_against={"case_count": len(case_runs)},
+            trace_run_ids=trace_run_ids,
+        ),
+        metrics=metrics,
+        decision=IterationDecision(
+            outcome=decision_outcome,
+            rationale=rationale,
+        ),
+    )
+
+
+def _build_decision_record(
+    *,
+    experiment: Experiment,
+    iteration: int,
+    iteration_record: IterationRecord,
+    aggregate: IterationAggregate,
+    decision_outcome: DecisionOutcome,
+    rationale: str,
+) -> DecisionRecord:
+    return DecisionRecord(
+        id=DecisionRecord.make_id(),
+        workspace_id=experiment.workspace_id,
+        experiment_id=experiment.id,
+        iteration=iteration,
+        variant_id=iteration_record.execution.variant_id,
+        outcome=decision_outcome,
+        rationale=DecisionRationale(automated=rationale),
+        metrics_snapshot={
+            aggregate.primary_metric: aggregate.primary_value,
+            **aggregate.guardrails,
+            **aggregate.reliability,
+        },
+    )
 
 
 def _dominant_modes(failure_mode_counts: dict[str, int]) -> list[str]:

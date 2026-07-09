@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -37,7 +37,7 @@ def _spec_mapping(*, max_iterations: int = 1) -> dict[str, Any]:
     rows = [json.loads(line) for line in CASES.read_text().splitlines() if line.strip()]
     raw["dataset"] = {"cases_inline": rows}
     raw["experiment"]["run"]["max_iterations"] = max_iterations
-    return raw
+    return cast(dict[str, Any], raw)
 
 
 def _drain_inline(storage_url: str, workspace_id: str) -> Any:

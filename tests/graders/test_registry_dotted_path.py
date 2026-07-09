@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import sys
 import types
+from collections.abc import Generator
 
 import pytest
 
@@ -40,7 +41,7 @@ class _NotAGrader:
 
 
 @pytest.fixture
-def fixture_module() -> str:
+def fixture_module() -> Generator[str, None, None]:
     """Register an in-memory module exposing the test graders, so a dotted path
     like 'mod:Class' resolves without touching the on-disk package."""
     mod_name = "selfevals_test_dotted_graders"

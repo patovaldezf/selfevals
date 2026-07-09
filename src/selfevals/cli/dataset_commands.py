@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import argparse
 
-from selfevals.cli.commands import CommandError, _require_entity, _storage
+from selfevals.cli._common import CommandError, _require_entity, _storage
 from selfevals.repo.datasets import (
     DatasetImportError,
     compute_manifest_hash,

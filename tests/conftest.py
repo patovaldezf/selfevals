@@ -17,10 +17,14 @@ import gc
 import os
 import warnings
 from collections.abc import Iterator
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
+import psycopg
 import pytest
 from pytest_postgresql import factories
+
+from selfevals.storage.interface import StorageInterface
 
 # ---------------------------------------------------------------------------
 # Postgres test fixtures.
@@ -36,15 +40,23 @@ from pytest_postgresql import factories
 _DEFAULT_TEST_PG = "postgresql://selfevals:selfevals@localhost:5433/selfevals"
 
 
-def _pg_parts() -> dict[str, object]:
+@dataclass(frozen=True)
+class _PgParts:
+    host: str
+    port: int
+    user: str
+    password: str
+
+
+def _pg_parts() -> _PgParts:
     url = os.environ.get("SELFEVALS_TEST_POSTGRES_URL", _DEFAULT_TEST_PG)
     parsed = urlparse(url)
-    return {
-        "host": parsed.hostname or "localhost",
-        "port": parsed.port or 5432,
-        "user": parsed.username or "postgres",
-        "password": parsed.password or "",
-    }
+    return _PgParts(
+        host=parsed.hostname or "localhost",
+        port=parsed.port or 5432,
+        user=parsed.username or "postgres",
+        password=parsed.password or "",
+    )
 
 
 _parts = _pg_parts()
@@ -52,30 +64,28 @@ _parts = _pg_parts()
 # NOT be the operator's live database, so use a dedicated test name regardless of
 # what database the connection URL points at.
 postgresql_noproc = factories.postgresql_noproc(
-    host=str(_parts["host"]),
-    port=int(_parts["port"]),  # type: ignore[arg-type]
-    user=str(_parts["user"]),
-    password=str(_parts["password"]),
+    host=_parts.host,
+    port=_parts.port,
+    user=_parts.user,
+    password=_parts.password,
     dbname="selfevals_pytest",
 )
 postgresql = factories.postgresql("postgresql_noproc")
 
 
 @pytest.fixture
-def db_url(postgresql: object) -> str:
+def db_url(postgresql: psycopg.Connection) -> str:
     """A Postgres DSN for a fresh, isolated per-test database.
 
     Pass this where the code wants a storage URL (``open_storage(db_url)``,
     ``build_app(db_path=db_url)``, CLI ``--db db_url``).
     """
-    info = postgresql.info  # type: ignore[attr-defined]
-    return (
-        f"postgresql://{info.user}:{_parts['password']}@{info.host}:{info.port}/{info.dbname}"
-    )
+    info = postgresql.info
+    return f"postgresql://{info.user}:{_parts.password}@{info.host}:{info.port}/{info.dbname}"
 
 
 @pytest.fixture
-def storage(db_url: str) -> Iterator[object]:
+def storage(db_url: str) -> Iterator[StorageInterface]:
     """An open PostgresStorage against a fresh per-test database (migrations applied)."""
     from selfevals.storage.factory import open_storage
 

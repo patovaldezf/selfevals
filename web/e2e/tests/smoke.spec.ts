@@ -12,8 +12,9 @@ test.describe('smoke: routes render with real data', () => {
   test('workspace list renders the seeded workspace', async ({ page }) => {
     await gotoOk(page, '/');
     await expect(page.getByRole('heading', { name: 'Workspaces' })).toBeVisible();
-    // The seed produces exactly one workspace; its tile links to /:wsId.
-    await expect(page.locator(`a[href="/${WORKSPACE_ID}"]`)).toBeVisible();
+    // The seed produces exactly one workspace; its row navigates via a
+    // click handler (not an <a href>), so assert on the visible id text.
+    await expect(page.getByText(WORKSPACE_ID).first()).toBeVisible();
   });
 
   test('workspace overview renders experiments section', async ({ page }) => {
