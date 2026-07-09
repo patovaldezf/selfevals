@@ -66,16 +66,20 @@ class AgentModelDecl:
 
 @dataclass(frozen=True)
 class CliAgentSpec:
-    """`agent: {type: cli, command: [...], env?, timeout_seconds?, model?}`.
+    """`agent: {type: cli, command: [...], env?, timeout_seconds?, model?, cwd?}`.
 
     The CLI wires this into a `CliCommandAdapter` — no Python entrypoint
-    proxy needed. `command` is the argv list spawned per case.
+    proxy needed. `command` is the argv list spawned per case. `cwd` is an
+    optional absolute working directory for the subprocess — Arena uses it
+    to point a variant's command at its own git worktree checkout; omitted,
+    the subprocess inherits the caller's cwd (unchanged default behaviour).
     """
 
     command: list[str]
     env: dict[str, str] | None = None
     timeout_seconds: float | None = None
     model: AgentModelDecl | None = None
+    cwd: str | None = None
 
 
 @dataclass(frozen=True)

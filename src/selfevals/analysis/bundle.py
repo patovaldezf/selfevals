@@ -51,7 +51,7 @@ def _transcript(trace: Trace) -> list[BundleMessage]:
     return out
 
 
-def _first_error_span(trace: Trace) -> BundleErrorSpan | None:
+def first_error_span(trace: Trace) -> BundleErrorSpan | None:
     """The first failure in the trace — Hamel's "code the first failure" rule.
 
     Prefers an explicit ErrorSpan; falls back to the first errored tool call.
@@ -64,7 +64,7 @@ def _first_error_span(trace: Trace) -> BundleErrorSpan | None:
     return None
 
 
-def _grade(trace: Trace) -> BundleGrade:
+def grade(trace: Trace) -> BundleGrade:
     """Collapse the trace's grader results into one bundle grade.
 
     Worst label wins; deterministic failure-mode tags and any judge reason are
@@ -94,7 +94,7 @@ def _grade(trace: Trace) -> BundleGrade:
     return BundleGrade(label=label, score=score, deterministic_modes=deduped, judge_reason=reason)
 
 
-def _is_failed(trace: Trace) -> bool:
+def is_failed(trace: Trace) -> bool:
     if trace.final_state.status != "completed":
         return True
     return any(gr.label in _FAILED_LABELS for gr in trace.grader_results)
@@ -121,7 +121,7 @@ def build_bundle(
         ]
         bundle_traces: list[BundleTrace] = []
         for trace in traces:
-            if only_failed and not _is_failed(trace):
+            if only_failed and not is_failed(trace):
                 continue
             bundle_traces.append(
                 BundleTrace(
@@ -129,9 +129,9 @@ def build_bundle(
                     run_id=trace.run.run_id,
                     thread_id=trace.run.thread_id,
                     eval_case_id=trace.run.eval_case_id,
-                    grade=_grade(trace),
+                    grade=grade(trace),
                     transcript=_transcript(trace),
-                    first_error_span=_first_error_span(trace),
+                    first_error_span=first_error_span(trace),
                 )
             )
         taxonomy = [

@@ -29,7 +29,7 @@ from selfevals.cli._common import (
     _reconstruct_result,
 )
 from selfevals.reporter import render_json
-from selfevals.reporter.compare import compute_compare
+from selfevals.reporter.compare import CompareResult, compute_compare
 from selfevals.schemas.enums import ExperimentState
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.iteration import IterationRecord
@@ -259,7 +259,36 @@ def load_compare(
             f"({experiment_id}); got A={a.experiment_id} B={b.experiment_id}"
         )
 
-    result = compute_compare(a, b)
+    return _project_compare_result(compute_compare(a, b))
+
+
+def load_compare_any_experiment(
+    storage: StorageInterface, *, workspace_id: str, a_id: str, b_id: str
+) -> CompareResponse | None:
+    """Structured diff of two IterationRecords from ANY experiment(s).
+
+    Same math as `load_compare` (`compute_compare` is experiment-agnostic —
+    it only reads the two records passed to it), minus the same-experiment
+    guard. Arena uses this to compare a variant's result against another
+    variant's — each variant is its own child `Experiment`, so a same-
+    experiment check would always reject the comparison Arena actually
+    wants. Returns None when either iteration is missing.
+    """
+    with storage.open(workspace_id) as scope:
+        try:
+            a = scope.get_entity(IterationRecord, a_id)
+            b = scope.get_entity(IterationRecord, b_id)
+        except EntityNotFoundError:
+            return None
+    assert isinstance(a, IterationRecord)
+    assert isinstance(b, IterationRecord)
+    return _project_compare_result(compute_compare(a, b))
+
+
+def _project_compare_result(result: CompareResult) -> CompareResponse:
+    """Project the reporter's frozen `CompareResult` dataclass into the wire
+    `CompareResponse` — the one place this shape translation happens, shared
+    by same-experiment and cross-experiment compare."""
     rec = result.recommendation
     return CompareResponse(
         a_id=result.a_id,

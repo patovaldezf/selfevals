@@ -17,6 +17,7 @@ from selfevals.api.queries import (
     iteration_detail,
     list_experiments,
     load_compare,
+    load_compare_any_experiment,
     load_iteration_funnel,
 )
 from selfevals.api.run_jobs import request_cancel_run_job
@@ -316,6 +317,26 @@ def _register_decisions_compare(app: FastAPI, deps: AppDeps) -> None:
                     status_code=404,
                     detail="one or both iterations not found",
                 )
+            return result
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/iterations/compare",
+        response_model=CompareResponse,
+        tags=["arena"],
+    )
+    def iterations_compare_any_experiment(
+        workspace_id: str,
+        a: Annotated[str, Query(description="Iteration A record id.")],
+        b: Annotated[str, Query(description="Iteration B record id.")],
+        storage: StorageInterface = Depends(deps.storage),
+        _user: UserHeader = None,
+    ) -> CompareResponse:
+        try:
+            result = load_compare_any_experiment(storage, workspace_id=workspace_id, a_id=a, b_id=b)
+            if result is None:
+                raise HTTPException(status_code=404, detail="one or both iterations not found")
             return result
         finally:
             storage.close()

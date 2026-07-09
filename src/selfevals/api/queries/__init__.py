@@ -25,6 +25,7 @@ from selfevals.api.queries.experiments import (
     iteration_detail,
     list_experiments,
     load_compare,
+    load_compare_any_experiment,
     load_iteration_funnel,
 )
 from selfevals.api.queries.traces import experiment_results, load_thread, load_trace
@@ -45,6 +46,7 @@ __all__ = [
     "list_experiments",
     "list_workspaces",
     "load_compare",
+    "load_compare_any_experiment",
     "load_iteration_funnel",
     "load_thread",
     "load_trace",

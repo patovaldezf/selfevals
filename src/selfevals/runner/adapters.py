@@ -27,9 +27,11 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import os
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -259,14 +261,36 @@ class CliCommandAdapter(AgentAdapter):
         timeout_seconds: float | None = 60.0,
         agent: Agent | None = None,
         model: ModelRef | None = None,
+        cwd: str | None = None,
     ) -> None:
         if not command:
             raise ValueError("command must be non-empty")
+        if cwd is not None and not Path(cwd).is_dir():
+            raise ValueError(f"agent.cwd does not exist or is not a directory: {cwd!r}")
         self._command = list(command)
         self._env = env
         self._timeout = timeout_seconds
         self.agent = agent
         self.model = model
+        self._cwd = cwd
+
+    def _subprocess_env(self) -> dict[str, str]:
+        """Env to pass to the agent subprocess.
+
+        `None` here means "inherit the parent's environment" — but the
+        parent may be running under `pytest-cov`, which sets `COV_CORE_*`
+        vars that its `.pth` shim reads on *any* Python subprocess and
+        uses to auto-start its own uncoordinated `coverage` instance. That
+        collides with the harness's own coverage collection (mismatched
+        branch/statement data) when the agent under test is itself a
+        Python subprocess (e.g. Arena variants). Strip them so the agent
+        process is never accidentally instrumented.
+        """
+        env = dict(os.environ) if self._env is None else dict(self._env)
+        for key in list(env):
+            if key.startswith("COV_CORE_"):
+                del env[key]
+        return env
 
     async def invoke(self, request: AdapterRequest) -> AdapterResponse:
         payload = json.dumps(_request_to_json(request)).encode("utf-8")
@@ -275,7 +299,8 @@ class CliCommandAdapter(AgentAdapter):
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env=self._env,
+            env=self._subprocess_env(),
+            cwd=self._cwd,
         )
         try:
             stdout, stderr = await asyncio.wait_for(

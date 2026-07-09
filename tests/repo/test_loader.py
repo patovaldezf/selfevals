@@ -14,8 +14,10 @@ from selfevals.repo.loader import (
     InlineDatasetSource,
     LoaderError,
     RefDatasetSource,
+    deserialize_experiment_spec,
     load_experiment_spec,
     resolve_agent_callable,
+    serialize_experiment_spec,
 )
 from selfevals.schemas.enums import DatasetType
 
@@ -282,6 +284,34 @@ def test_agent_type_cli_minimal(tmp_path: Path) -> None:
     assert isinstance(spec.agent, CliAgentSpec)
     assert spec.agent.env is None
     assert spec.agent.timeout_seconds is None
+    assert spec.agent.cwd is None
+
+
+def test_agent_type_cli_with_cwd(tmp_path: Path) -> None:
+    body = _body_with_agent(
+        {"type": "cli", "command": ["./agent"], "cwd": "/tmp/worktrees/variant-a"}
+    )
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    assert isinstance(spec.agent, CliAgentSpec)
+    assert spec.agent.cwd == "/tmp/worktrees/variant-a"
+
+
+def test_agent_type_cli_cwd_must_be_string(tmp_path: Path) -> None:
+    body = _body_with_agent({"type": "cli", "command": ["./agent"], "cwd": 123})
+    with pytest.raises(LoaderError, match=r"agent\.cwd must be a string"):
+        load_experiment_spec(_write_yaml(tmp_path, body))
+
+
+def test_agent_spec_cli_cwd_roundtrips_through_serialize(tmp_path: Path) -> None:
+    body = _body_with_agent(
+        {"type": "cli", "command": ["./agent"], "cwd": "/tmp/worktrees/variant-a"}
+    )
+    spec = load_experiment_spec(_write_yaml(tmp_path, body))
+    payload = serialize_experiment_spec(spec)
+    assert payload["agent"]["cwd"] == "/tmp/worktrees/variant-a"
+    rehydrated = deserialize_experiment_spec(payload)
+    assert isinstance(rehydrated.agent, CliAgentSpec)
+    assert rehydrated.agent.cwd == "/tmp/worktrees/variant-a"
 
 
 def test_agent_type_http(tmp_path: Path) -> None:

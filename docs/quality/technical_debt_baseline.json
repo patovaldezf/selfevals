@@ -4,12 +4,12 @@
     "direct_frontend_fetch": 0,
     "direct_user_header": 0,
     "docs_version_drift": 0,
-    "get_entity_calls": 52,
+    "get_entity_calls": 81,
     "json_extract": 5,
-    "large_files": 7,
-    "large_python_symbols": 18,
-    "list_entities_calls": 65,
-    "type_ignores": 99
+    "large_files": 4,
+    "large_python_symbols": 8,
+    "list_entities_calls": 85,
+    "type_ignores": 86
   },
   "description": "Baseline for scripts/audit_technical_debt.py. Decrease counts as debt is removed; do not increase without review.",
   "findings": {
@@ -51,8 +51,8 @@
       },
       {
         "detail": "broad except Exception",
-        "line": 309,
-        "path": "src/selfevals/cli/commands.py"
+        "line": 68,
+        "path": "src/selfevals/cli/_common.py"
       },
       {
         "detail": "broad except Exception",
@@ -81,7 +81,7 @@
       },
       {
         "detail": "broad except Exception",
-        "line": 217,
+        "line": 218,
         "path": "src/selfevals/runner/adapters.py"
       },
       {
@@ -111,7 +111,7 @@
       },
       {
         "detail": "broad except Exception",
-        "line": 427,
+        "line": 478,
         "path": "src/selfevals/trace/recorder.py"
       },
       {
@@ -126,7 +126,7 @@
       },
       {
         "detail": "broad except Exception",
-        "line": 219,
+        "line": 224,
         "path": "tests/storage/test_postgres_storage.py"
       }
     ],
@@ -138,6 +138,16 @@
         "detail": "get_entity call",
         "line": 105,
         "path": "src/selfevals/analysis/ingest.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 113,
+        "path": "src/selfevals/api/arena_ops.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 187,
+        "path": "src/selfevals/api/arena_ops.py"
       },
       {
         "detail": "get_entity call",
@@ -211,6 +221,16 @@
       },
       {
         "detail": "get_entity call",
+        "line": 279,
+        "path": "src/selfevals/api/queries/experiments.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 280,
+        "path": "src/selfevals/api/queries/experiments.py"
+      },
+      {
+        "detail": "get_entity call",
         "line": 53,
         "path": "src/selfevals/api/queries/traces.py"
       },
@@ -251,6 +271,76 @@
       },
       {
         "detail": "get_entity call",
+        "line": 295,
+        "path": "src/selfevals/arena/bundle.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 132,
+        "path": "src/selfevals/arena/service.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 181,
+        "path": "src/selfevals/arena/service.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 191,
+        "path": "src/selfevals/arena/service.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 199,
+        "path": "src/selfevals/arena/service.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 317,
+        "path": "src/selfevals/arena/service.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 389,
+        "path": "src/selfevals/arena/service.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 394,
+        "path": "src/selfevals/arena/service.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 411,
+        "path": "src/selfevals/arena/service.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 418,
+        "path": "src/selfevals/arena/service.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 450,
+        "path": "src/selfevals/arena/service.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 452,
+        "path": "src/selfevals/arena/service.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 475,
+        "path": "src/selfevals/arena/service.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 67,
+        "path": "src/selfevals/cli/_common.py"
+      },
+      {
+        "detail": "get_entity call",
         "line": 36,
         "path": "src/selfevals/cli/baseline_commands.py"
       },
@@ -258,11 +348,6 @@
         "detail": "get_entity call",
         "line": 47,
         "path": "src/selfevals/cli/baseline_commands.py"
-      },
-      {
-        "detail": "get_entity call",
-        "line": 308,
-        "path": "src/selfevals/cli/commands.py"
       },
       {
         "detail": "get_entity call",
@@ -301,7 +386,7 @@
       },
       {
         "detail": "get_entity call",
-        "line": 171,
+        "line": 172,
         "path": "tests/analysis/test_handshake.py"
       },
       {
@@ -323,6 +408,51 @@
         "detail": "get_entity call",
         "line": 183,
         "path": "tests/api/test_run_jobs.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 119,
+        "path": "tests/arena/test_bundle.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 104,
+        "path": "tests/arena/test_cost_estimate.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 103,
+        "path": "tests/arena/test_gc.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 197,
+        "path": "tests/arena/test_gc.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 190,
+        "path": "tests/arena/test_service.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 236,
+        "path": "tests/arena/test_service.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 314,
+        "path": "tests/arena/test_service.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 321,
+        "path": "tests/arena/test_service.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 333,
+        "path": "tests/arena/test_service.py"
       },
       {
         "detail": "get_entity call",
@@ -348,6 +478,21 @@
         "detail": "get_entity call",
         "line": 201,
         "path": "tests/runner/test_baseline.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 37,
+        "path": "tests/storage/postgres/test_arena_mappers.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 67,
+        "path": "tests/storage/postgres/test_arena_mappers.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 101,
+        "path": "tests/storage/postgres/test_arena_mappers.py"
       },
       {
         "detail": "get_entity call",
@@ -424,116 +569,56 @@
     ],
     "large_files": [
       {
-        "detail": "764 lines > limit 700",
-        "line": 1,
-        "path": "src/selfevals/cli/commands.py"
-      },
-      {
-        "detail": "730 lines > limit 700",
+        "detail": "731 lines > limit 700",
         "line": 1,
         "path": "tests/optimization/test_aggregator.py"
       },
       {
-        "detail": "791 lines > limit 700",
+        "detail": "793 lines > limit 700",
         "line": 1,
         "path": "tests/optimization/test_loop.py"
       },
       {
-        "detail": "839 lines > limit 700",
+        "detail": "870 lines > limit 700",
         "line": 1,
         "path": "tests/repo/test_loader.py"
       },
       {
-        "detail": "887 lines > limit 700",
+        "detail": "885 lines > limit 700",
         "line": 1,
         "path": "tests/runner/test_launch_wiring.py"
-      },
-      {
-        "detail": "1387 lines > limit 700",
-        "line": 1,
-        "path": "web/src/routes/[workspace]/experiments/[experiment]/+page.svelte"
-      },
-      {
-        "detail": "968 lines > limit 700",
-        "line": 1,
-        "path": "web/src/routes/[workspace]/traces/[trace]/+page.svelte"
       }
     ],
     "large_python_symbols": [
       {
-        "detail": "function grade has 142 lines: async def grade(self, context: GraderContext) -> GradeResult:",
-        "line": 199,
-        "path": "src/selfevals/graders/deterministic.py"
+        "detail": "function register has 244 lines: def register(app: FastAPI, deps: AppDeps) -> None:",
+        "line": 29,
+        "path": "src/selfevals/api/routes/arena.py"
       },
       {
-        "detail": "class JudgePanelGrader has 405 lines: class JudgePanelGrader(Grader):",
-        "line": 134,
+        "detail": "function add_arena has 227 lines: def add_arena(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:",
+        "line": 11,
+        "path": "src/selfevals/cli/parsers/arena.py"
+      },
+      {
+        "detail": "class JudgePanelGrader has 210 lines: class JudgePanelGrader(Grader):",
+        "line": 121,
         "path": "src/selfevals/graders/judge_panel.py"
       },
       {
-        "detail": "class TrajectoryGrader has 249 lines: class TrajectoryGrader(Grader):",
-        "line": 115,
-        "path": "src/selfevals/graders/trajectory.py"
-      },
-      {
-        "detail": "class OptimizationLoop has 496 lines: class OptimizationLoop:",
+        "detail": "class OptimizationLoop has 425 lines: class OptimizationLoop:",
         "line": 128,
         "path": "src/selfevals/optimization/loop.py"
       },
       {
-        "detail": "function _run_iterations has 136 lines: async def _run_iterations(self) -> OptimizationResult:",
+        "detail": "function _run_iterations has 131 lines: async def _run_iterations(self) -> OptimizationResult:",
         "line": 255,
         "path": "src/selfevals/optimization/loop.py"
       },
       {
-        "detail": "class Executor has 358 lines: class Executor:",
-        "line": 134,
+        "detail": "class Executor has 201 lines: class Executor:",
+        "line": 74,
         "path": "src/selfevals/runner/executor.py"
-      },
-      {
-        "detail": "class MultiTurnExecutor has 187 lines: class MultiTurnExecutor:",
-        "line": 47,
-        "path": "src/selfevals/runner/multiturn.py"
-      },
-      {
-        "detail": "function run_case has 177 lines: async def run_case(",
-        "line": 57,
-        "path": "src/selfevals/runner/multiturn.py"
-      },
-      {
-        "detail": "class UserSimulator has 185 lines: class UserSimulator(AgentAdapter):",
-        "line": 135,
-        "path": "src/selfevals/runner/simulator.py"
-      },
-      {
-        "detail": "class EvalCaseMapper has 185 lines: class EvalCaseMapper(EntityMapper[EvalCase]):",
-        "line": 87,
-        "path": "src/selfevals/storage/postgres/mappers/eval_case.py"
-      },
-      {
-        "detail": "class ExperimentMapper has 344 lines: class ExperimentMapper(EntityMapper[Experiment]):",
-        "line": 128,
-        "path": "src/selfevals/storage/postgres/mappers/experiment.py"
-      },
-      {
-        "detail": "function upsert has 125 lines: def upsert(self, cur: Any, entity: Experiment) -> None:",
-        "line": 133,
-        "path": "src/selfevals/storage/postgres/mappers/experiment.py"
-      },
-      {
-        "detail": "function _build has 175 lines: def _build(self, cur: Any, row: tuple[Any, ...]) -> Experiment:",
-        "line": 297,
-        "path": "src/selfevals/storage/postgres/mappers/experiment.py"
-      },
-      {
-        "detail": "class IterationRecordMapper has 221 lines: class IterationRecordMapper(EntityMapper[IterationRecord]):",
-        "line": 68,
-        "path": "src/selfevals/storage/postgres/mappers/iteration_record.py"
-      },
-      {
-        "detail": "class TraceMapper has 225 lines: class TraceMapper(EntityMapper[Trace]):",
-        "line": 79,
-        "path": "src/selfevals/storage/postgres/mappers/trace.py"
       },
       {
         "detail": "class PostgresStorage has 217 lines: class PostgresStorage(StorageInterface):",
@@ -541,14 +626,9 @@
         "path": "src/selfevals/storage/postgres/storage.py"
       },
       {
-        "detail": "class TraceRecorder has 431 lines: class TraceRecorder:",
-        "line": 195,
+        "detail": "class TraceRecorder has 392 lines: class TraceRecorder:",
+        "line": 272,
         "path": "src/selfevals/trace/recorder.py"
-      },
-      {
-        "detail": "function test_end_to_end_chain_constructable has 193 lines: def test_end_to_end_chain_constructable() -> None:",
-        "line": 78,
-        "path": "tests/schemas/test_cross_entity.py"
       }
     ],
     "list_entities_calls": [
@@ -566,6 +646,26 @@
         "detail": "list_entities call",
         "line": 59,
         "path": "src/selfevals/analysis/ingest.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 120,
+        "path": "src/selfevals/api/arena_ops.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 156,
+        "path": "src/selfevals/api/arena_ops.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 193,
+        "path": "src/selfevals/api/arena_ops.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 208,
+        "path": "src/selfevals/api/arena_ops.py"
       },
       {
         "detail": "list_entities call",
@@ -609,7 +709,7 @@
       },
       {
         "detail": "list_entities call",
-        "line": 312,
+        "line": 341,
         "path": "src/selfevals/api/queries/experiments.py"
       },
       {
@@ -634,33 +734,98 @@
       },
       {
         "detail": "list_entities call",
+        "line": 55,
+        "path": "src/selfevals/arena/bundle.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 84,
+        "path": "src/selfevals/arena/bundle.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 133,
+        "path": "src/selfevals/arena/bundle.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 167,
+        "path": "src/selfevals/arena/bundle.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 300,
+        "path": "src/selfevals/arena/bundle.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 135,
+        "path": "src/selfevals/arena/service.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 258,
+        "path": "src/selfevals/arena/service.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 290,
+        "path": "src/selfevals/arena/service.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 327,
+        "path": "src/selfevals/arena/service.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 479,
+        "path": "src/selfevals/arena/service.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 524,
+        "path": "src/selfevals/arena/service.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 73,
+        "path": "src/selfevals/cli/_common.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 82,
+        "path": "src/selfevals/cli/_common.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 107,
+        "path": "src/selfevals/cli/_common.py"
+      },
+      {
+        "detail": "list_entities call",
         "line": 89,
         "path": "src/selfevals/cli/analyze_commands.py"
       },
       {
         "detail": "list_entities call",
-        "line": 94,
-        "path": "src/selfevals/cli/commands.py"
+        "line": 83,
+        "path": "src/selfevals/cli/arena_commands.py"
       },
       {
         "detail": "list_entities call",
-        "line": 109,
-        "path": "src/selfevals/cli/commands.py"
+        "line": 107,
+        "path": "src/selfevals/cli/arena_commands.py"
       },
       {
         "detail": "list_entities call",
-        "line": 314,
-        "path": "src/selfevals/cli/commands.py"
+        "line": 112,
+        "path": "src/selfevals/cli/arena_commands.py"
       },
       {
         "detail": "list_entities call",
-        "line": 323,
-        "path": "src/selfevals/cli/commands.py"
-      },
-      {
-        "detail": "list_entities call",
-        "line": 348,
-        "path": "src/selfevals/cli/commands.py"
+        "line": 204,
+        "path": "src/selfevals/cli/arena_commands.py"
       },
       {
         "detail": "list_entities call",
@@ -674,7 +839,17 @@
       },
       {
         "detail": "list_entities call",
-        "line": 609,
+        "line": 24,
+        "path": "src/selfevals/cli/experiment_commands.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 39,
+        "path": "src/selfevals/cli/experiment_commands.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 538,
         "path": "src/selfevals/optimization/loop.py"
       },
       {
@@ -709,17 +884,17 @@
       },
       {
         "detail": "list_entities call",
-        "line": 166,
+        "line": 167,
         "path": "tests/analysis/test_handshake.py"
       },
       {
         "detail": "list_entities call",
-        "line": 206,
+        "line": 207,
         "path": "tests/analysis/test_handshake.py"
       },
       {
         "detail": "list_entities call",
-        "line": 233,
+        "line": 234,
         "path": "tests/analysis/test_handshake.py"
       },
       {
@@ -779,27 +954,27 @@
       },
       {
         "detail": "list_entities call",
-        "line": 193,
+        "line": 194,
         "path": "tests/optimization/test_loop_error_analysis.py"
       },
       {
         "detail": "list_entities call",
-        "line": 209,
+        "line": 210,
         "path": "tests/optimization/test_loop_error_analysis.py"
       },
       {
         "detail": "list_entities call",
-        "line": 226,
+        "line": 227,
         "path": "tests/optimization/test_loop_error_analysis.py"
       },
       {
         "detail": "list_entities call",
-        "line": 250,
+        "line": 251,
         "path": "tests/optimization/test_loop_error_analysis.py"
       },
       {
         "detail": "list_entities call",
-        "line": 349,
+        "line": 350,
         "path": "tests/optimization/test_loop_error_analysis.py"
       },
       {
@@ -814,17 +989,17 @@
       },
       {
         "detail": "list_entities call",
-        "line": 98,
+        "line": 96,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "list_entities call",
-        "line": 241,
+        "line": 240,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "list_entities call",
-        "line": 276,
+        "line": 275,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
@@ -849,27 +1024,32 @@
       },
       {
         "detail": "list_entities call",
+        "line": 123,
+        "path": "tests/storage/postgres/test_arena_mappers.py"
+      },
+      {
+        "detail": "list_entities call",
         "line": 126,
         "path": "tests/storage/test_postgres_storage.py"
       },
       {
         "detail": "list_entities call",
-        "line": 131,
+        "line": 134,
         "path": "tests/storage/test_postgres_storage.py"
       },
       {
         "detail": "list_entities call",
-        "line": 141,
+        "line": 144,
         "path": "tests/storage/test_postgres_storage.py"
       },
       {
         "detail": "list_entities call",
-        "line": 154,
+        "line": 159,
         "path": "tests/storage/test_postgres_storage.py"
       },
       {
         "detail": "list_entities call",
-        "line": 199,
+        "line": 204,
         "path": "tests/storage/test_postgres_storage.py"
       },
       {
@@ -879,16 +1059,6 @@
       }
     ],
     "type_ignores": [
-      {
-        "detail": "type ignore",
-        "line": 173,
-        "path": "examples/hello_llm/agent.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 203,
-        "path": "examples/hello_llm/agent.py"
-      },
       {
         "detail": "type ignore",
         "line": 125,
@@ -936,23 +1106,23 @@
       },
       {
         "detail": "type ignore",
-        "line": 308,
-        "path": "src/selfevals/cli/commands.py"
+        "line": 67,
+        "path": "src/selfevals/cli/_common.py"
       },
       {
         "detail": "type ignore",
-        "line": 314,
-        "path": "src/selfevals/cli/commands.py"
+        "line": 73,
+        "path": "src/selfevals/cli/_common.py"
       },
       {
         "detail": "type ignore",
-        "line": 323,
-        "path": "src/selfevals/cli/commands.py"
+        "line": 82,
+        "path": "src/selfevals/cli/_common.py"
       },
       {
         "detail": "type ignore",
-        "line": 348,
-        "path": "src/selfevals/cli/commands.py"
+        "line": 107,
+        "path": "src/selfevals/cli/_common.py"
       },
       {
         "detail": "type ignore",
@@ -961,17 +1131,17 @@
       },
       {
         "detail": "type ignore",
-        "line": 57,
+        "line": 59,
         "path": "src/selfevals/runner/launch/adapters.py"
       },
       {
         "detail": "type ignore",
-        "line": 65,
+        "line": 67,
         "path": "src/selfevals/runner/launch/adapters.py"
       },
       {
         "detail": "type ignore",
-        "line": 203,
+        "line": 205,
         "path": "src/selfevals/runner/launch/adapters.py"
       },
       {
@@ -1011,43 +1181,23 @@
       },
       {
         "detail": "type ignore",
-        "line": 39,
-        "path": "tests/api/test_run_queue.py"
+        "line": 117,
+        "path": "tests/arena/test_bundle.py"
       },
       {
         "detail": "type ignore",
-        "line": 73,
-        "path": "tests/api/test_threads.py"
+        "line": 102,
+        "path": "tests/arena/test_cost_estimate.py"
       },
       {
         "detail": "type ignore",
-        "line": 81,
-        "path": "tests/api/test_threads.py"
+        "line": 101,
+        "path": "tests/arena/test_gc.py"
       },
       {
         "detail": "type ignore",
-        "line": 111,
-        "path": "tests/api/test_threads.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 31,
-        "path": "tests/cli/test_analyze_cli.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 56,
-        "path": "tests/conftest.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 71,
-        "path": "tests/conftest.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 61,
-        "path": "tests/decision/test_matrix.py"
+        "line": 234,
+        "path": "tests/arena/test_service.py"
       },
       {
         "detail": "type ignore",
@@ -1056,28 +1206,23 @@
       },
       {
         "detail": "type ignore",
-        "line": 38,
+        "line": 63,
+        "path": "tests/decision/test_matrix.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 39,
         "path": "tests/examples/test_showcase_offline.py"
       },
       {
         "detail": "type ignore",
-        "line": 74,
+        "line": 75,
         "path": "tests/examples/test_showcase_offline.py"
       },
       {
         "detail": "type ignore",
-        "line": 95,
+        "line": 96,
         "path": "tests/examples/test_showcase_offline.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 81,
-        "path": "tests/graders/test_artifact.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 48,
-        "path": "tests/graders/test_registry_dotted_path.py"
       },
       {
         "detail": "type ignore",
@@ -1091,7 +1236,12 @@
       },
       {
         "detail": "type ignore",
-        "line": 213,
+        "line": 51,
+        "path": "tests/graders/test_registry_dotted_path.py"
+      },
+      {
+        "detail": "type ignore",
+        "line": 216,
         "path": "tests/graders/test_set_match.py"
       },
       {
@@ -1106,12 +1256,7 @@
       },
       {
         "detail": "type ignore",
-        "line": 126,
-        "path": "tests/optimization/test_loop_error_analysis.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 249,
+        "line": 127,
         "path": "tests/optimization/test_loop_error_analysis.py"
       },
       {
@@ -1131,37 +1276,32 @@
       },
       {
         "detail": "type ignore",
+        "line": 91,
+        "path": "tests/runner/test_baseline.py"
+      },
+      {
+        "detail": "type ignore",
         "line": 304,
         "path": "tests/runner/test_executor.py"
       },
       {
         "detail": "type ignore",
-        "line": 167,
+        "line": 235,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 169,
+        "line": 237,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 198,
+        "line": 249,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 236,
-        "path": "tests/runner/test_launch_wiring.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 238,
-        "path": "tests/runner/test_launch_wiring.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 250,
+        "line": 253,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
@@ -1171,77 +1311,57 @@
       },
       {
         "detail": "type ignore",
-        "line": 255,
+        "line": 269,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 270,
+        "line": 272,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 273,
+        "line": 483,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 484,
+        "line": 497,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 498,
+        "line": 607,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 608,
+        "line": 631,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 632,
+        "line": 659,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 660,
+        "line": 702,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 703,
+        "line": 726,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 727,
+        "line": 750,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
         "detail": "type ignore",
-        "line": 751,
-        "path": "tests/runner/test_launch_wiring.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 766,
-        "path": "tests/runner/test_launch_wiring.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 780,
-        "path": "tests/runner/test_launch_wiring.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 813,
-        "path": "tests/runner/test_launch_wiring.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 826,
+        "line": 765,
         "path": "tests/runner/test_launch_wiring.py"
       },
       {
@@ -1272,11 +1392,6 @@
       {
         "detail": "type ignore",
         "line": 68,
-        "path": "tests/schemas/test_base.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 75,
         "path": "tests/schemas/test_base.py"
       },
       {
@@ -1351,6 +1466,11 @@
       },
       {
         "detail": "type ignore",
+        "line": 27,
+        "path": "tests/storage/postgres/test_arena_mappers.py"
+      },
+      {
+        "detail": "type ignore",
         "line": 69,
         "path": "tests/storage/test_factory.py"
       },
@@ -1368,11 +1488,6 @@
         "detail": "type ignore",
         "line": 42,
         "path": "tests/storage/test_migrations.py"
-      },
-      {
-        "detail": "type ignore",
-        "line": 194,
-        "path": "tests/storage/test_postgres_storage.py"
       }
     ]
   }

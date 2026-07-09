@@ -16,7 +16,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from selfevals._errors import SelfEvalsUserError
-from selfevals.cli.parsers import analysis, datasets, experiments, meta, ops
+from selfevals.cli.parsers import analysis, arena, datasets, experiments, meta, ops
 from selfevals.version import __version__
 
 
@@ -49,6 +49,7 @@ def _build_parser() -> argparse.ArgumentParser:
     datasets.add_baseline(sub)
     datasets.add_regression(sub)
     datasets.add_dataset(sub)
+    arena.add_arena(sub)
     meta.add_report(sub)
     meta.add_run(sub)
     meta.add_compare(sub)

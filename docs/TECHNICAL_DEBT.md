@@ -1,11 +1,11 @@
 # selfevals technical debt audit
 
-Date: 2026-07-08
+Date: 2026-07-09
 
 This document records the current technical-debt inventory after the
 `feat/split-api-surface` closure effort (see `docs/TECHNICAL_DEBT_PLAN.md`,
-phases 1–8). It replaces the 2026-06-28 snapshot: most of what that report
-flagged as open is now closed.
+phases 1–8) and the Feature Arena merge. It replaces the 2026-06-28
+snapshot: most of what that report flagged as open is now closed.
 
 ## Current State
 
@@ -40,10 +40,10 @@ flagged as open is now closed.
 - `docs_version_drift` is 0: `pyproject.toml`, `docs/STATUS.md`, and this
   file agree on `0.13.0`. SQLite-era comments in `api/broker.py`,
   `api/sse.py`, `api/run_launcher.py` are gone.
-- `mypy --strict` runs clean on `src/selfevals` and `tests/` (233 + 150
-  source files) and is a CI gate over both. Pytest coverage is now a CI gate
-  too (`fail_under = 85`, measured ~90%; see `[tool.coverage]` in
-  `pyproject.toml`).
+- `mypy --strict` runs clean on `src/selfevals` and `tests/` (406 source
+  files combined, post-Arena) and is a CI gate over both. Pytest coverage is
+  now a CI gate too (`fail_under = 85`, measured ~90%; see `[tool.coverage]`
+  in `pyproject.toml`).
 
 ## Verification Snapshot
 
@@ -57,18 +57,20 @@ cd landing && npm run lint && npm run build
 docker compose up -d postgres redis && cd web && npm run test:e2e   # E2E (Playwright)
 ```
 
-Audit counts (baseline updated 2026-07-08, after human review of this
-closure effort):
+Audit counts (baseline updated 2026-07-09, after human review of the
+Feature Arena merge — `get_entity_calls`/`list_entities_calls` rose from
+legitimate queries against the new `Arena`/`ArenaRound`/`ArenaVariant`
+entities, not from regressed hot-path code):
 
 | Counter | Was (06-28) | Now | Target |
 | --- | ---: | ---: | --- |
 | `broad_exception_catches` | 40 | 23 | keep ≤23, lower opportunistically |
-| `type_ignores` | 131 | 81 | keep ≤81, lower opportunistically |
+| `type_ignores` | 131 | 86 | keep ≤86, lower opportunistically |
 | `large_files` | 15 | **4** | 0 or reviewed exceptions |
-| `large_python_symbols` | 20 | **6** | 0 or reviewed exceptions |
+| `large_python_symbols` | 20 | **8** | 0 or reviewed exceptions |
 | `json_extract` | 5 | 5 | no new usage |
-| `list_entities_calls` | 65 | 65 | prefer typed queries for hot paths |
-| `get_entity_calls` | 51 | 52 | prefer typed queries for hot paths |
+| `list_entities_calls` | 65 | 85 | prefer typed queries for hot paths |
+| `get_entity_calls` | 51 | 81 | prefer typed queries for hot paths |
 | `direct_frontend_fetch` | 0 | 0 | 0 |
 | `direct_user_header` | 0 | 0 | 0 |
 | `docs_version_drift` | 0 | 0 | 0 |
@@ -89,10 +91,13 @@ Ranked by what would move the needle most if picked up next.
 `traces/[trace]/+page.svelte` 968→117) are resolved — see "Resolved Since
 2026-06-28".
 
-### 2. `large_python_symbols` — 6 remaining
+### 2. `large_python_symbols` — 8 remaining
 
 Single cohesive classes with real shared state (not mechanically splittable
-the way the CLI parser or trace-span read/write were):
+the way the CLI parser or trace-span read/write were), plus two new
+mechanical entries from Feature Arena (parser/route registration functions —
+same shape as the pre-split `cli/main.py`, splittable the same way if this
+domain grows further):
 
 - `optimization/loop.py::OptimizationLoop` (425) + `_run_iterations` (131) —
   the core loop; every method reads/writes `self.*` run state.
@@ -104,6 +109,10 @@ the way the CLI parser or trace-span read/write were):
 - `graders/judge_panel.py::JudgePanelGrader` (210) — grader logic; likely
   splittable into prompt-building/aggregation helpers without changing the
   registry contract.
+- `api/routes/arena.py::register` (244) — one function registering all
+  Arena HTTP endpoints; splittable by sub-resource if it grows.
+- `cli/parsers/arena.py::add_arena` (227) — one function wiring all `arena`
+  subcommands; same shape as the other `cli/parsers/*.py` modules.
 
 None of these are correctness or safety debt — they're readability/size debt
 against the audit's mechanical thresholds. Pick up opportunistically when

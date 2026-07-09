@@ -189,6 +189,31 @@ def test_cli_adapter_requires_command() -> None:
         CliCommandAdapter([])
 
 
+_PWD_SCRIPT = """
+import json, os, sys
+req = json.loads(sys.stdin.read())
+resp = {"content": os.getcwd()}
+sys.stdout.write(json.dumps(resp))
+"""
+
+
+@pytest.mark.asyncio
+async def test_cli_adapter_runs_in_declared_cwd(tmp_path: Path) -> None:
+    workdir = tmp_path / "worktree"
+    workdir.mkdir()
+    script = tmp_path / "pwd_agent.py"
+    script.write_text(_PWD_SCRIPT)
+    adapter = CliCommandAdapter([sys.executable, str(script)], cwd=str(workdir))
+    resp = await adapter.invoke(_req())
+    assert resp.content == str(workdir.resolve())
+
+
+def test_cli_adapter_rejects_missing_cwd(tmp_path: Path) -> None:
+    missing = tmp_path / "does-not-exist"
+    with pytest.raises(ValueError, match="does not exist"):
+        CliCommandAdapter([sys.executable, "-c", "pass"], cwd=str(missing))
+
+
 @pytest.mark.asyncio
 async def test_http_adapter_roundtrip_mock_transport() -> None:
     def handler(request: httpx.Request) -> httpx.Response:

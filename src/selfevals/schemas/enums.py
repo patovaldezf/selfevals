@@ -331,3 +331,32 @@ class MessageRole(StrEnum):
     USER = "user"
     ASSISTANT = "assistant"
     TOOL = "tool"
+
+
+class ArenaState(StrEnum):
+    """Lifecycle of an Arena (a set of code variants competing on one dataset)."""
+
+    DRAFT = "draft"
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    ARCHIVED = "archived"
+
+
+class ArenaVariantState(StrEnum):
+    """Lifecycle of one ArenaVariant's worktree/setup preparation."""
+
+    REGISTERED = "registered"
+    PREPARING = "preparing"
+    READY = "ready"
+    FAILED = "failed"
+    RETIRED = "retired"
+
+
+class ArenaRoundState(StrEnum):
+    """Lifecycle of one ArenaRound (one parallel launch across variants)."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"

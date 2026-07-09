@@ -677,3 +677,180 @@ export type Tournament = {
   ranking: RankingRow[];
   created_at: string;
 };
+
+// --- Arena (code-variant bake-offs over git worktrees) --------------------
+// Mirrors `selfevals.api.schemas` Arena* models + `arena.schemas.ArenaBundle`.
+
+export type ArenaBudget = {
+  max_rounds: number | null;
+  max_variants: number | null;
+  max_cost_usd: number | null;
+};
+
+export type ArenaSummary = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  goal: string;
+  repo_path: string;
+  agent_command: string[];
+  objective_metric: string;
+  dataset_id: string | null;
+  budget: ArenaBudget;
+  current_round: number;
+  state: string;
+  winner_variant_id: string | null;
+};
+
+export type CreateArenaRequest = {
+  name: string;
+  goal: string;
+  repo_path: string;
+  agent_command: string[];
+  spec_template: Record<string, unknown>;
+  objective_metric: string;
+  agent_env?: Record<string, string> | null;
+  dataset_id?: string | null;
+  budget?: Partial<ArenaBudget> | null;
+};
+
+export type ArenaVariant = {
+  id: string;
+  arena_id: string;
+  name: string;
+  git_ref: string;
+  resolved_sha: string | null;
+  worktree_path: string | null;
+  hypothesis: string | null;
+  created_in_round: number;
+  state: string;
+  error: string | null;
+};
+
+export type RegisterVariantRequest = {
+  name: string;
+  git_ref: string;
+  setup_command?: string[] | null;
+  env_overrides?: Record<string, string> | null;
+  hypothesis?: string | null;
+};
+
+export type ArenaRoundEntry = {
+  variant_id: string;
+  experiment_id: string | null;
+  run_job_id: string | null;
+  status: string;
+};
+
+export type ArenaRound = {
+  id: string;
+  arena_id: string;
+  index: number;
+  entries: ArenaRoundEntry[];
+  reps: number;
+  state: string;
+};
+
+export type LaunchRoundRequest = {
+  variant_ids?: string[] | null;
+  reps?: number;
+};
+
+export type PromoteVariantResponse = {
+  winner_variant_id: string;
+  git_ref: string;
+  resolved_sha: string | null;
+  suggested_commands: string[];
+};
+
+export type GitRef = { name: string; sha: string };
+export type GitRefsResponse = { repo_path: string; refs: GitRef[] };
+
+export type ArenaBundleMetrics = {
+  experiment_id: string;
+  iteration_id: string;
+  primary_metric: string;
+  primary_value: number;
+  guardrails: Record<string, number>;
+  reliability: Record<string, number>;
+  cost_usd: number | null;
+  duration_seconds: number | null;
+  error_rate: number;
+  failure_mode_counts: Record<string, number>;
+};
+
+export type ArenaRoundHistoryPoint = {
+  round: number;
+  primary_value: number | null;
+  cost_usd: number | null;
+};
+
+export type ArenaVariantCard = {
+  variant_id: string;
+  name: string;
+  git_ref: string;
+  resolved_sha: string | null;
+  hypothesis: string | null;
+  state: string;
+  error: string | null;
+  latest_result: ArenaBundleMetrics | null;
+  history: ArenaRoundHistoryPoint[];
+};
+
+export type ArenaLeaderboardRow = {
+  rank: number;
+  variant_id: string;
+  name: string;
+  primary_value: number | null;
+  delta_vs_best: number | null;
+  cost_usd: number | null;
+};
+
+export type ArenaPairwiseVsBest = {
+  variant_id: string;
+  name: string;
+  proposal_diff: { key: string; a: unknown; b: unknown; changed: boolean }[];
+  metrics_diff: { name: string; a: number | null; b: number | null; delta: number | null }[];
+  only_best: Record<string, number>;
+  only_this: Record<string, number>;
+  common_failure_modes: Record<string, [number, number]>;
+  recommendation_kind: string;
+  winner: string | null;
+};
+
+export type ArenaExemplarFailures = {
+  variant_id: string;
+  name: string;
+  traces: {
+    trace_id: string;
+    grade_label: string;
+    first_error_span: { kind: string; name: string; error: string | null } | null;
+  }[];
+};
+
+export type ArenaConvergence = {
+  converged: boolean;
+  rounds_observed: number;
+  min_delta: number;
+  patience: number;
+  best_value: number | null;
+};
+
+export type ArenaBundle = {
+  arena: ArenaSummary & {
+    budget_rounds_remaining: number | null;
+    budget_variants_remaining: number | null;
+  };
+  round: number | null;
+  variants: ArenaVariantCard[];
+  leaderboard: ArenaLeaderboardRow[];
+  pairwise_vs_best: ArenaPairwiseVsBest[];
+  exemplar_failures: ArenaExemplarFailures[];
+  convergence: ArenaConvergence;
+  contract: {
+    register_variant: string;
+    launch_round: string;
+    poll_round: string;
+    promote: string;
+  };
+};

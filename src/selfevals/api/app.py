@@ -33,6 +33,7 @@ from selfevals.api.deps import AppDeps
 from selfevals.api.routes import (
     analysis,
     anchors_clusters,
+    arena,
     datasets,
     experiments,
     failure_modes,
@@ -137,6 +138,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
         experiments,
         traces,
         anchors_clusters,
+        arena,
     ):
         route_module.register(app, deps)
 

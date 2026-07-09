@@ -11,6 +11,7 @@
 export { ApiError } from '$lib/api/http';
 export * from '$lib/api/types';
 
+import { arenaApi } from '$lib/api/resources/arena';
 import { datasetsApi } from '$lib/api/resources/datasets';
 import { experimentsApi } from '$lib/api/resources/experiments';
 import { metricsApi } from '$lib/api/resources/metrics';
@@ -24,5 +25,6 @@ export const api = {
   ...tracesApi,
   ...datasetsApi,
   ...metricsApi,
-  ...pairwiseApi
+  ...pairwiseApi,
+  ...arenaApi
 };
