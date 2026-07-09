@@ -12,6 +12,7 @@ import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -114,7 +115,7 @@ def _create_arena(c: TestClient, *, repo_path: str) -> dict[str, object]:
         },
     )
     assert res.status_code == 201, res.text
-    return res.json()
+    return cast(dict[str, object], res.json())
 
 
 def test_create_get_list_arena(client: tuple[TestClient, str], tmp_path: Path) -> None:
@@ -197,7 +198,7 @@ def test_register_variant_and_launch_round_end_to_end(
     ).stdout.strip()
 
     arena = _create_arena(c, repo_path=str(repo))
-    arena_id = arena["id"]
+    arena_id = cast(str, arena["id"])
 
     variant_res = c.post(
         f"/api/workspaces/{WS}/arenas/{arena_id}/variants",
@@ -207,7 +208,7 @@ def test_register_variant_and_launch_round_end_to_end(
     variant = variant_res.json()
     assert variant["state"] == "preparing"
 
-    ready = _wait_variant_ready(c, arena_id, variant["id"])
+    ready = _wait_variant_ready(c, arena_id, cast(str, variant["id"]))
     assert ready["state"] == "ready"
 
     round_res = c.post(f"/api/workspaces/{WS}/arenas/{arena_id}/rounds", json={})

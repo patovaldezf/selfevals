@@ -192,6 +192,7 @@ def test_register_variant_resolves_ref_and_prepares_worktree(
                 if loaded.state != ArenaVariantState.PREPARING:
                     break
                 time.sleep(0.1)
+        assert isinstance(loaded, ArenaVariant)
         assert loaded.state == ArenaVariantState.READY
         assert loaded.worktree_path is not None
         assert Path(loaded.worktree_path, "agent.py").exists()
@@ -325,7 +326,9 @@ def test_full_round_runs_two_variants_in_parallel_end_to_end(
             storage, workspace_id=WS, arena_id=arena.id, variant_id=v2.id
         )
         assert promotion["winner_variant_id"] == v2.id
-        assert any("merge" in cmd for cmd in promotion["suggested_commands"])
+        suggested_commands = promotion["suggested_commands"]
+        assert isinstance(suggested_commands, list)
+        assert any("merge" in cmd for cmd in suggested_commands)
         with storage.open(WS) as scope:
             arena_final = scope.get_entity(Arena, arena.id)
             assert isinstance(arena_final, Arena)

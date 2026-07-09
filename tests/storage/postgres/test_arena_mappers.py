@@ -125,6 +125,8 @@ def test_arena_round_unique_per_arena_and_index(db_url: str) -> None:
                 ListFilter(where={"arena_id": arena.id}, order_by="index", order_desc=False),
             )
         assert len(rounds) == 1
-        assert rounds[0].index == 0
+        found_round = rounds[0]
+        assert isinstance(found_round, ArenaRound)
+        assert found_round.index == 0
     finally:
         storage.close()

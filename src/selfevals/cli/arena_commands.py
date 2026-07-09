@@ -17,7 +17,7 @@ from pathlib import Path
 from selfevals._errors import SelfEvalsUserError
 from selfevals.arena import service as arena_service
 from selfevals.arena.bundle import build_bundle
-from selfevals.cli.commands import CommandError, _require_entity, _storage
+from selfevals.cli._common import CommandError, _require_entity, _storage
 from selfevals.runner.launch import ensure_workspace_by_id
 from selfevals.schemas.arena import Arena, ArenaRound, ArenaVariant
 from selfevals.schemas.enums import ArenaVariantState
