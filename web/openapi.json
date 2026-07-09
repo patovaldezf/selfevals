@@ -3371,6 +3371,88 @@
         }
       }
     },
+    "/api/workspaces/{workspace_id}/iterations/compare": {
+      "get": {
+        "tags": [
+          "arena"
+        ],
+        "summary": "Iterations Compare Any Experiment",
+        "operationId": "iterations_compare_any_experiment_api_workspaces__workspace_id__iterations_compare_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "a",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Iteration A record id.",
+              "title": "A"
+            },
+            "description": "Iteration A record id."
+          },
+          {
+            "name": "b",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Iteration B record id.",
+              "title": "B"
+            },
+            "description": "Iteration B record id."
+          },
+          {
+            "name": "X-SelfEvals-User",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`.",
+              "title": "X-Selfevals-User"
+            },
+            "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompareResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workspaces/{workspace_id}/iterations/{iteration_id}": {
       "get": {
         "tags": [
@@ -4136,6 +4218,983 @@
           }
         }
       }
+    },
+    "/api/workspaces/{workspace_id}/arenas": {
+      "post": {
+        "tags": [
+          "arena"
+        ],
+        "summary": "Arenas Create",
+        "operationId": "arenas_create_api_workspaces__workspace_id__arenas_post",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "X-SelfEvals-User",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`.",
+              "title": "X-Selfevals-User"
+            },
+            "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateArenaRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArenaResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "arena"
+        ],
+        "summary": "Arenas List",
+        "operationId": "arenas_list_api_workspaces__workspace_id__arenas_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "X-SelfEvals-User",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`.",
+              "title": "X-Selfevals-User"
+            },
+            "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ArenaResponse"
+                  },
+                  "title": "Response Arenas List Api Workspaces  Workspace Id  Arenas Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspace_id}/arenas/{arena_id}": {
+      "get": {
+        "tags": [
+          "arena"
+        ],
+        "summary": "Arenas Get",
+        "operationId": "arenas_get_api_workspaces__workspace_id__arenas__arena_id__get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "arena_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Arena Id"
+            }
+          },
+          {
+            "name": "X-SelfEvals-User",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`.",
+              "title": "X-Selfevals-User"
+            },
+            "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArenaResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "arena"
+        ],
+        "summary": "Arenas Delete",
+        "operationId": "arenas_delete_api_workspaces__workspace_id__arenas__arena_id__delete",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "arena_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Arena Id"
+            }
+          },
+          {
+            "name": "X-SelfEvals-User",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`.",
+              "title": "X-Selfevals-User"
+            },
+            "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspace_id}/arenas/{arena_id}/variants": {
+      "post": {
+        "tags": [
+          "arena"
+        ],
+        "summary": "Arena Variants Create",
+        "operationId": "arena_variants_create_api_workspaces__workspace_id__arenas__arena_id__variants_post",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "arena_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Arena Id"
+            }
+          },
+          {
+            "name": "X-SelfEvals-User",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`.",
+              "title": "X-Selfevals-User"
+            },
+            "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterVariantRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArenaVariantResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "arena"
+        ],
+        "summary": "Arena Variants List",
+        "operationId": "arena_variants_list_api_workspaces__workspace_id__arenas__arena_id__variants_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "arena_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Arena Id"
+            }
+          },
+          {
+            "name": "X-SelfEvals-User",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`.",
+              "title": "X-Selfevals-User"
+            },
+            "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ArenaVariantResponse"
+                  },
+                  "title": "Response Arena Variants List Api Workspaces  Workspace Id  Arenas  Arena Id  Variants Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspace_id}/arenas/{arena_id}/rounds": {
+      "post": {
+        "tags": [
+          "arena"
+        ],
+        "summary": "Arena Rounds Create",
+        "operationId": "arena_rounds_create_api_workspaces__workspace_id__arenas__arena_id__rounds_post",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "arena_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Arena Id"
+            }
+          },
+          {
+            "name": "X-SelfEvals-User",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`.",
+              "title": "X-Selfevals-User"
+            },
+            "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LaunchRoundRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArenaRoundResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "arena"
+        ],
+        "summary": "Arena Rounds List",
+        "operationId": "arena_rounds_list_api_workspaces__workspace_id__arenas__arena_id__rounds_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "arena_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Arena Id"
+            }
+          },
+          {
+            "name": "X-SelfEvals-User",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`.",
+              "title": "X-Selfevals-User"
+            },
+            "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ArenaRoundResponse"
+                  },
+                  "title": "Response Arena Rounds List Api Workspaces  Workspace Id  Arenas  Arena Id  Rounds Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspace_id}/arenas/{arena_id}/estimate-cost": {
+      "get": {
+        "tags": [
+          "arena"
+        ],
+        "summary": "Arena Estimate Cost",
+        "operationId": "arena_estimate_cost_api_workspaces__workspace_id__arenas__arena_id__estimate_cost_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "arena_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Arena Id"
+            }
+          },
+          {
+            "name": "variant_ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Comma-separated variant ids; default: all ready variants.",
+              "title": "Variant Ids"
+            },
+            "description": "Comma-separated variant ids; default: all ready variants."
+          },
+          {
+            "name": "reps",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Reps"
+            }
+          },
+          {
+            "name": "X-SelfEvals-User",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`.",
+              "title": "X-Selfevals-User"
+            },
+            "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoundCostEstimateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspace_id}/arenas/{arena_id}/rounds/{round_id}": {
+      "get": {
+        "tags": [
+          "arena"
+        ],
+        "summary": "Arena Rounds Get",
+        "operationId": "arena_rounds_get_api_workspaces__workspace_id__arenas__arena_id__rounds__round_id__get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "arena_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Arena Id"
+            }
+          },
+          {
+            "name": "round_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Round Id"
+            }
+          },
+          {
+            "name": "X-SelfEvals-User",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`.",
+              "title": "X-Selfevals-User"
+            },
+            "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArenaRoundResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspace_id}/arenas/{arena_id}/promote": {
+      "post": {
+        "tags": [
+          "arena"
+        ],
+        "summary": "Arena Promote",
+        "operationId": "arena_promote_api_workspaces__workspace_id__arenas__arena_id__promote_post",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "arena_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Arena Id"
+            }
+          },
+          {
+            "name": "X-SelfEvals-User",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`.",
+              "title": "X-Selfevals-User"
+            },
+            "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteVariantRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromoteVariantResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspace_id}/arenas/{arena_id}/bundle": {
+      "get": {
+        "tags": [
+          "arena"
+        ],
+        "summary": "Arena Bundle",
+        "operationId": "arena_bundle_api_workspaces__workspace_id__arenas__arena_id__bundle_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "arena_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Arena Id"
+            }
+          },
+          {
+            "name": "round",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Round index; defaults to latest.",
+              "title": "Round"
+            },
+            "description": "Round index; defaults to latest."
+          },
+          {
+            "name": "X-SelfEvals-User",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`.",
+              "title": "X-Selfevals-User"
+            },
+            "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Arena Bundle Api Workspaces  Workspace Id  Arenas  Arena Id  Bundle Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspace_id}/git/refs": {
+      "get": {
+        "tags": [
+          "arena"
+        ],
+        "summary": "Arena Git Refs",
+        "operationId": "arena_git_refs_api_workspaces__workspace_id__git_refs_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "repo_path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Absolute path to a git repo on the server.",
+              "title": "Repo Path"
+            },
+            "description": "Absolute path to a git repo on the server."
+          },
+          {
+            "name": "X-SelfEvals-User",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`.",
+              "title": "X-Selfevals-User"
+            },
+            "description": "Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitRefsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4288,6 +5347,250 @@
           "case_id"
         ],
         "title": "AppendDatasetCaseResponse"
+      },
+      "ArenaBudgetView": {
+        "properties": {
+          "max_rounds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Rounds"
+          },
+          "max_variants": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Variants"
+          },
+          "max_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Cost Usd"
+          }
+        },
+        "type": "object",
+        "title": "ArenaBudgetView"
+      },
+      "ArenaResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "title": "Workspace Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "goal": {
+            "type": "string",
+            "title": "Goal"
+          },
+          "repo_path": {
+            "type": "string",
+            "title": "Repo Path"
+          },
+          "agent_command": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Agent Command"
+          },
+          "objective_metric": {
+            "type": "string",
+            "title": "Objective Metric"
+          },
+          "dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Id"
+          },
+          "budget": {
+            "$ref": "#/components/schemas/ArenaBudgetView"
+          },
+          "current_round": {
+            "type": "integer",
+            "title": "Current Round"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "winner_variant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Winner Variant Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "name",
+          "goal",
+          "repo_path",
+          "agent_command",
+          "objective_metric",
+          "budget",
+          "current_round",
+          "state"
+        ],
+        "title": "ArenaResponse"
+      },
+      "ArenaRoundResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "arena_id": {
+            "type": "string",
+            "title": "Arena Id"
+          },
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/RoundEntryView"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "reps": {
+            "type": "integer",
+            "title": "Reps"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "arena_id",
+          "index",
+          "entries",
+          "reps",
+          "state"
+        ],
+        "title": "ArenaRoundResponse"
+      },
+      "ArenaVariantResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "arena_id": {
+            "type": "string",
+            "title": "Arena Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "git_ref": {
+            "type": "string",
+            "title": "Git Ref"
+          },
+          "resolved_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Sha"
+          },
+          "worktree_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worktree Path"
+          },
+          "hypothesis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hypothesis"
+          },
+          "created_in_round": {
+            "type": "integer",
+            "title": "Created In Round"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "arena_id",
+          "name",
+          "git_ref",
+          "created_in_round",
+          "state"
+        ],
+        "title": "ArenaVariantResponse"
       },
       "BaselineResponse": {
         "properties": {
@@ -4942,6 +6245,88 @@
           "total"
         ],
         "title": "CostMetricsResponse"
+      },
+      "CreateArenaRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "goal": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Goal"
+          },
+          "repo_path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Repo Path"
+          },
+          "agent_command": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Agent Command"
+          },
+          "spec_template": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Spec Template"
+          },
+          "objective_metric": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Objective Metric"
+          },
+          "agent_env": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Env"
+          },
+          "dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Id"
+          },
+          "budget": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArenaBudgetView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "goal",
+          "repo_path",
+          "agent_command",
+          "spec_template",
+          "objective_metric"
+        ],
+        "title": "CreateArenaRequest"
       },
       "CreateDatasetRequest": {
         "properties": {
@@ -6133,6 +7518,45 @@
         "title": "FunnelResponse",
         "description": "Per-iteration grader funnel. `nodes` is empty when no grader\nemitted a breakdown (the common case for the pingpong example)."
       },
+      "GitRefView": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "sha": {
+            "type": "string",
+            "title": "Sha"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "sha"
+        ],
+        "title": "GitRefView"
+      },
+      "GitRefsResponse": {
+        "properties": {
+          "repo_path": {
+            "type": "string",
+            "title": "Repo Path"
+          },
+          "refs": {
+            "items": {
+              "$ref": "#/components/schemas/GitRefView"
+            },
+            "type": "array",
+            "title": "Refs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "repo_path",
+          "refs"
+        ],
+        "title": "GitRefsResponse"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -6525,6 +7949,32 @@
           "total"
         ],
         "title": "LatencyMetricsResponse"
+      },
+      "LaunchRoundRequest": {
+        "properties": {
+          "variant_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Ids"
+          },
+          "reps": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Reps",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "title": "LaunchRoundRequest"
       },
       "MergeFailureModeRequest": {
         "properties": {
@@ -6941,6 +8391,57 @@
         "title": "PromoteCaseDraftResponse",
         "description": "Human-reviewable EvalCase draft built from a persisted trace."
       },
+      "PromoteVariantRequest": {
+        "properties": {
+          "variant_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Variant Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "variant_id"
+        ],
+        "title": "PromoteVariantRequest"
+      },
+      "PromoteVariantResponse": {
+        "properties": {
+          "winner_variant_id": {
+            "type": "string",
+            "title": "Winner Variant Id"
+          },
+          "git_ref": {
+            "type": "string",
+            "title": "Git Ref"
+          },
+          "resolved_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Sha"
+          },
+          "suggested_commands": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Suggested Commands"
+          }
+        },
+        "type": "object",
+        "required": [
+          "winner_variant_id",
+          "git_ref",
+          "suggested_commands"
+        ],
+        "title": "PromoteVariantResponse"
+      },
       "RankingRowResponse": {
         "properties": {
           "candidate_id": {
@@ -6983,6 +8484,65 @@
           "n_comparisons"
         ],
         "title": "RankingRowResponse"
+      },
+      "RegisterVariantRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "git_ref": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Git Ref"
+          },
+          "setup_command": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Command"
+          },
+          "env_overrides": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Env Overrides"
+          },
+          "hypothesis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hypothesis"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "git_ref"
+        ],
+        "title": "RegisterVariantRequest"
       },
       "RegressionCheckRequest": {
         "properties": {
@@ -7099,6 +8659,71 @@
           "regressed"
         ],
         "title": "RegressionResultResponse"
+      },
+      "RoundCostEstimateResponse": {
+        "properties": {
+          "estimated_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Usd"
+          },
+          "basis": {
+            "type": "string",
+            "title": "Basis"
+          }
+        },
+        "type": "object",
+        "required": [
+          "estimated_usd",
+          "basis"
+        ],
+        "title": "RoundCostEstimateResponse"
+      },
+      "RoundEntryView": {
+        "properties": {
+          "variant_id": {
+            "type": "string",
+            "title": "Variant Id"
+          },
+          "experiment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experiment Id"
+          },
+          "run_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "variant_id",
+          "status"
+        ],
+        "title": "RoundEntryView"
       },
       "RunExperimentRequest": {
         "properties": {

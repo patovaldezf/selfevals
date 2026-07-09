@@ -642,6 +642,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspaces/{workspace_id}/iterations/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Iterations Compare Any Experiment */
+        get: operations["iterations_compare_any_experiment_api_workspaces__workspace_id__iterations_compare_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspaces/{workspace_id}/iterations/{iteration_id}": {
         parameters: {
             query?: never;
@@ -828,6 +845,163 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspaces/{workspace_id}/arenas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Arenas List */
+        get: operations["arenas_list_api_workspaces__workspace_id__arenas_get"];
+        put?: never;
+        /** Arenas Create */
+        post: operations["arenas_create_api_workspaces__workspace_id__arenas_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{workspace_id}/arenas/{arena_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Arenas Get */
+        get: operations["arenas_get_api_workspaces__workspace_id__arenas__arena_id__get"];
+        put?: never;
+        post?: never;
+        /** Arenas Delete */
+        delete: operations["arenas_delete_api_workspaces__workspace_id__arenas__arena_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{workspace_id}/arenas/{arena_id}/variants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Arena Variants List */
+        get: operations["arena_variants_list_api_workspaces__workspace_id__arenas__arena_id__variants_get"];
+        put?: never;
+        /** Arena Variants Create */
+        post: operations["arena_variants_create_api_workspaces__workspace_id__arenas__arena_id__variants_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{workspace_id}/arenas/{arena_id}/rounds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Arena Rounds List */
+        get: operations["arena_rounds_list_api_workspaces__workspace_id__arenas__arena_id__rounds_get"];
+        put?: never;
+        /** Arena Rounds Create */
+        post: operations["arena_rounds_create_api_workspaces__workspace_id__arenas__arena_id__rounds_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{workspace_id}/arenas/{arena_id}/estimate-cost": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Arena Estimate Cost */
+        get: operations["arena_estimate_cost_api_workspaces__workspace_id__arenas__arena_id__estimate_cost_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{workspace_id}/arenas/{arena_id}/rounds/{round_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Arena Rounds Get */
+        get: operations["arena_rounds_get_api_workspaces__workspace_id__arenas__arena_id__rounds__round_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{workspace_id}/arenas/{arena_id}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Arena Promote */
+        post: operations["arena_promote_api_workspaces__workspace_id__arenas__arena_id__promote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{workspace_id}/arenas/{arena_id}/bundle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Arena Bundle */
+        get: operations["arena_bundle_api_workspaces__workspace_id__arenas__arena_id__bundle_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{workspace_id}/git/refs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Arena Git Refs */
+        get: operations["arena_git_refs_api_workspaces__workspace_id__git_refs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -904,6 +1078,79 @@ export interface components {
              * @default false
              */
             created_new_dataset: boolean;
+        };
+        /** ArenaBudgetView */
+        ArenaBudgetView: {
+            /** Max Rounds */
+            max_rounds?: number | null;
+            /** Max Variants */
+            max_variants?: number | null;
+            /** Max Cost Usd */
+            max_cost_usd?: number | null;
+        };
+        /** ArenaResponse */
+        ArenaResponse: {
+            /** Id */
+            id: string;
+            /** Workspace Id */
+            workspace_id: string;
+            /** Name */
+            name: string;
+            /** Goal */
+            goal: string;
+            /** Repo Path */
+            repo_path: string;
+            /** Agent Command */
+            agent_command: string[];
+            /** Objective Metric */
+            objective_metric: string;
+            /** Dataset Id */
+            dataset_id?: string | null;
+            budget: components["schemas"]["ArenaBudgetView"];
+            /** Current Round */
+            current_round: number;
+            /** State */
+            state: string;
+            /** Winner Variant Id */
+            winner_variant_id?: string | null;
+        };
+        /** ArenaRoundResponse */
+        ArenaRoundResponse: {
+            /** Id */
+            id: string;
+            /** Arena Id */
+            arena_id: string;
+            /** Index */
+            index: number;
+            /** Entries */
+            entries: components["schemas"]["RoundEntryView"][];
+            /** Reps */
+            reps: number;
+            /** State */
+            state: string;
+        };
+        /** ArenaVariantResponse */
+        ArenaVariantResponse: {
+            /** Id */
+            id: string;
+            /** Arena Id */
+            arena_id: string;
+            /** Name */
+            name: string;
+            /** Git Ref */
+            git_ref: string;
+            /** Resolved Sha */
+            resolved_sha?: string | null;
+            /** Worktree Path */
+            worktree_path?: string | null;
+            /** Hypothesis */
+            hypothesis?: string | null;
+            /** Created In Round */
+            created_in_round: number;
+            /** State */
+            state: string;
+            /** Error */
+            error?: string | null;
         };
         /** BaselineResponse */
         BaselineResponse: {
@@ -1138,6 +1385,30 @@ export interface components {
             total: number;
             /** Items */
             items?: components["schemas"]["CostMetricRow"][];
+        };
+        /** CreateArenaRequest */
+        CreateArenaRequest: {
+            /** Name */
+            name: string;
+            /** Goal */
+            goal: string;
+            /** Repo Path */
+            repo_path: string;
+            /** Agent Command */
+            agent_command: string[];
+            /** Spec Template */
+            spec_template: {
+                [key: string]: unknown;
+            };
+            /** Objective Metric */
+            objective_metric: string;
+            /** Agent Env */
+            agent_env?: {
+                [key: string]: string;
+            } | null;
+            /** Dataset Id */
+            dataset_id?: string | null;
+            budget?: components["schemas"]["ArenaBudgetView"] | null;
         };
         /**
          * CreateDatasetRequest
@@ -1675,6 +1946,20 @@ export interface components {
                 [key: string]: components["schemas"]["FunnelNodeResponse"];
             };
         };
+        /** GitRefView */
+        GitRefView: {
+            /** Name */
+            name: string;
+            /** Sha */
+            sha: string;
+        };
+        /** GitRefsResponse */
+        GitRefsResponse: {
+            /** Repo Path */
+            repo_path: string;
+            /** Refs */
+            refs: components["schemas"]["GitRefView"][];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1795,6 +2080,16 @@ export interface components {
             total: number;
             /** Items */
             items?: components["schemas"]["LatencyMetricRow"][];
+        };
+        /** LaunchRoundRequest */
+        LaunchRoundRequest: {
+            /** Variant Ids */
+            variant_ids?: string[] | null;
+            /**
+             * Reps
+             * @default 1
+             */
+            reps: number;
         };
         /**
          * MergeFailureModeRequest
@@ -1937,6 +2232,22 @@ export interface components {
             /** Warnings */
             warnings?: string[];
         };
+        /** PromoteVariantRequest */
+        PromoteVariantRequest: {
+            /** Variant Id */
+            variant_id: string;
+        };
+        /** PromoteVariantResponse */
+        PromoteVariantResponse: {
+            /** Winner Variant Id */
+            winner_variant_id: string;
+            /** Git Ref */
+            git_ref: string;
+            /** Resolved Sha */
+            resolved_sha?: string | null;
+            /** Suggested Commands */
+            suggested_commands: string[];
+        };
         /** RankingRowResponse */
         RankingRowResponse: {
             /** Candidate Id */
@@ -1953,6 +2264,21 @@ export interface components {
             ties: number;
             /** N Comparisons */
             n_comparisons: number;
+        };
+        /** RegisterVariantRequest */
+        RegisterVariantRequest: {
+            /** Name */
+            name: string;
+            /** Git Ref */
+            git_ref: string;
+            /** Setup Command */
+            setup_command?: string[] | null;
+            /** Env Overrides */
+            env_overrides?: {
+                [key: string]: string;
+            } | null;
+            /** Hypothesis */
+            hypothesis?: string | null;
         };
         /** RegressionCheckRequest */
         RegressionCheckRequest: {
@@ -2004,6 +2330,24 @@ export interface components {
             regressed: boolean;
             /** Findings */
             findings?: components["schemas"]["RegressionFindingResponse"][];
+        };
+        /** RoundCostEstimateResponse */
+        RoundCostEstimateResponse: {
+            /** Estimated Usd */
+            estimated_usd: number | null;
+            /** Basis */
+            basis: string;
+        };
+        /** RoundEntryView */
+        RoundEntryView: {
+            /** Variant Id */
+            variant_id: string;
+            /** Experiment Id */
+            experiment_id?: string | null;
+            /** Run Job Id */
+            run_job_id?: string | null;
+            /** Status */
+            status: string;
         };
         /**
          * RunExperimentRequest
@@ -3956,6 +4300,45 @@ export interface operations {
             };
         };
     };
+    iterations_compare_any_experiment_api_workspaces__workspace_id__iterations_compare_get: {
+        parameters: {
+            query: {
+                /** @description Iteration A record id. */
+                a: string;
+                /** @description Iteration B record id. */
+                b: string;
+            };
+            header?: {
+                /** @description Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`. */
+                "X-SelfEvals-User"?: string | null;
+            };
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompareResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     iterations_show_api_workspaces__workspace_id__iterations__iteration_id__get: {
         parameters: {
             query?: never;
@@ -4321,6 +4704,485 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FailureClustersResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arenas_list_api_workspaces__workspace_id__arenas_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`. */
+                "X-SelfEvals-User"?: string | null;
+            };
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arenas_create_api_workspaces__workspace_id__arenas_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`. */
+                "X-SelfEvals-User"?: string | null;
+            };
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateArenaRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arenas_get_api_workspaces__workspace_id__arenas__arena_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`. */
+                "X-SelfEvals-User"?: string | null;
+            };
+            path: {
+                workspace_id: string;
+                arena_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arenas_delete_api_workspaces__workspace_id__arenas__arena_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`. */
+                "X-SelfEvals-User"?: string | null;
+            };
+            path: {
+                workspace_id: string;
+                arena_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arena_variants_list_api_workspaces__workspace_id__arenas__arena_id__variants_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`. */
+                "X-SelfEvals-User"?: string | null;
+            };
+            path: {
+                workspace_id: string;
+                arena_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaVariantResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arena_variants_create_api_workspaces__workspace_id__arenas__arena_id__variants_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`. */
+                "X-SelfEvals-User"?: string | null;
+            };
+            path: {
+                workspace_id: string;
+                arena_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterVariantRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaVariantResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arena_rounds_list_api_workspaces__workspace_id__arenas__arena_id__rounds_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`. */
+                "X-SelfEvals-User"?: string | null;
+            };
+            path: {
+                workspace_id: string;
+                arena_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaRoundResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arena_rounds_create_api_workspaces__workspace_id__arenas__arena_id__rounds_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`. */
+                "X-SelfEvals-User"?: string | null;
+            };
+            path: {
+                workspace_id: string;
+                arena_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LaunchRoundRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaRoundResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arena_estimate_cost_api_workspaces__workspace_id__arenas__arena_id__estimate_cost_get: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated variant ids; default: all ready variants. */
+                variant_ids?: string | null;
+                reps?: number;
+            };
+            header?: {
+                /** @description Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`. */
+                "X-SelfEvals-User"?: string | null;
+            };
+            path: {
+                workspace_id: string;
+                arena_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoundCostEstimateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arena_rounds_get_api_workspaces__workspace_id__arenas__arena_id__rounds__round_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`. */
+                "X-SelfEvals-User"?: string | null;
+            };
+            path: {
+                workspace_id: string;
+                arena_id: string;
+                round_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaRoundResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arena_promote_api_workspaces__workspace_id__arenas__arena_id__promote_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`. */
+                "X-SelfEvals-User"?: string | null;
+            };
+            path: {
+                workspace_id: string;
+                arena_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromoteVariantRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromoteVariantResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arena_bundle_api_workspaces__workspace_id__arenas__arena_id__bundle_get: {
+        parameters: {
+            query?: {
+                /** @description Round index; defaults to latest. */
+                round?: number | null;
+            };
+            header?: {
+                /** @description Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`. */
+                "X-SelfEvals-User"?: string | null;
+            };
+            path: {
+                workspace_id: string;
+                arena_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arena_git_refs_api_workspaces__workspace_id__git_refs_get: {
+        parameters: {
+            query: {
+                /** @description Absolute path to a git repo on the server. */
+                repo_path: string;
+            };
+            header?: {
+                /** @description Caller identity. In `local`/`header` mode: a plain user id. In `token` mode: a signed token from `selfevals.api.tokens.issue_token`. */
+                "X-SelfEvals-User"?: string | null;
+            };
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitRefsResponse"];
                 };
             };
             /** @description Validation Error */

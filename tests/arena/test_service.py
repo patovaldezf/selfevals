@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import threading
 import time
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -44,6 +46,26 @@ sys.stdout.write(json.dumps(resp))
 
 def _run(cwd: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+
+@pytest.fixture(autouse=True)
+def _join_arena_background_threads() -> Generator[None, None, None]:
+    """Wait out `arena-variant-*`/`run-*` daemon threads after each test.
+
+    `register_variant`/`launch_round` fire-and-forget a background thread
+    (see `arena/service.py::_prepare_variant`). Tests poll storage for the
+    terminal state, which only proves the thread *wrote* it — the thread
+    itself can still be executing (and holding coverage.py's tracer) for a
+    moment after. Left dangling into the next test (or session teardown),
+    that races `coverage`'s branch-vs-statement combine and intermittently
+    corrupts collection under `pytest --cov`. Join explicitly instead of
+    just polling storage.
+    """
+    yield
+    deadline = time.monotonic() + 20.0
+    for thread in threading.enumerate():
+        if thread.name.startswith(("run-", "arena-variant-")) and thread.is_alive():
+            thread.join(timeout=max(0.0, deadline - time.monotonic()))
 
 
 def _init_repo(tmp_path: Path, marker: str) -> Path:
