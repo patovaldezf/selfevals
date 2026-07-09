@@ -8,6 +8,7 @@
   import CopyableId from '$lib/components/CopyableId.svelte';
   import Button from '$lib/components/ui/Button.svelte';
   import StatusDot from '$lib/components/ui/StatusDot.svelte';
+  import PageHeader from '$lib/components/PageHeader.svelte';
   import { createEventDispatcher } from 'svelte';
 
   export let workspaceId: string;
@@ -21,24 +22,11 @@
   const dispatch = createEventDispatcher<{ cancel: void }>();
 </script>
 
-<nav class="text-xs text-text-3 mb-6 flex items-center gap-1.5" aria-label="Breadcrumb">
-  <a class="hover:text-text-1" href={`/${workspaceId}`}>workspace</a>
-  <span aria-hidden="true">/</span>
-  <a class="hover:text-text-1" href={`/${workspaceId}/experiments`}>experiments</a>
-  <span aria-hidden="true">/</span>
-  <span class="text-text-2">{name}</span>
-</nav>
-
-<header class="mb-10 flex items-start justify-between gap-6">
-  <div class="min-w-0">
-    <div class="text-xs uppercase tracking-wide text-text-3 mb-2">Experiment · {mode}</div>
-    <h1 class="text-3xl font-semibold tracking-tight">{name}</h1>
-    <p class="text-text-2 mt-2 max-w-2xl">{goal}</p>
-    <div class="mt-3">
-      <CopyableId id={experimentId} label="experiment id" />
-    </div>
-  </div>
-  <div class="flex shrink-0 items-center gap-3">
+<PageHeader eyebrow={`Experiment · ${mode}`} title={name} subtitle={goal}>
+  {#snippet meta()}
+    <CopyableId id={experimentId} label="experiment id" />
+  {/snippet}
+  {#snippet actions()}
     <span class="state-pill">
       <StatusDot {state} />
       <span class="state-pill-label">{state}</span>
@@ -53,8 +41,8 @@
     {#if isActive}
       <Button variant="danger" size="sm" on:click={() => dispatch('cancel')}>Cancel run</Button>
     {/if}
-  </div>
-</header>
+  {/snippet}
+</PageHeader>
 
 <style>
   .state-pill {

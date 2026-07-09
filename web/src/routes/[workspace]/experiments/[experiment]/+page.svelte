@@ -18,8 +18,14 @@
   import ResultsTab from '$lib/components/ResultsTab.svelte';
   import LiveRunHeader from '$lib/components/LiveRunHeader.svelte';
   import { directionFromOperator, thresholdLevel } from '$lib/viz/thresholds';
+  import { crumbLabels } from '$lib/nav/breadcrumbs';
 
   export let data: PageData;
+
+  // Feed the global topbar breadcrumb the experiment's name in place of its id,
+  // keyed by the raw path segment (the experiment id). Reactive so it updates
+  // when navigating between experiments without a full remount.
+  $: crumbLabels.set({ [$page.params.experiment as string]: data.detail.summary.name });
 
   // Workspace id from the route, used to build trace viewer hrefs from the
   // iteration drawer ("see what the agent actually did"). The trace endpoint

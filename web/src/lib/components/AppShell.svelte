@@ -2,7 +2,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { onMount, onDestroy } from 'svelte';
-  import ActiveRunsPill from './ActiveRunsPill.svelte';
+  import Topbar from './Topbar.svelte';
   import Icon from './ui/Icon.svelte';
   import Kbd from './ui/Kbd.svelte';
   import { theme } from '$lib/stores/theme';
@@ -151,23 +151,17 @@
     </nav>
 
     <div class="footer">
-      <ActiveRunsPill {workspaceId} />
       <div class="footer-row">
-        <span class="version">v0.13 · localhost</span>
-        <button
-          class="theme-btn"
-          aria-label="Toggle theme"
-          title="Toggle theme"
-          on:click={() => theme.toggle()}
-        >
-          <Icon icon={$theme === 'dark' ? Sun : Moon} size={15} />
-        </button>
+        <span class="version">v0.14 · localhost</span>
       </div>
     </div>
   </aside>
 
   <main class="main">
-    <slot />
+    <Topbar {workspaceId} />
+    <div class="page">
+      <slot />
+    </div>
   </main>
 </div>
 
@@ -292,20 +286,13 @@
     font-family: var(--font-mono);
     color: var(--color-text-3);
   }
-  .theme-btn {
-    display: inline-flex;
-    padding: 0.3rem;
-    border-radius: var(--radius-sm);
-    color: var(--color-text-3);
-    transition:
-      color var(--dur-fast) var(--ease-out),
-      background-color var(--dur-fast) var(--ease-out);
-  }
-  .theme-btn:hover {
-    background: var(--color-surface-2);
-    color: var(--color-text-1);
-  }
   .main {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .page {
+    flex: 1;
     min-width: 0;
   }
 </style>
