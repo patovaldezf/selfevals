@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
+from typing import Literal
 
 import pytest
 
@@ -49,7 +50,11 @@ def _case(*, feature: str = "commerce.product_resolution", holdout: bool = False
     )
 
 
-def _run(*, strategy: str = "full", seed: int | None = None) -> RunSpec:
+def _run(
+    *,
+    strategy: Literal["full", "stratified", "random_subset"] = "full",
+    seed: int | None = None,
+) -> RunSpec:
     return RunSpec(sandbox=SandboxMode.MOCK, sample_strategy=strategy, seed=seed)
 
 

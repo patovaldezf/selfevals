@@ -13,6 +13,7 @@ from selfevals.schemas.enums import (
     SandboxMode,
 )
 from selfevals.schemas.experiment import (
+    ComparisonOp,
     DatasetUsage,
     DecisionPolicy,
     Experiment,
@@ -29,7 +30,7 @@ WS = "ws_01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
 def _experiment(
     *,
-    target_op: str = ">=",
+    target_op: ComparisonOp = ">=",
     target_value: float = 0.85,
     guardrails: list[MetricTarget] | None = None,
     if_regression_fails: str = "reject",
@@ -200,7 +201,9 @@ def test_object_form_returns_tuple() -> None:
         ("==", 0.5, 0.51, DecisionOutcome.INVESTIGATE),
     ],
 )
-def test_operator_branches(op: str, value: float, agg: float, expected: DecisionOutcome) -> None:
+def test_operator_branches(
+    op: ComparisonOp, value: float, agg: float, expected: DecisionOutcome
+) -> None:
     exp = _experiment(target_op=op, target_value=value)
     ev = evaluate_iteration(experiment=exp, aggregate=_agg(primary=agg), baseline=None)
     assert ev.outcome == expected

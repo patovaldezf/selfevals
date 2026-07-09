@@ -13,6 +13,8 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
+from collections.abc import AsyncGenerator
+from typing import Any, cast
 
 import pytest
 
@@ -52,7 +54,9 @@ async def _drain(broker: RedisSpanBroker, run_id: str, *, timeout: float = 5.0) 
     pending xread connection is torn down — otherwise `filterwarnings=error`
     trips on the leaked redis.asyncio connection / a pending task.
     """
-    agen = broker.subscribe(WS, run_id)
+    agen = cast(
+        "AsyncGenerator[dict[str, Any] | _Closed, None]", broker.subscribe(WS, run_id)
+    )
 
     async def _collect() -> list[object]:
         out: list[object] = []

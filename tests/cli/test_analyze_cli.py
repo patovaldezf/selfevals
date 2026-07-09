@@ -28,7 +28,7 @@ def _capture(capsys: pytest.CaptureFixture[str], argv: list[str], stdin: str = "
         import io
         import sys
 
-        sys.stdin = io.StringIO(stdin)  # type: ignore[assignment]
+        sys.stdin = io.StringIO(stdin)
     try:
         rc = app(argv)
     finally:

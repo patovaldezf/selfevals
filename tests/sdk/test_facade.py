@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
+
 import pytest
 
 from selfevals.sdk import facade
 
 
 @pytest.fixture(autouse=True)
-def _reset_state() -> None:
+def _reset_state() -> Generator[None, None, None]:
     """Make every test start from a clean facade module state."""
     facade._reset_for_tests()
     yield

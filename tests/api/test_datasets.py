@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 import warnings
+from datetime import datetime
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -40,7 +42,7 @@ def client(db_url: str) -> TestClient:
     return TestClient(build_app(db_path=db_url))
 
 
-def _case() -> dict:
+def _case() -> dict[str, Any]:
     return {
         "name": "say pong",
         "task_type": "echo",
@@ -56,20 +58,20 @@ def _case() -> dict:
     }
 
 
-def _regression_case() -> dict:
+def _regression_case() -> dict[str, Any]:
     case = _case()
     case["taxonomy"]["dataset_type"] = "regression"
     case["taxonomy"]["source"] = {"type": "failure", "failure_id": "manual"}
     return case
 
 
-def _create_inline(client: TestClient, *, name: str = "golden-v1") -> dict:
+def _create_inline(client: TestClient, *, name: str = "golden-v1") -> dict[str, Any]:
     resp = client.post(
         f"/api/workspaces/{WS}/datasets",
         json={"name": name, "dataset_type": "golden", "cases": [_case(), _case()]},
     )
     assert resp.status_code == 201, resp.text
-    return resp.json()
+    return cast(dict[str, Any], resp.json())
 
 
 def _create_trace(db_url: str, *, case_id: str, trace_id: str = "tr_promote") -> None:
@@ -91,7 +93,7 @@ def _create_trace(db_url: str, *, case_id: str, trace_id: str = "tr_promote") ->
                         framework_version="0.0.0",
                         runtime="pytest",
                         sandbox=SandboxMode.DRY_RUN,
-                        started_at="2026-05-01T12:00:00+00:00",
+                        started_at=datetime.fromisoformat("2026-05-01T12:00:00+00:00"),
                     ),
                     final_state=FinalState(status=TraceState.COMPLETED),
                     grader_results=[

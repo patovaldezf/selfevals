@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from selfevals.optimization.aggregator import FunnelNode
 from selfevals.repo.loader import build_spec_from_mapping
 from selfevals.runner.launch import build_loop
 
@@ -104,20 +105,20 @@ async def test_showcase_gate_short_circuits_at_low_level() -> None:
     assert found.mean_score == pytest.approx(0.0)
 
 
-def _find_node(funnel: dict[str, object], key: str) -> object | None:
+def _find_node(funnel: dict[str, FunnelNode], key: str) -> FunnelNode | None:
     """Depth-first search for a rolled-up funnel node by key."""
     for node_key, node in funnel.items():
         if node_key == key:
             return node
-        found = _find_node(getattr(node, "children", {}), key)
+        found = _find_node(node.children, key)
         if found is not None:
             return found
     return None
 
 
-def _descendant_keys(node: object) -> set[str]:
+def _descendant_keys(node: FunnelNode) -> set[str]:
     keys: set[str] = set()
-    for child_key, child in getattr(node, "children", {}).items():
+    for child_key, child in node.children.items():
         keys.add(child_key)
         keys |= _descendant_keys(child)
     return keys

@@ -10,6 +10,8 @@ and a resolvable run_id/trace_id. This is the fix for
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -285,7 +287,7 @@ def test_results_include_turns_expands_conversation(db_url: str) -> None:
 
     t0 = datetime(2026, 5, 25, 12, 0, 0, tzinfo=UTC)
 
-    def _turn(position: int, structured: dict) -> Trace:
+    def _turn(position: int, structured: dict[str, Any]) -> Trace:
         started = t0 + timedelta(seconds=position * 10)
         return Trace(
             id=Trace.make_id(),

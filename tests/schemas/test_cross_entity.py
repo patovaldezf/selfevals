@@ -213,7 +213,7 @@ def _make_trace(ws: Workspace, *, exp: Experiment, agent: Agent, case: EvalCase)
 
 
 def _make_iteration_and_decision(
-    ws: Workspace, *, exp: Experiment, trace: Trace, hypothesis: str | None
+    ws: Workspace, *, exp: Experiment, trace: Trace, hypothesis: str
 ) -> tuple[IterationRecord, DecisionRecord]:
     itr = IterationRecord(
         id=IterationRecord.make_id(),

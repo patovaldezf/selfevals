@@ -249,7 +249,7 @@ async def test_loop_persists_and_carries_grader_reason(db_url: str) -> None:
     # Persisted: the failing trace was written and still carries the reason.
     with storage.open(WS) as s:
         traces = s.list_entities(Trace)
-    persisted = [gr for t in traces for gr in t.grader_results]
+    persisted = [gr for t in traces if isinstance(t, Trace) for gr in t.grader_results]
     assert persisted, "expected the failing trace to be persisted with grader results"
     assert all(gr.reason for gr in persisted)
     storage.close()
@@ -296,7 +296,7 @@ async def test_trace_run_ids_only_lists_persisted_traces(db_url: str) -> None:
     # Only the failing case's trace was persisted → exactly one announced id.
     assert len(announced) == 1
     with storage.open(WS) as s:
-        stored = [t.run.run_id for t in s.list_entities(Trace)]
+        stored = [t.run.run_id for t in s.list_entities(Trace) if isinstance(t, Trace)]
     assert set(announced) == set(stored)
     # Every announced run_id resolves (no 404).
     for run_id in announced:
@@ -335,7 +335,7 @@ async def test_trace_run_ids_lists_all_when_persist_all(db_url: str) -> None:
 
     announced = result.iterations[0].iteration_record.execution.trace_run_ids
     with storage.open(WS) as s:
-        stored = [t.run.run_id for t in s.list_entities(Trace)]
+        stored = [t.run.run_id for t in s.list_entities(Trace) if isinstance(t, Trace)]
     # Both cases (1 rep each) stored and announced.
     assert len(announced) == 2
     assert set(announced) == set(stored)
@@ -714,7 +714,8 @@ async def test_loop_grades_concurrently_and_preserves_order() -> None:
         repetitions_per_case=2,
         grade_concurrency=8,
     )
-    proposal = loop._proposer.propose(exp, ProposerContext(iteration_index=0, history=()))
+    proposer = GridProposer()
+    proposal = proposer.propose(exp, ProposerContext(iteration_index=0, history=()))
     _, _, per_case, _persisted = await loop._run_iteration(proposal, iteration=0)
     # More than one grade task ran at the same time → concurrency is real.
     assert barrier["max"] > 1
@@ -781,7 +782,8 @@ async def test_loop_runs_cases_concurrently_and_preserves_order() -> None:
         cases=cases,
         case_concurrency=8,
     )
-    proposal = loop._proposer.propose(exp, ProposerContext(iteration_index=0, history=()))
+    proposer = GridProposer()
+    proposal = proposer.propose(exp, ProposerContext(iteration_index=0, history=()))
     aggregate, case_runs, _per_case, _persisted = await loop._run_iteration(proposal, iteration=0)
     # More than one case ran at the same time → inter-case concurrency is real.
     assert barrier["max"] > 1

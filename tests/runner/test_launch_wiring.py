@@ -9,8 +9,6 @@ this wiring is now shared by both the CLI and the HTTP `experiments/run` path.
 
 from __future__ import annotations
 
-from typing import cast
-
 import pytest
 
 from selfevals._errors import SelfEvalsUserError
@@ -135,7 +133,7 @@ def test_build_loop_without_scope_does_not_persist_cases(tmp_path: object) -> No
     assert all(c.experiment_id is None for c in spec.cases)
 
 
-def _inline_spec_with_parallelism(ws: str, parallelism: int) -> object:
+def _inline_spec_with_parallelism(ws: str, parallelism: int) -> ExperimentSpec:
     """An inline pingpong spec with `experiment.run.parallelism` overridden."""
     import json as _json
     from pathlib import Path
@@ -164,9 +162,9 @@ def test_build_loop_wires_run_parallelism_into_semaphores() -> None:
     from selfevals.runner.launch import build_loop
 
     spec = _inline_spec_with_parallelism("ws_01HZZZZZZZZZZZZZZZZZZZZZZZ", 4)
-    assert spec.experiment.run.parallelism == 4  # type: ignore[attr-defined]
+    assert spec.experiment.run.parallelism == 4
 
-    loop = build_loop(spec, scope=None, repetitions_per_case=1)  # type: ignore[arg-type]
+    loop = build_loop(spec, scope=None, repetitions_per_case=1)
 
     assert loop._grade_concurrency == 4
     assert loop._executor._concurrency == 4
@@ -195,7 +193,7 @@ def test_build_loop_default_parallelism_preserves_legacy_concurrency() -> None:
     # Deliberately do NOT set run.parallelism — exercise the schema default.
     raw["experiment"]["run"].pop("parallelism", None)
     spec = build_spec_from_mapping(raw, workspace_id="ws_01HZZZZZZZZZZZZZZZZZZZZZZZ")
-    loop = build_loop(spec, scope=None, repetitions_per_case=1)  # type: ignore[arg-type]
+    loop = build_loop(spec, scope=None, repetitions_per_case=1)
 
     assert loop._grade_concurrency == 8
     assert loop._executor._concurrency == 8
@@ -225,7 +223,8 @@ def test_build_loop_materializes_inline_dataset(db_url: str) -> None:
     """An inline run materializes a real Dataset over its cases and rewrites the
     experiment's dataset refs to point at it — no more dangling placeholder."""
     from selfevals.runner.launch import build_loop, ensure_workspace
-    from selfevals.schemas.dataset import Dataset, DatasetStatus
+    from selfevals.schemas.dataset import Dataset
+    from selfevals.schemas.enums import DatasetStatus
     from selfevals.storage.factory import open_storage
     from selfevals.storage.interface import ListFilter
 
@@ -777,11 +776,11 @@ def test_build_loop_wires_case_concurrency() -> None:
     from selfevals.runner.launch import build_loop
 
     spec = _inline_spec_with_parallelism("ws_01HZZZZZZZZZZZZZZZZZZZZZZZ", 4)
-    loop = build_loop(spec, scope=None, repetitions_per_case=1)  # type: ignore[arg-type]
+    loop = build_loop(spec, scope=None, repetitions_per_case=1)
     assert loop._case_concurrency == 4
 
 
-def _inline_spec_with_rate_limit(ws: str, rpm: int | None) -> object:
+def _inline_spec_with_rate_limit(ws: str, rpm: int | None) -> ExperimentSpec:
     import json as _json
     from pathlib import Path
 
@@ -810,7 +809,7 @@ def test_build_loop_default_wraps_retry_only() -> None:
     from selfevals.runner.throttle import RateLimitedAdapter
 
     spec = _inline_spec_with_rate_limit("ws_01HZZZZZZZZZZZZZZZZZZZZZZZ", None)
-    loop = build_loop(spec, scope=None, repetitions_per_case=1)  # type: ignore[arg-type]
+    loop = build_loop(spec, scope=None, repetitions_per_case=1)
     adapter = loop._executor._adapter
     assert isinstance(adapter, RetryingAdapter)
     assert not isinstance(adapter, RateLimitedAdapter)
@@ -823,15 +822,14 @@ def test_build_loop_wraps_rate_limit_outermost_when_rpm_set() -> None:
     from selfevals.runner.throttle import RateLimitedAdapter
 
     spec = _inline_spec_with_rate_limit("ws_01HZZZZZZZZZZZZZZZZZZZZZZZ", 600)
-    loop = build_loop(spec, scope=None, repetitions_per_case=1)  # type: ignore[arg-type]
+    loop = build_loop(spec, scope=None, repetitions_per_case=1)
     adapter = loop._executor._adapter
     assert isinstance(adapter, RateLimitedAdapter)
     assert isinstance(adapter._inner, RetryingAdapter)
 
 
 def _spec_with_rate_limit(ws: str, rpm: int | None) -> ExperimentSpec:
-    """Typed wrapper over the `object`-returning helper, for the rate-limit tests."""
-    return cast(ExperimentSpec, _inline_spec_with_rate_limit(ws, rpm))
+    return _inline_spec_with_rate_limit(ws, rpm)
 
 
 def test_build_loop_uses_redis_bucket_when_redis_url_passed() -> None:

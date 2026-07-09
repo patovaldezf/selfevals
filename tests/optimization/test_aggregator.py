@@ -296,7 +296,8 @@ def test_funnel_node_to_dict_is_json_serializable() -> None:
     payload = {key: node.to_dict() for key, node in agg.funnel.items()}
     dumped = json.dumps(payload)
     assert "overall" in dumped
-    assert payload["overall"]["children"]["sub"]["mean_score"] == pytest.approx(0.8)
+    overall = agg.funnel["overall"]
+    assert overall.children["sub"].mean_score == pytest.approx(0.8)
 
 
 def test_unsupported_metric_raises() -> None:

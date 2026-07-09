@@ -36,7 +36,7 @@ class _FakeRedisClient:
 def _queue_with(consumers: list[dict[str, Any]] | Exception) -> RedisRunJobQueue:
     """Build a queue around a fake client, bypassing the redis-touching __init__."""
     q = object.__new__(RedisRunJobQueue)
-    q._client = _FakeRedisClient(consumers)  # type: ignore[attr-defined]
+    q._client = _FakeRedisClient(consumers)
     q.stream = RUN_JOBS_STREAM
     q.group = RUN_JOBS_GROUP
     q.redis_label = "redis://localhost:6380/15"

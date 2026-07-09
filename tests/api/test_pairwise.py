@@ -8,6 +8,8 @@ wiring and status codes.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -32,7 +34,7 @@ def client(db_url: str) -> TestClient:
     return TestClient(build_app(db_path=db_url))
 
 
-def _verdict_body(*, judge_kind: str, judge_id: str, preferred: str, margin: float = 0.5) -> dict:
+def _verdict_body(*, judge_kind: str, judge_id: str, preferred: str, margin: float = 0.5) -> dict[str, Any]:
     return {
         "a_ref": {"kind": "agent_output", "content_snapshot": "out-A"},
         "b_ref": {"kind": "reference", "content_snapshot": "ref-B"},
@@ -111,7 +113,7 @@ def test_invalid_judge_kind_filter_is_422(client: TestClient) -> None:
 _JUDGE = "tests.api._tournament_judge:judge"
 
 
-def _tournament_body(strategy: str = "all_pairs", method: str = "elo", **extra: object) -> dict:
+def _tournament_body(strategy: str = "all_pairs", method: str = "elo", **extra: object) -> dict[str, Any]:
     return {
         "candidates": [
             {"id": "a", "output_text": "out-a"},

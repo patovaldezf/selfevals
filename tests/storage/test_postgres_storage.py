@@ -126,10 +126,13 @@ def test_list_returns_only_current_workspace(storage: StorageInterface) -> None:
         items_a = scope.list_entities(FeatureRegistry)
         assert len(items_a) == 2
         assert all(isinstance(i, FeatureRegistry) for i in items_a)
-        assert {i.primary_feature for i in items_a} == {"a.one", "a.two"}
+        assert {i.primary_feature for i in items_a if isinstance(i, FeatureRegistry)} == {
+            "a.one",
+            "a.two",
+        }
     with storage.open(ws_b.id) as scope:
         items_b = scope.list_entities(FeatureRegistry)
-        assert {i.primary_feature for i in items_b} == {"b.one"}
+        assert {i.primary_feature for i in items_b if isinstance(i, FeatureRegistry)} == {"b.one"}
 
 
 def test_list_filter_by_column(storage: StorageInterface) -> None:
@@ -143,7 +146,9 @@ def test_list_filter_by_column(storage: StorageInterface) -> None:
             ListFilter(where={"primary_feature": "support.y"}),
         )
         assert len(items) == 1
-        assert items[0].primary_feature == "support.y"
+        item = items[0]
+        assert isinstance(item, FeatureRegistry)
+        assert item.primary_feature == "support.y"
 
 
 def test_list_rejects_untrusted_order_by(storage: StorageInterface) -> None:
@@ -191,7 +196,7 @@ def test_transaction_rolls_back_on_error(storage: StorageInterface) -> None:
     ws = _ws()
     with storage.open(ws.id) as scope:
         scope.put_entity(ws)
-    with pytest.raises(RuntimeError), storage.transaction():  # type: ignore[attr-defined]
+    with pytest.raises(RuntimeError), storage.transaction():
         with storage.open(ws.id) as scope:
             scope.put_entity(_feature(ws.id, primary="rollback.me"))
         raise RuntimeError("boom")

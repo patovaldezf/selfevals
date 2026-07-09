@@ -80,7 +80,7 @@ def _iteration(
     iteration: int = 0,
     primary: float = 0.5,
     aggregate: IterationAggregate | None = None,
-    funnel_metrics: dict[str, object] | None = None,
+    funnel_metrics: dict[str, object] | dict[str, dict[str, object]] | None = None,
 ) -> IterationOutcome:
     agg = aggregate or IterationAggregate(
         primary_metric="pass@1",

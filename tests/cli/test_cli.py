@@ -180,7 +180,7 @@ def test_compare_two_iterations(db_url: str, capsys: pytest.CaptureFixture[str])
             from selfevals.schemas.iteration import IterationRecord
 
             iterations = sorted(
-                (it for it in scope.list_entities(IterationRecord)),
+                (it for it in scope.list_entities(IterationRecord) if isinstance(it, IterationRecord)),
                 key=lambda it: it.iteration,
             )
     finally:
@@ -247,7 +247,7 @@ def _case(ws_id: str, target: str = "pong") -> EvalCase:
 
 
 def _experiment(ws_id: str, **overrides: Any) -> Experiment:
-    base = dict(
+    base: dict[str, Any] = dict(
         id=Experiment.make_id(),
         workspace_id=ws_id,
         name="optimize prompt v2",

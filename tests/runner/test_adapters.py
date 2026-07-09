@@ -204,19 +204,18 @@ async def test_http_adapter_roundtrip_mock_transport() -> None:
 
     adapter = HttpEndpointAdapter("http://test.local/agent")
     # Inject a mock transport by monkeypatching the client factory.
-    import selfevals.runner.adapters as adapters_mod
 
-    real_client = adapters_mod.httpx.AsyncClient
+    real_client = httpx.AsyncClient
 
     def factory(*args: object, **kwargs: object) -> httpx.AsyncClient:
         kwargs.pop("timeout", None)
         return real_client(transport=httpx.MockTransport(handler))
 
-    adapters_mod.httpx.AsyncClient = factory  # type: ignore[assignment]  # audit:ignore[type_ignores] — monkeypatch the module's httpx client with a fake
+    httpx.AsyncClient = factory  # type: ignore[assignment,misc]  # audit:ignore[type_ignores] — monkeypatch the httpx client with a fake
     try:
         resp = await adapter.invoke(_req())
     finally:
-        adapters_mod.httpx.AsyncClient = real_client  # type: ignore[assignment]  # audit:ignore[type_ignores] — restore the monkeypatched httpx client
+        httpx.AsyncClient = real_client  # type: ignore[misc]  # audit:ignore[type_ignores] — restore the monkeypatched httpx client
     assert resp.content == "served: ec_x"
     assert resp.tokens_input == 3
 
@@ -227,20 +226,19 @@ async def test_http_adapter_maps_status_error() -> None:
         return httpx.Response(503, text="unavailable")
 
     adapter = HttpEndpointAdapter("http://test.local/agent")
-    import selfevals.runner.adapters as adapters_mod
 
-    real_client = adapters_mod.httpx.AsyncClient
+    real_client = httpx.AsyncClient
 
     def factory(*args: object, **kwargs: object) -> httpx.AsyncClient:
         kwargs.pop("timeout", None)
         return real_client(transport=httpx.MockTransport(handler))
 
-    adapters_mod.httpx.AsyncClient = factory  # type: ignore[assignment]  # audit:ignore[type_ignores] — monkeypatch the module's httpx client with a fake
+    httpx.AsyncClient = factory  # type: ignore[assignment,misc]  # audit:ignore[type_ignores] — monkeypatch the httpx client with a fake
     try:
         with pytest.raises(AdapterError, match="503"):
             await adapter.invoke(_req())
     finally:
-        adapters_mod.httpx.AsyncClient = real_client  # type: ignore[assignment]  # audit:ignore[type_ignores] — restore the monkeypatched httpx client
+        httpx.AsyncClient = real_client  # type: ignore[misc]  # audit:ignore[type_ignores] — restore the monkeypatched httpx client
 
 
 def test_http_adapter_rejects_empty_url() -> None:
@@ -264,20 +262,19 @@ async def _http_invoke_expecting_error(
 ) -> AdapterError:
     """Run HttpEndpointAdapter against a mock handler, return the AdapterError."""
     adapter = HttpEndpointAdapter("http://test.local/agent")
-    import selfevals.runner.adapters as adapters_mod
 
-    real_client = adapters_mod.httpx.AsyncClient
+    real_client = httpx.AsyncClient
 
     def factory(*args: object, **kwargs: object) -> httpx.AsyncClient:
         kwargs.pop("timeout", None)
         return real_client(transport=httpx.MockTransport(handler))
 
-    adapters_mod.httpx.AsyncClient = factory  # type: ignore[assignment]  # audit:ignore[type_ignores] — monkeypatch the module's httpx client with a fake
+    httpx.AsyncClient = factory  # type: ignore[assignment,misc]  # audit:ignore[type_ignores] — monkeypatch the httpx client with a fake
     try:
         with pytest.raises(AdapterError) as excinfo:
             await adapter.invoke(_req())
     finally:
-        adapters_mod.httpx.AsyncClient = real_client  # type: ignore[assignment]  # audit:ignore[type_ignores] — restore the monkeypatched httpx client
+        httpx.AsyncClient = real_client  # type: ignore[misc]  # audit:ignore[type_ignores] — restore the monkeypatched httpx client
     return excinfo.value
 
 

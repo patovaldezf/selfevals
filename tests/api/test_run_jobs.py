@@ -6,7 +6,7 @@ import json
 import time
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 from fastapi.testclient import TestClient
@@ -42,7 +42,7 @@ def _inline_spec(*, max_iterations: int = 1) -> dict[str, Any]:
     rows = [json.loads(line) for line in CASES.read_text().splitlines() if line.strip()]
     raw["dataset"] = {"cases_inline": rows}
     raw["experiment"]["run"]["max_iterations"] = max_iterations
-    return raw
+    return cast(dict[str, Any], raw)
 
 
 def _job_status(db_path: str, workspace_id: str, job_id: str) -> str:

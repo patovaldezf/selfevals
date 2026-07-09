@@ -108,7 +108,7 @@ def test_manual_requires_non_empty_list() -> None:
 
 def test_manual_rejects_invalid_entry_type() -> None:
     with pytest.raises(TypeError):
-        ManualProposer(["not a proposal"])  # type: ignore[list-item]
+        ManualProposer(["not a proposal"])  # type: ignore[arg-type]
 
 
 def test_grid_cartesian_product() -> None:
