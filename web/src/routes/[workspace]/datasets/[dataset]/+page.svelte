@@ -24,6 +24,20 @@
   // Show the dataset name (not its id) in the global breadcrumb.
   $: crumbLabels.set({ [ds.id]: ds.name });
 
+  // Clear the baseline (unpin the regression gate). Re-baselining to a specific
+  // iteration lives in that iteration's drawer; from the dataset the meaningful
+  // action is removing the anchor entirely.
+  let showClearBaseline = false;
+  async function clearBaseline() {
+    try {
+      await api.setBaseline(data.workspace.id, ds.id, null);
+      toast.success('Baseline cleared', 'This dataset no longer gates runs.');
+      await invalidateAll();
+    } catch (err) {
+      toast.error('Clear failed', err instanceof ApiError ? err.detail : String(err));
+    }
+  }
+
   let showFreeze = false;
 
   // Turn a facet dict into sorted bars for the BarChart.
@@ -159,7 +173,14 @@
 
   <!-- Regression baseline -->
   <section class="mb-8">
-    <h2 class="mb-3 text-sm font-semibold">Regression baseline</h2>
+    <div class="mb-3 flex items-center justify-between gap-3">
+      <h2 class="text-sm font-semibold">Regression baseline</h2>
+      {#if baseline}
+        <Button size="sm" variant="ghost" on:click={() => (showClearBaseline = true)}>
+          Clear baseline
+        </Button>
+      {/if}
+    </div>
     {#if baseline}
       <div class="rounded-lg border border-border bg-surface p-5">
         <div class="flex flex-wrap items-center gap-x-8 gap-y-3">
@@ -228,6 +249,16 @@
   cancelLabel="Keep editable"
   onConfirm={freeze}
   on:close={() => (showFreeze = false)}
+/>
+
+<ConfirmDialog
+  open={showClearBaseline}
+  title="Clear the regression baseline?"
+  message="Runs over this dataset will no longer be gated against a fixed point. Re-anchor later from an iteration's drawer."
+  confirmLabel="Clear baseline"
+  tone="danger"
+  onConfirm={clearBaseline}
+  on:close={() => (showClearBaseline = false)}
 />
 
 <style>

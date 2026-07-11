@@ -13,6 +13,8 @@
 -->
 <script lang="ts">
   import GradeChip from '$lib/components/GradeChip.svelte';
+  import CaseResultRow from '$lib/components/CaseResultRow.svelte';
+  import GraderResults from '$lib/components/GraderResults.svelte';
   import Icon from '$lib/components/ui/Icon.svelte';
   import { ArrowRight, ChevronRight } from 'lucide-svelte';
   import type { ScenarioResult } from '$lib/api/client';
@@ -80,9 +82,13 @@
       {/if}
     </div>
 
-    {#if turn.message}
-      <p class="mb-3 whitespace-pre-wrap text-sm text-text-1">{turn.message}</p>
-    {/if}
+    <!-- Message + expected-vs-detected per dimension, the same renderer the
+         Results tab and CaseDetailDrawer use — a turn reads like a case.
+         CaseResultRow owns the message + diff; asTurn keeps it dense;
+         showTurns=false since a thread turn has no nested turns to expand. -->
+    <div class="mb-3">
+      <CaseResultRow result={turn} {workspaceId} asTurn showTurns={false} />
+    </div>
 
     {#if graderResults.length > 0}
       <details class="group">
@@ -92,20 +98,15 @@
           <span class="group-open:rotate-90 transition-transform" aria-hidden="true"
             ><Icon icon={ChevronRight} size={13} /></span
           >
-          Grader results
+          Graders
           <span class="font-mono normal-case text-text-3" data-numeric
             >· {graderResults.length}</span
           >
         </summary>
-        <pre
-          class="mt-2 overflow-x-auto rounded-lg border border-border bg-surface-2/40 p-4 font-mono text-xs">{JSON.stringify(
-            graderResults,
-            null,
-            2
-          )}</pre>
+        <div class="mt-2">
+          <GraderResults results={graderResults} />
+        </div>
       </details>
-    {:else}
-      <div class="text-xs text-text-3">No grader results for this turn.</div>
     {/if}
   </div>
 </article>
