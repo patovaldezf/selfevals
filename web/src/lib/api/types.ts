@@ -90,6 +90,22 @@ export type DetectedView = {
   tools_invoked?: string[] | null;
 };
 
+/** One grader's verdict on a scenario, as it appears in
+ * `ScenarioResult.grader_results[]`. `reason_pointer` is an `oss://` pointer to
+ * the full reasoning when it was too large to inline; `breakdown` is the
+ * grader's own nested detail (per-rule funnel, sub-scores). Kept loose on the
+ * nested fields since their shape varies by grader type. */
+export type GraderResult = {
+  grader: string;
+  label?: string | null;
+  score?: number | null;
+  reason?: string | null;
+  reason_pointer?: string | null;
+  confidence?: number | null;
+  failure_modes?: string[] | null;
+  breakdown?: Record<string, unknown> | null;
+};
+
 /** One evaluated scenario — a case, or one turn of a conversation case.
  * The single recursive shape behind `/results` and `/threads`. Mirror of
  * `api.schemas.ScenarioResult`. `expected`/`detected` are null when the case
@@ -109,7 +125,7 @@ export type ScenarioResult = {
   failure_modes: string[];
   expected?: ExpectedView | null;
   detected?: DetectedView | null;
-  grader_results: Record<string, unknown>[];
+  grader_results: GraderResult[];
   turns: ScenarioResult[];
 };
 
