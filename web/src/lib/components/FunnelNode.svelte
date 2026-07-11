@@ -6,6 +6,11 @@
   // Nesting depth, used only for left indentation. The backend already
   // shaped the tree; we never recompute anything here.
   export let depth = 0;
+  /** Clicking a node opens its drill-down (label + failure-mode breakdown).
+   *  Threaded through the recursion so every level is selectable. */
+  export let onSelect: ((node: FunnelNode) => void) | null = null;
+  /** The currently open node, so the row highlights when it's the one shown. */
+  export let selectedKey: string | null = null;
 
   // Mirror the markdown reporter's `_funnel_node_lines` score formatting
   // (4 significant figures, em dash for null) so the CLI and the UI agree.
@@ -32,7 +37,12 @@
 </script>
 
 <div class="border-l border-border" style="padding-left: {depth === 0 ? 0 : 16}px">
-  <div class="flex items-baseline gap-3 py-1.5 {depth > 0 ? 'pl-3' : ''}">
+  <button
+    type="button"
+    class="node-row {depth > 0 ? 'pl-3' : ''}"
+    class:node-sel={selectedKey === node.key}
+    on:click={() => onSelect?.(node)}
+  >
     <span class="font-mono text-sm text-text-1 truncate">{node.key}</span>
 
     <div class="flex flex-wrap items-center gap-1.5 min-w-0">
@@ -52,9 +62,29 @@
         {fmtScore(node.mean_score)}
       </span>
     </div>
-  </div>
+  </button>
 
   {#each childKeys as key}
-    <svelte:self node={node.children[key]} depth={depth + 1} />
+    <svelte:self node={node.children[key]} depth={depth + 1} {onSelect} {selectedKey} />
   {/each}
 </div>
+
+<style>
+  .node-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    width: 100%;
+    text-align: left;
+    padding: 0.375rem 0.4rem;
+    border-radius: var(--radius-sm);
+    transition: background-color var(--dur-fast) var(--ease-out);
+  }
+  .node-row:hover {
+    background: var(--color-surface-2);
+  }
+  .node-sel {
+    background: var(--color-surface-2);
+    box-shadow: inset 2px 0 0 var(--color-brand);
+  }
+</style>

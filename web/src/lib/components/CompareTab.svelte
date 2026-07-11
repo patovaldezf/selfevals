@@ -8,8 +8,21 @@
 -->
 <script lang="ts">
   import { api, ApiError, type CompareResponse, type IterationSummary } from '$lib/api/client';
-  import { fmtNumber, fmtDelta, deltaColor, recommendationText } from '$lib/viz/format';
+  import { fmtNumber, fmtDelta, deltaColor } from '$lib/viz/format';
   import type { ThresholdDirection } from '$lib/viz/thresholds';
+  import CompareVerdict from './CompareVerdict.svelte';
+  import DeltaStat from './charts/DeltaStat.svelte';
+  import Pill from './ui/Pill.svelte';
+
+  // The compare endpoint reports a delta per metric but not its direction, so a
+  // metric where lower is better (latency, cost, error/failure counts) would
+  // colour a drop as "bad" under the primary metric's direction. Infer the
+  // direction from the metric name so the colour is honest — up is not always
+  // good. Falls back to the experiment's primary direction.
+  const LOWER_IS_BETTER = /(latency|_ms|cost|usd|error|fail|duration)/i;
+  function directionFor(name: string): ThresholdDirection {
+    return LOWER_IS_BETTER.test(name) ? 'lower' : targetDirection;
+  }
 
   export let workspaceId: string;
   export let experimentId: string;
@@ -115,77 +128,37 @@
   </div>
 {:else if compareResult}
   {@const r = compareResult}
-  <!-- Recommendation banner: the verdict first, evidence below. -->
-  <div
-    class="rounded-lg border bg-surface px-5 py-4 mb-6"
-    style:border-color={r.recommendation.kind === 'winner'
-      ? 'var(--color-success)'
-      : 'var(--color-border)'}
-  >
-    <div class="flex items-center gap-2">
-      <span
-        class="text-base font-medium"
-        style:color={r.recommendation.kind === 'winner'
-          ? deltaColor(r.recommendation.delta, targetDirection)
-          : 'var(--color-text-1)'}
-      >
-        {recommendationText(r.recommendation)}
-      </span>
-    </div>
-    {#if r.recommendation.kind === 'winner' && r.recommendation.new_failure_modes.length > 0}
-      <div class="text-text-2 text-xs mt-1.5">
-        New failure modes:
-        {#each r.recommendation.new_failure_modes as m, i}<span class="font-mono"
-            >{m}{i < r.recommendation.new_failure_modes.length - 1 ? ', ' : ''}</span
-          >{/each}
-      </div>
-    {/if}
-    <!-- Honest holdout caveat: a first-class state, never a fake number. -->
-    <div
-      class="text-xs mt-2 pt-2 border-t border-dashed border-border"
-      style:color="var(--color-text-3)"
-      title="The iteration ledger carries no held-out split classification yet."
-    >
-      {r.holdout_status === 'unavailable'
-        ? 'Valid on optimization set · Holdout: not yet tracked'
-        : `Holdout: ${r.holdout_status}`}
-    </div>
+  <!-- The verdict IS the screen: winner + delta large, evidence below. -->
+  <div class="mb-6">
+    <CompareVerdict
+      recommendation={r.recommendation}
+      holdoutStatus={r.holdout_status}
+      {targetDirection}
+    />
   </div>
 
-  <!-- Metrics diff -->
-  <section class="mb-6">
-    <h2 class="text-xs uppercase tracking-wide text-text-3 mb-2">Metrics</h2>
-    <div class="border border-border rounded-lg overflow-hidden bg-surface">
-      <table class="w-full text-sm">
-        <thead class="bg-surface-2 text-text-3 text-xs uppercase tracking-wide">
-          <tr>
-            <th class="text-left px-4 py-2.5 font-medium">Metric</th>
-            <th class="text-right px-4 py-2.5 font-medium">A</th>
-            <th class="text-right px-4 py-2.5 font-medium">B</th>
-            <th class="text-right px-4 py-2.5 font-medium">Δ</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-border">
-          {#each r.metrics_diff as row}
-            <tr>
-              <td class="px-4 py-2.5 font-mono text-text-2 text-xs">{row.name}</td>
-              <td class="px-4 py-2.5 text-right font-mono" data-numeric>{fmtNumber(row.a)}</td>
-              <td class="px-4 py-2.5 text-right font-mono" data-numeric>{fmtNumber(row.b)}</td>
-              <td
-                class="px-4 py-2.5 text-right font-mono text-xs"
-                style:color={deltaColor(row.delta, targetDirection)}
-                data-numeric
-              >
-                {fmtDelta(row.delta)}
-              </td>
-            </tr>
-          {:else}
-            <tr><td class="px-4 py-3 text-text-3 text-xs" colspan="4">No metrics.</td></tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
-  </section>
+  <!-- Metrics diff as stat cards: each metric's B value headlined with its Δ,
+       coloured by whether the change is an improvement for the primary metric. -->
+  {#if r.metrics_diff.length}
+    <section class="mb-6">
+      <h2 class="text-xs uppercase tracking-wide text-text-3 mb-3">Metrics · B vs A</h2>
+      <div class="metrics-grid">
+        {#each r.metrics_diff as row (row.name)}
+          <div class="metric-card">
+            <DeltaStat
+              label={row.name}
+              value={row.b}
+              delta={row.delta}
+              goodWhen={directionFor(row.name)}
+              format="plain"
+              size="md"
+            />
+            <span class="metric-from font-mono" data-numeric>from {fmtNumber(row.a)}</span>
+          </div>
+        {/each}
+      </div>
+    </section>
+  {/if}
 
   <!-- Proposal diff -->
   <section class="mb-6">
@@ -236,10 +209,10 @@
     {:else}
       <div class="grid grid-cols-3 gap-4">
         <div class="rounded-lg border border-border bg-surface px-4 py-3">
-          <div class="text-text-3 text-xs mb-2">In A only</div>
+          <div class="text-text-3 text-xs mb-2.5">Gone in B <span class="fm-good">✓</span></div>
           {#each Object.entries(r.failure_modes.only_a) as [mode, count]}
-            <div class="flex items-center justify-between text-xs py-0.5">
-              <span class="font-mono" style:color="var(--color-danger)">{mode}</span>
+            <div class="fm-row">
+              <Pill tone="neutral">{mode}</Pill>
               <span class="font-mono text-text-3" data-numeric>{count}</span>
             </div>
           {:else}
@@ -247,10 +220,10 @@
           {/each}
         </div>
         <div class="rounded-lg border border-border bg-surface px-4 py-3">
-          <div class="text-text-3 text-xs mb-2">In B only</div>
+          <div class="text-text-3 text-xs mb-2.5">New in B <span class="fm-bad">▲</span></div>
           {#each Object.entries(r.failure_modes.only_b) as [mode, count]}
-            <div class="flex items-center justify-between text-xs py-0.5">
-              <span class="font-mono" style:color="var(--color-danger)">{mode}</span>
+            <div class="fm-row">
+              <Pill tone="negative">{mode}</Pill>
               <span class="font-mono text-text-3" data-numeric>{count}</span>
             </div>
           {:else}
@@ -258,10 +231,10 @@
           {/each}
         </div>
         <div class="rounded-lg border border-border bg-surface px-4 py-3">
-          <div class="text-text-3 text-xs mb-2">In both</div>
+          <div class="text-text-3 text-xs mb-2.5">In both</div>
           {#each Object.entries(r.failure_modes.common) as [mode, counts]}
-            <div class="flex items-center justify-between text-xs py-0.5">
-              <span class="font-mono text-text-2">{mode}</span>
+            <div class="fm-row">
+              <Pill tone="caution">{mode}</Pill>
               <span class="font-mono text-text-3" data-numeric>
                 {counts[0]} → {counts[1]}
               </span>
@@ -352,5 +325,36 @@
     font-size: var(--text-xs);
     color: var(--color-text-3);
     font-style: italic;
+  }
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+    gap: 0.75rem;
+  }
+  .metric-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+  }
+  .metric-from {
+    font-size: var(--text-2xs);
+    color: var(--color-text-3);
+  }
+  .fm-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.2rem 0;
+  }
+  .fm-good {
+    color: var(--color-ok);
+  }
+  .fm-bad {
+    color: var(--color-bad);
   }
 </style>
