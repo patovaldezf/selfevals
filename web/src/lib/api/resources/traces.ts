@@ -1,5 +1,13 @@
 import { ApiError, authHeaders, request } from '$lib/api/http';
-import type { PromoteCaseDraft, ThreadDetail, TraceDetail } from '$lib/api/types';
+import type {
+  ProvidersList,
+  PromoteCaseDraft,
+  SpanReplayResult,
+  ThreadDetail,
+  TraceAnnotation,
+  TraceAnnotationList,
+  TraceDetail
+} from '$lib/api/types';
 
 export const tracesApi = {
   trace: (workspaceId: string, traceId: string, fetch?: typeof globalThis.fetch) =>
@@ -56,5 +64,41 @@ export const tracesApi = {
       method: 'POST',
       json: body,
       fetch
-    })
+    }),
+
+  /** Human good/bad verdict + notes on a trace (LangSmith-style feedback). */
+  annotateTrace: (
+    workspaceId: string,
+    traceId: string,
+    body: { verdict: 'good' | 'bad'; notes?: string; annotator_id?: string },
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<TraceAnnotation>(`/api/workspaces/${workspaceId}/traces/${traceId}/annotations`, {
+      method: 'POST',
+      json: body,
+      fetch
+    }),
+
+  traceAnnotations: (workspaceId: string, traceId: string, fetch?: typeof globalThis.fetch) =>
+    request<TraceAnnotationList>(
+      `/api/workspaces/${workspaceId}/traces/${traceId}/annotations`,
+      { fetch }
+    ),
+
+  /** Providers/models the Playground can replay (SDK installed + key present). */
+  providers: (fetch?: typeof globalThis.fetch) =>
+    request<ProvidersList>('/api/providers', { fetch }),
+
+  /** Re-issue an llm_call span's prompt against another provider/model. */
+  replaySpan: (
+    workspaceId: string,
+    traceId: string,
+    spanId: string,
+    body: { provider: string; model: string; params?: Record<string, unknown> },
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<SpanReplayResult>(
+      `/api/workspaces/${workspaceId}/traces/${traceId}/spans/${spanId}/replay`,
+      { method: 'POST', json: body, fetch }
+    )
 };

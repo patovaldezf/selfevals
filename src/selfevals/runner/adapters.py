@@ -123,6 +123,17 @@ class AdapterToolUse:
     tool: str
     tool_use_id: str
     args: dict[str, Any] = field(default_factory=dict)
+    result: Any | None = None
+    """What the tool returned, when the agent reports it. Any JSON-serializable
+    value (string, dict, list). None means the agent didn't report a result —
+    the trace shows the call with no output, not an empty result. Lets the
+    fallback trace path (embedded/cli/http that don't emit their own spans)
+    still show tool outputs, not just inputs."""
+    status: str | None = None
+    """Tool outcome as the agent saw it (e.g. "ok", "error"). None → treated as
+    OK by the trace writer (the historical default)."""
+    error: str | None = None
+    """Error message when the tool failed. None on success."""
 
 
 @dataclass(frozen=True)
@@ -414,11 +425,16 @@ def _json_to_response(data: dict[str, Any]) -> AdapterResponse:
     for tu in tool_uses_raw:
         if not isinstance(tu, dict):
             raise AdapterError("tool_uses entries must be objects")
+        status_raw = tu.get("status")
+        error_raw = tu.get("error")
         tool_uses.append(
             AdapterToolUse(
                 tool=str(tu.get("tool", "")),
                 tool_use_id=str(tu.get("tool_use_id", "")),
                 args=dict(tu.get("args") or {}),
+                result=tu.get("result"),
+                status=str(status_raw) if status_raw is not None else None,
+                error=str(error_raw) if error_raw is not None else None,
             )
         )
     return AdapterResponse(

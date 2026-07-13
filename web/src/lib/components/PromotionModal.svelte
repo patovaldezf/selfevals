@@ -25,6 +25,7 @@
   let saving = false;
   let error: string | null = null;
   let draftText = '';
+  let notes = '';
   let regressionDatasets: DatasetSummary[] = [];
   let selectedDatasetId = '';
   let newDatasetName = 'agent regressions';
@@ -41,8 +42,18 @@
     error = null;
     result = null;
     try {
+      // Pre-load this trace's human feedback so the promoted case inherits the
+      // "what's right / wrong" notes the reviewer already left, instead of them
+      // hand-editing the JSON. Best-effort: a trace with no annotations just
+      // starts with an empty notes field.
+      const anns = await api.traceAnnotations(workspaceId, traceId).catch(() => ({
+        annotations: []
+      }));
+      notes = anns.annotations
+        .map((a) => `[${a.verdict ?? '—'}] ${a.notes ?? ''}`.trim())
+        .join('\n');
       const [draft, datasets] = await Promise.all([
-        api.draftCaseFromTrace(workspaceId, traceId),
+        api.draftCaseFromTrace(workspaceId, traceId, notes ? { notes } : {}),
         api.listDatasets(workspaceId, undefined, { dataset_type: 'regression', limit: 100 })
       ]);
       draftText = JSON.stringify(draft.case, null, 2);
@@ -60,6 +71,13 @@
     error = null;
     try {
       const parsed = JSON.parse(draftText) as Record<string, unknown>;
+      // Fold the (possibly edited) notes into the case metadata so the reviewer's
+      // "what's right / wrong" lands on the persisted case without hand-editing
+      // the JSON blob.
+      if (notes.trim()) {
+        const metadata = (parsed.metadata as Record<string, unknown> | undefined) ?? {};
+        parsed.metadata = { ...metadata, notes: notes.trim() };
+      }
       if (selectedDatasetId === '__new') {
         const dataset = await api.createDataset(workspaceId, {
           name: newDatasetName.trim() || 'agent regressions',
@@ -122,6 +140,17 @@
         </div>
 
         <aside class="promote-side">
+          <label class="promote-field">
+            <span class="promote-field-label">Notes (qué está bien / mal)</span>
+            <textarea
+              class="promote-notes"
+              bind:value={notes}
+              rows="3"
+              disabled={loading || saving}
+              placeholder="Se guarda en metadata.notes del caso…"
+            ></textarea>
+          </label>
+
           <div class="promote-field">
             <label class="promote-field-label" for="dataset-target">Target dataset</label>
             <select id="dataset-target" bind:value={selectedDatasetId} disabled={loading || saving}>
@@ -303,6 +332,22 @@
     padding: 0.5rem;
     font-size: var(--text-sm);
     color: var(--color-text-1);
+  }
+  .promote-notes {
+    width: 100%;
+    resize: vertical;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    border-radius: var(--radius-md);
+    padding: 0.5rem;
+    font-family: inherit;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: var(--color-text-1);
+  }
+  .promote-notes:focus {
+    outline: none;
+    border-color: var(--color-brand);
   }
   .promote-note {
     border: 1px solid var(--color-border);

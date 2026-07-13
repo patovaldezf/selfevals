@@ -23,7 +23,12 @@ from selfevals.schemas.trace import (
 )
 
 if TYPE_CHECKING:
-    from selfevals.runner.adapters import AdapterRequest, AdapterResponse, AgentAdapter
+    from selfevals.runner.adapters import (
+        AdapterRequest,
+        AdapterResponse,
+        AdapterToolUse,
+        AgentAdapter,
+    )
     from selfevals.runner.sandbox import SandboxPolicy
     from selfevals.trace.recorder import TraceRecorder
 
@@ -142,6 +147,23 @@ def cost_for(adapter: AgentAdapter, response: AdapterResponse) -> CostBreakdown 
     return estimate_cost(model.provider, model.name, tokens)
 
 
+def _tool_status(tu: AdapterToolUse) -> ToolCallStatus:
+    """Map an adapter's free-form tool status to the trace enum.
+
+    None (the historical default) → OK. An explicit `error` or a status string
+    that isn't a clean "ok" is treated as ERROR, so a failing tool shows red in
+    the viewer instead of a silent green.
+    """
+    if tu.error is not None:
+        return ToolCallStatus.ERROR
+    raw = (tu.status or "").strip().lower()
+    if raw in ("", "ok", "success", "succeeded"):
+        return ToolCallStatus.OK
+    if raw == "timeout":
+        return ToolCallStatus.TIMEOUT
+    return ToolCallStatus.ERROR
+
+
 def _write_tool_spans(
     recorder: TraceRecorder,
     response: AdapterResponse,
@@ -158,15 +180,26 @@ def _write_tool_spans(
             tool_use_id=tu.tool_use_id,
         ) as tool_span:
             tool_span.sandboxed = sandboxed
-            tool_span.status = ToolCallStatus.OK
+            tool_span.status = _tool_status(tu)
+            tool_span.error = tu.error
             # Record what the tool was called with, so the trace shows the
             # tool args, not just that a tool fired.
             if tu.args:
-                args_ptr, args_hash, _inline = route_payload(
+                args_ptr, args_hash, args_inline = route_payload(
                     recorder, f"tool_args:{tu.tool}", tu.args
                 )
                 tool_span.args_pointer = args_ptr
                 tool_span.args_hash = args_hash
+                tool_span.args_inline = args_inline
+            # Record what the tool returned, when the agent reports it, so the
+            # viewer shows tool outputs and not just inputs.
+            if tu.result is not None:
+                res_ptr, res_hash, res_inline = route_payload(
+                    recorder, f"tool_result:{tu.tool}", tu.result
+                )
+                tool_span.result_pointer = res_ptr
+                tool_span.result_hash = res_hash
+                tool_span.result_inline = res_inline
 
 
 def record_adapter_response(
@@ -176,8 +209,21 @@ def record_adapter_response(
     *,
     adapter: AgentAdapter,
     sandbox: SandboxPolicy,
+    agent_emitted_spans: bool = False,
 ) -> None:
-    """Write an `AdapterResponse` to `recorder` as an LLM call span + tool spans."""
+    """Write an `AdapterResponse` to `recorder` as an LLM call span + tool spans.
+
+    When `agent_emitted_spans` is True the agent already recorded its own real
+    LLM/tool spans (via `AgentTraceHandle`), so we skip the synthetic
+    `adapter_response` span and the flat tool spans — writing them would
+    double-count tokens/cost that the real spans already accumulated. The
+    structured output is still surfaced on the trace either way, since that's a
+    trace-level output, not a per-span metric.
+    """
+    if agent_emitted_spans:
+        if response.structured_output is not None:
+            recorder.set_outputs(TraceOutputs(structured_output=response.structured_output))
+        return
     # The model name reported by the agent wins (embedded specs declare no
     # model — the function does), then the spec-declared `agent.model`
     # (cli/http), then the agent record, then "unknown". This is what stops

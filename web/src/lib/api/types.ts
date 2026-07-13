@@ -468,6 +468,46 @@ export type PromoteCaseDraft = {
   warnings: string[];
 };
 
+export type TraceAnnotation = {
+  id: string;
+  trace_id: string | null;
+  case_id: string;
+  annotator_id: string;
+  verdict: 'good' | 'bad' | null;
+  notes: string | null;
+  confidence: number;
+  flagged_for_adjudication: boolean;
+  created_at: string;
+};
+
+export type TraceAnnotationList = {
+  annotations: TraceAnnotation[];
+};
+
+export type SpanReplayResult = {
+  provider: string;
+  model: string;
+  content: string;
+  tokens_input: number;
+  tokens_output: number;
+  cost_usd: number | null;
+  duration_ms: number;
+  original_provider: string;
+  original_model: string;
+};
+
+export type ProviderInfo = {
+  provider: string;
+  available: boolean;
+  sdk_installed: boolean;
+  has_key: boolean;
+  models: string[];
+};
+
+export type ProvidersList = {
+  providers: ProviderInfo[];
+};
+
 export type AppendDatasetCaseResult = {
   dataset: DatasetDetail;
   case_id: string;

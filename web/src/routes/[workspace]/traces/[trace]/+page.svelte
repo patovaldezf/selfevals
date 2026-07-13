@@ -96,7 +96,14 @@
   />
 
   <main class="detail">
-    <SpanDetailPanel {selected} {traceFailed} {finalState} />
+    <SpanDetailPanel
+      {selected}
+      {traceFailed}
+      {finalState}
+      {workspaceId}
+      traceId={data.trace.id}
+      {live}
+    />
   </main>
 </div>
 

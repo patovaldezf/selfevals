@@ -7,6 +7,11 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
 
+from selfevals.api.annotations_writer import (
+    create_annotation,
+    list_annotations_for_case,
+    list_annotations_for_trace,
+)
 from selfevals.api.auth import UserHeader, readable_workspace_ids
 from selfevals.api.broker import get_broker
 from selfevals.api.dataset_writer import TracePromotionError, draft_regression_case_from_trace
@@ -15,19 +20,31 @@ from selfevals.api.queries import load_thread, load_trace
 from selfevals.api.schemas import (
     ActiveRun,
     ActiveRunsResponse,
+    AnnotationListResponse,
+    AnnotationView,
+    CreateAnnotationRequest,
     PromoteCaseDraftRequest,
     PromoteCaseDraftResponse,
+    SpanReplayRequest,
+    SpanReplayResponse,
     ThreadResponse,
     TraceResponse,
 )
+from selfevals.api.span_replay import SpanReplayError, replay_span
 from selfevals.api.sse import stream_trace
-from selfevals.storage.errors import ObjectNotFoundError, PointerHashMismatchError
+from selfevals.storage.errors import (
+    EntityNotFoundError,
+    ObjectNotFoundError,
+    PointerHashMismatchError,
+)
 from selfevals.storage.filesystem import parse_pointer
 from selfevals.storage.interface import StorageInterface
 
 
 def register(app: FastAPI, deps: AppDeps) -> None:
     _register_trace_detail(app, deps)
+    _register_feedback_and_replay(app, deps)
+    _register_threads(app, deps)
     _register_streaming_and_payloads(app, deps)
 
 
@@ -93,6 +110,117 @@ def _register_trace_detail(app: FastAPI, deps: AppDeps) -> None:
         finally:
             storage.close()
 
+
+def _register_feedback_and_replay(app: FastAPI, deps: AppDeps) -> None:
+    """Human annotations (good/bad + notes) and the Playground span replay."""
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/traces/{trace_id}/annotations",
+        response_model=AnnotationView,
+        tags=["traces"],
+        summary="Attach a human good/bad verdict + notes to a trace",
+    )
+    def traces_annotate(
+        workspace_id: str,
+        trace_id: str,
+        body: CreateAnnotationRequest,
+        storage: StorageInterface = Depends(deps.storage),
+        _user: UserHeader = None,
+    ) -> AnnotationView:
+        try:
+            return create_annotation(
+                storage,
+                workspace_id=workspace_id,
+                trace_id=trace_id,
+                body=body,
+                user_id=_user,
+            )
+        except EntityNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"trace {trace_id} not found") from exc
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/traces/{trace_id}/annotations",
+        response_model=AnnotationListResponse,
+        tags=["traces"],
+        summary="List human annotations attached to a trace",
+    )
+    def traces_annotations(
+        workspace_id: str,
+        trace_id: str,
+        storage: StorageInterface = Depends(deps.storage),
+        _user: UserHeader = None,
+    ) -> AnnotationListResponse:
+        try:
+            return list_annotations_for_trace(
+                storage, workspace_id=workspace_id, trace_id=trace_id
+            )
+        except EntityNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"trace {trace_id} not found") from exc
+        finally:
+            storage.close()
+
+    @app.get(
+        "/api/workspaces/{workspace_id}/cases/{case_id}/annotations",
+        response_model=AnnotationListResponse,
+        tags=["traces"],
+        summary="List human annotations attached to a case (across its traces)",
+    )
+    def cases_annotations(
+        workspace_id: str,
+        case_id: str,
+        storage: StorageInterface = Depends(deps.storage),
+        _user: UserHeader = None,
+    ) -> AnnotationListResponse:
+        try:
+            return list_annotations_for_case(
+                storage, workspace_id=workspace_id, case_id=case_id
+            )
+        finally:
+            storage.close()
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/traces/{trace_id}/spans/{span_id}/replay",
+        response_model=SpanReplayResponse,
+        tags=["traces"],
+        summary="Replay an llm_call span's prompt against another provider/model",
+        description=(
+            "The Playground: re-issue exactly what an `llm_call` span sent (system "
+            "prompt + messages) to a provider/model you pick, and get the alternate "
+            "output back for side-by-side comparison. Tools are not executed (no side "
+            "effects). Requires the provider's SDK extra to be installed and its API "
+            "key in the environment."
+        ),
+    )
+    def spans_replay(
+        workspace_id: str,
+        trace_id: str,
+        span_id: str,
+        body: SpanReplayRequest,
+        storage: StorageInterface = Depends(deps.storage),
+        _user: UserHeader = None,
+    ) -> SpanReplayResponse:
+        try:
+            return replay_span(
+                storage,
+                deps.object_store,
+                workspace_id=workspace_id,
+                trace_id=trace_id,
+                span_id=span_id,
+                body=body,
+            )
+        except EntityNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"trace {trace_id} not found") from exc
+        except SpanReplayError as exc:
+            message = str(exc)
+            status = 404 if "not found" in message else 422
+            raise HTTPException(status_code=status, detail=message) from exc
+        finally:
+            storage.close()
+
+
+def _register_threads(app: FastAPI, deps: AppDeps) -> None:
     @app.get(
         "/api/workspaces/{workspace_id}/threads/{thread_id}",
         response_model=ThreadResponse,
@@ -123,6 +251,13 @@ def _register_trace_detail(app: FastAPI, deps: AppDeps) -> None:
 
 
 def _register_streaming_and_payloads(app: FastAPI, deps: AppDeps) -> None:
+    @app.get("/api/providers", tags=["traces"])
+    def providers(_user: UserHeader = None) -> dict[str, list[dict[str, object]]]:
+        """Providers/models the Playground can replay (SDK installed + key set)."""
+        from selfevals.api.span_replay import available_providers
+
+        return {"providers": available_providers()}
+
     @app.get("/api/runs/active", response_model=ActiveRunsResponse, tags=["traces"])
     def runs_active(
         storage: StorageInterface = Depends(deps.storage),

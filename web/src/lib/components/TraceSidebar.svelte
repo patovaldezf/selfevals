@@ -8,6 +8,7 @@
   import { createEventDispatcher } from 'svelte';
   import CopyableId from '$lib/components/CopyableId.svelte';
   import SpanTreeFlat from '$lib/components/SpanTreeFlat.svelte';
+  import TraceFeedback from '$lib/components/TraceFeedback.svelte';
   import StatusDot from '$lib/components/ui/StatusDot.svelte';
   import Button from '$lib/components/ui/Button.svelte';
   import Icon from '$lib/components/ui/Icon.svelte';
@@ -96,6 +97,10 @@
     </Button>
     <p class="promote-hint">Turn this run into permanent test coverage.</p>
   </div>
+
+  {#if !live}
+    <TraceFeedback {workspaceId} traceId={trace.id} />
+  {/if}
 
   <div class="tree-head">
     <span>Spans</span>
