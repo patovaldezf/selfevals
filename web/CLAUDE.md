@@ -45,6 +45,6 @@ npm run test:e2e   # Playwright (fixtures en e2e/fixtures/seed.sh)
   migrar big-bang los legacy existentes.
 - **Data layer**: SSR `load` en `+page.server.ts` + capa `src/lib/api/` (http.ts +
   resources/\*, tipos generados de OpenAPI con `npm run gen:api`). Live vía SSE
-  (`src/lib/api/sse.ts`) + poll con `invalidate()`. `@tanstack/svelte-query` está
-  instalado pero NO se usa (a retirar).
+  (`src/lib/api/sse.ts`) + el poller de `src/lib/api/live.ts` (`createPoller`,
+  pausa en tab oculto) + `invalidate()`. No hay query-cache lib.
 - **Tests** espejan la ruta del componente. Charts son SVG a mano (sin lib de charts).

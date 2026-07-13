@@ -9,16 +9,13 @@
  * moment you return. `stop()` tears everything down; safe to call twice. SSR-safe
  * (no-ops without `window`).
  *
- * This is the data-layer helper the plan called for instead of adopting
- * svelte-query — small, explicit, no cache to reason about.
+ * This is the whole live-data story: SSR `load` for the initial paint, SSE for
+ * push, and this poller for the rest — small, explicit, no cache to reason about.
  */
 
 export type Poller = { stop: () => void };
 
-export function createPoller(
-  fn: () => void | Promise<void>,
-  intervalMs: number
-): Poller {
+export function createPoller(fn: () => void | Promise<void>, intervalMs: number): Poller {
   if (typeof window === 'undefined') {
     return { stop: () => {} };
   }

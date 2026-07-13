@@ -59,4 +59,5 @@ data/
 .env.*
 !.env.example
 .gstack/
+.selfevals-1000x/
 /objects/
