@@ -77,6 +77,12 @@ class PayloadRouter:
         """Route raw bytes — caller-controlled encoding."""
         return self._route_bytes(key, data, data)
 
+    def put_bytes(self, key: str, data: bytes) -> str:
+        """Offload bytes to the object store unconditionally, returning the
+        pointer. For payloads that must always be a pointer regardless of size
+        (e.g. binary audio clips, which have no meaningful inline form)."""
+        return self._object_store.put(self._workspace_id, key, data)
+
     def _route_bytes(self, key: str, original: Any, encoded: bytes) -> RoutedPayload:
         size = len(encoded)
         content_hash = bytes_hash(encoded)

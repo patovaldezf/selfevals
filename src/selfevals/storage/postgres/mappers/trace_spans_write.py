@@ -18,7 +18,9 @@ from selfevals.schemas.trace import (
     MemoryWriteSpan,
     RetrievalSpan,
     Span,
+    SttSpan,
     ToolCallSpan,
+    TtsSpan,
 )
 
 
@@ -60,6 +62,10 @@ def insert_span(cur: Any, trace_id: str, workspace_id: str, index: int, span: Sp
         _insert_human_intervention_span(cur, trace_id, span)
     elif isinstance(span, GuardrailCheckSpan):
         _insert_guardrail_check_span(cur, trace_id, span)
+    elif isinstance(span, SttSpan):
+        _insert_stt_span(cur, trace_id, span)
+    elif isinstance(span, TtsSpan):
+        _insert_tts_span(cur, trace_id, span)
     elif isinstance(span, ErrorSpan):
         _insert_error_span(cur, trace_id, span)
     elif isinstance(span, CustomSpan):
@@ -299,4 +305,63 @@ def _insert_custom_span(cur: Any, trace_id: str, span: CustomSpan) -> None:
     cur.execute(
         "INSERT INTO trace_custom_spans (trace_id, span_id, payload) VALUES (%s, %s, %s)",
         (trace_id, span.id, Jsonb(span.payload)),
+    )
+
+
+def _insert_stt_span(cur: Any, trace_id: str, span: SttSpan) -> None:
+    cur.execute(
+        """
+        INSERT INTO trace_stt_spans
+          (trace_id, span_id, provider, model, audio_pointer, audio_hash,
+           audio_duration_ms, audio_mime_type, transcript_pointer, transcript_hash,
+           transcript_inline, language, confidence, streaming,
+           time_to_first_transcript_ms, provider_metadata)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            trace_id,
+            span.id,
+            span.provider,
+            span.model,
+            span.audio_pointer,
+            span.audio_hash,
+            span.audio_duration_ms,
+            span.audio_mime_type,
+            span.transcript_pointer,
+            span.transcript_hash,
+            span.transcript_inline,
+            span.language,
+            span.confidence,
+            span.streaming,
+            span.time_to_first_transcript_ms,
+            Jsonb(span.provider_metadata),
+        ),
+    )
+
+
+def _insert_tts_span(cur: Any, trace_id: str, span: TtsSpan) -> None:
+    cur.execute(
+        """
+        INSERT INTO trace_tts_spans
+          (trace_id, span_id, provider, model, voice_id, text_pointer, text_hash,
+           text_inline, audio_pointer, audio_hash, audio_duration_ms,
+           audio_mime_type, time_to_first_byte_ms, provider_metadata)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            trace_id,
+            span.id,
+            span.provider,
+            span.model,
+            span.voice_id,
+            span.text_pointer,
+            span.text_hash,
+            span.text_inline,
+            span.audio_pointer,
+            span.audio_hash,
+            span.audio_duration_ms,
+            span.audio_mime_type,
+            span.time_to_first_byte_ms,
+            Jsonb(span.provider_metadata),
+        ),
     )

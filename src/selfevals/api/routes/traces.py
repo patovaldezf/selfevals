@@ -40,6 +40,12 @@ from selfevals.storage.errors import (
 from selfevals.storage.filesystem import parse_pointer
 from selfevals.storage.interface import StorageInterface
 
+# Audio media types the /payloads endpoint will serve for a voice span's clip.
+# Restricted so the mime hint can't turn the endpoint into an open proxy.
+_AUDIO_MEDIA_TYPES = frozenset(
+    {"audio/wav", "audio/mpeg", "audio/mp4", "audio/ogg", "audio/webm"}
+)
+
 
 def register(app: FastAPI, deps: AppDeps) -> None:
     _register_trace_detail(app, deps)
@@ -317,6 +323,18 @@ def _register_streaming_and_payloads(app: FastAPI, deps: AppDeps) -> None:
                 ),
             ),
         ],
+        content_type: Annotated[
+            str | None,
+            Query(
+                description=(
+                    "Optional media-type hint for binary payloads (audio clips on stt/tts "
+                    "spans). The object store is content-addressed and stores no mime type, "
+                    "so the FE passes the span's `audio_mime_type` here to get a playable "
+                    "`<audio>` response. Restricted to an `audio/*` allowlist; ignored for "
+                    "text/JSON payloads."
+                ),
+            ),
+        ] = None,
         _user: UserHeader = None,
     ) -> Response:
         # Pointers carry their workspace inside; we still require the path
@@ -345,14 +363,14 @@ def _register_streaming_and_payloads(app: FastAPI, deps: AppDeps) -> None:
                 status_code=500,
                 detail=f"stored payload hash mismatch: {exc}",
             ) from exc
-        # Most LLM/tool payloads are JSON; serve as JSON when parseable so
-        # the FE can render them structurally. Fall back to text/plain for
-        # everything else (e.g. raw markdown). We deliberately don't expose
-        # arbitrary content-types — payloads in this store are always text.
+        # Binary payload (audio on a voice span): serve with the FE-supplied
+        # media type, restricted to an audio/* allowlist so this can't be turned
+        # into an open content-type proxy. Anything else stays octet-stream.
         try:
             data.decode("utf-8")
         except UnicodeDecodeError:
-            return Response(content=data, media_type="application/octet-stream")
+            media = content_type if content_type in _AUDIO_MEDIA_TYPES else "application/octet-stream"
+            return Response(content=data, media_type=media)
         # Cheap JSON sniff: don't parse, just check the first non-whitespace
         # character. The FE will JSON.parse on its side if appropriate.
         stripped = data.lstrip()

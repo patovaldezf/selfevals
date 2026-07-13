@@ -19,6 +19,7 @@
 <script lang="ts">
   import PointerField from '$lib/components/PointerField.svelte';
   import MessageThread from '$lib/components/MessageThread.svelte';
+  import AudioPlayer from '$lib/components/AudioPlayer.svelte';
   import type { SpanSummary } from '$lib/api/client';
 
   let { selected }: { selected: SpanSummary } = $props();
@@ -39,8 +40,26 @@
     ],
     retrieval: [{ label: 'query', field: 'query' }],
     memory_read: [{ label: 'values', field: 'values' }],
-    memory_write: [{ label: 'values', field: 'values' }]
+    memory_write: [{ label: 'values', field: 'values' }],
+    stt: [{ label: 'transcript', field: 'transcript' }],
+    tts: [{ label: 'text', field: 'text' }]
   };
+
+  // Audio clip pointer for voice spans, resolved as an <audio> player.
+  const audioPointer = $derived(
+    selected.kind === 'stt' || selected.kind === 'tts'
+      ? {
+          pointer:
+            typeof selected.detail.audio_pointer === 'string'
+              ? selected.detail.audio_pointer
+              : null,
+          mime:
+            typeof selected.detail.audio_mime_type === 'string'
+              ? selected.detail.audio_mime_type
+              : null
+        }
+      : null
+  );
 
   type Resolved = {
     label: string;
@@ -92,8 +111,11 @@
     }))
   );
   // A field is worth showing if it has *any* payload — inline (render now) or a
-  // pointer (resolve on click). "not captured" only for fields with neither.
-  const hasAny = $derived(fields.some((f) => f.inline !== null || f.pointer !== null));
+  // pointer (resolve on click). Audio clips count too.
+  const hasAny = $derived(
+    fields.some((f) => f.inline !== null || f.pointer !== null) ||
+      audioPointer?.pointer != null
+  );
 </script>
 
 {#if fields.length > 0}
@@ -131,6 +153,13 @@
             <PointerField label={f.label} pointer={f.pointer} hash={f.hash} />
           {/if}
         {/each}
+        {#if audioPointer?.pointer}
+          <AudioPlayer
+            label="audio"
+            pointer={audioPointer.pointer}
+            mimeType={audioPointer.mime}
+          />
+        {/if}
       </div>
     {/if}
   </section>

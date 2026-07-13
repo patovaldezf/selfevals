@@ -4,10 +4,10 @@
     "direct_frontend_fetch": 0,
     "direct_user_header": 0,
     "docs_version_drift": 0,
-    "get_entity_calls": 83,
+    "get_entity_calls": 84,
     "json_extract": 5,
-    "large_files": 6,
-    "large_python_symbols": 8,
+    "large_files": 7,
+    "large_python_symbols": 9,
     "list_entities_calls": 87,
     "type_ignores": 86
   },
@@ -111,7 +111,7 @@
       },
       {
         "detail": "broad except Exception",
-        "line": 508,
+        "line": 577,
         "path": "src/selfevals/trace/recorder.py"
       },
       {
@@ -496,6 +496,11 @@
       },
       {
         "detail": "get_entity call",
+        "line": 84,
+        "path": "tests/storage/postgres/test_audio_spans.py"
+      },
+      {
+        "detail": "get_entity call",
         "line": 83,
         "path": "tests/storage/postgres/test_trace_tool_inline.py"
       },
@@ -579,6 +584,11 @@
     ],
     "large_files": [
       {
+        "detail": "807 lines > limit 700",
+        "line": 1,
+        "path": "src/selfevals/trace/recorder.py"
+      },
+      {
         "detail": "731 lines > limit 700",
         "line": 1,
         "path": "tests/optimization/test_aggregator.py"
@@ -616,6 +626,11 @@
         "path": "src/selfevals/api/routes/arena.py"
       },
       {
+        "detail": "function _register_streaming_and_payloads has 121 lines: def _register_streaming_and_payloads(app: FastAPI, deps: AppDeps) -> None:",
+        "line": 259,
+        "path": "src/selfevals/api/routes/traces.py"
+      },
+      {
         "detail": "function add_arena has 227 lines: def add_arena(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:",
         "line": 11,
         "path": "src/selfevals/cli/parsers/arena.py"
@@ -636,7 +651,7 @@
         "path": "src/selfevals/optimization/loop.py"
       },
       {
-        "detail": "class Executor has 210 lines: class Executor:",
+        "detail": "class Executor has 215 lines: class Executor:",
         "line": 75,
         "path": "src/selfevals/runner/executor.py"
       },
@@ -646,8 +661,8 @@
         "path": "src/selfevals/storage/postgres/storage.py"
       },
       {
-        "detail": "class TraceRecorder has 392 lines: class TraceRecorder:",
-        "line": 302,
+        "detail": "class TraceRecorder has 436 lines: class TraceRecorder:",
+        "line": 371,
         "path": "src/selfevals/trace/recorder.py"
       }
     ],
