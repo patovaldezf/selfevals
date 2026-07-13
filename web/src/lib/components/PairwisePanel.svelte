@@ -306,28 +306,33 @@
               ).toLocaleString()}</span
             >
           </div>
-          <table class="w-full text-sm">
-            <thead class="text-text-3 text-xs uppercase tracking-wide">
-              <tr>
-                <th class="text-left px-5 py-2 w-12 font-medium">#</th>
-                <th class="text-left px-5 py-2 font-medium">Candidate</th>
-                <th class="text-right px-5 py-2 font-medium">Score</th>
-                <th class="text-right px-5 py-2 font-medium">W/L/T</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each latestTournament.ranking as row (row.candidate_id)}
-                <tr class="border-t border-border">
-                  <td class="px-5 py-2 font-mono text-text-3" data-numeric>{row.rank}</td>
-                  <td class="px-5 py-2 font-mono">{row.candidate_id}</td>
-                  <td class="text-right px-5 py-2" data-numeric>{row.score.toFixed(3)}</td>
-                  <td class="text-right px-5 py-2 text-text-2" data-numeric>
-                    {row.wins}/{row.losses}/{row.ties}
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+          <!-- Leaderboard: rank + Elo score headlined, with a win/loss/tie bar so
+               "how dominant" reads visually, not just as three numbers. -->
+          <div class="board">
+            {#each latestTournament.ranking as row (row.candidate_id)}
+              {@const total = Math.max(1, row.wins + row.losses + row.ties)}
+              {@const winPct = (row.wins / total) * 100}
+              {@const tiePct = (row.ties / total) * 100}
+              {@const lossPct = (row.losses / total) * 100}
+              <div class="board-row" class:board-lead={row.rank === 1}>
+                <span class="rank" class:rank-lead={row.rank === 1} data-numeric>
+                  {row.rank === 1 ? '★' : row.rank}
+                </span>
+                <div class="cand">
+                  <span class="cand-id font-mono">{row.candidate_id}</span>
+                  <span class="wlt font-mono" data-numeric>
+                    {row.wins}W · {row.losses}L · {row.ties}T
+                  </span>
+                </div>
+                <div class="winbar" role="img" aria-label="win {winPct.toFixed(0)}%">
+                  {#if winPct > 0}<span class="seg seg-win" style:width="{winPct}%"></span>{/if}
+                  {#if tiePct > 0}<span class="seg seg-tie" style:width="{tiePct}%"></span>{/if}
+                  {#if lossPct > 0}<span class="seg seg-loss" style:width="{lossPct}%"></span>{/if}
+                </div>
+                <span class="score font-mono" data-numeric>{row.score.toFixed(3)}</span>
+              </div>
+            {/each}
+          </div>
         </div>
       {:else}
         <p class="text-sm text-text-3">No tournaments run for this experiment yet.</p>
@@ -512,3 +517,78 @@
     </Button>
   </svelte:fragment>
 </Modal>
+
+<style>
+  .board {
+    display: flex;
+    flex-direction: column;
+  }
+  .board-row {
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr) 8rem 4rem;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.6rem 1.25rem;
+    border-top: 1px solid var(--color-border);
+  }
+  .board-row:first-child {
+    border-top: none;
+  }
+  /* The winner reads first: a faint ok tint + a star instead of a rank number. */
+  .board-lead {
+    background: var(--color-ok-subtle);
+  }
+  .rank {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--color-text-3);
+    text-align: center;
+  }
+  .rank-lead {
+    color: var(--color-ok);
+    font-size: var(--text-md);
+  }
+  .cand {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+  }
+  .cand-id {
+    font-size: var(--text-sm);
+    color: var(--color-text-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .wlt {
+    font-size: var(--text-2xs);
+    color: var(--color-text-3);
+  }
+  /* Win/tie/loss as one proportional bar — dominance at a glance. */
+  .winbar {
+    display: flex;
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--color-surface-2);
+  }
+  .seg {
+    height: 100%;
+  }
+  .seg-win {
+    background: var(--color-ok);
+  }
+  .seg-tie {
+    background: var(--color-chart-3);
+  }
+  .seg-loss {
+    background: var(--color-bad);
+  }
+  .score {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text-1);
+    text-align: right;
+  }
+</style>
