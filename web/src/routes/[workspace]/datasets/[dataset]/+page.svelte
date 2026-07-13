@@ -10,6 +10,8 @@
   import Button from '$lib/components/ui/Button.svelte';
   import Badge from '$lib/components/ui/Badge.svelte';
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+  import PageHeader from '$lib/components/PageHeader.svelte';
+  import { crumbLabels } from '$lib/nav/breadcrumbs';
   import { Lock } from 'lucide-svelte';
 
   export let data: PageData & LayoutData;
@@ -18,6 +20,9 @@
   $: stats = ds.statistics;
   $: isFrozen = ds.status === 'frozen';
   $: baseline = data.baseline;
+
+  // Show the dataset name (not its id) in the global breadcrumb.
+  $: crumbLabels.set({ [ds.id]: ds.name });
 
   let showFreeze = false;
 
@@ -80,37 +85,28 @@
 </svelte:head>
 
 <div class="px-12 py-10 max-w-6xl mx-auto">
-  <nav class="text-xs text-text-3 mb-6 flex items-center gap-1.5" aria-label="Breadcrumb">
-    <a class="hover:text-text-1" href={`/${data.workspace.id}/datasets`}>datasets</a>
-    <span aria-hidden="true">/</span>
-    <span class="text-text-2">{ds.name}</span>
-  </nav>
-
-  <header class="mb-8 flex items-start justify-between gap-6">
-    <div class="min-w-0">
-      <div class="text-xs uppercase tracking-wide text-text-3 mb-2">
-        Dataset · {ds.dataset_type}
-      </div>
-      <h1 class="text-3xl font-semibold tracking-tight">{ds.name}</h1>
-      {#if ds.description}
-        <p class="text-text-2 mt-2 max-w-2xl">{ds.description}</p>
-      {/if}
-      <div class="mt-3 flex items-center gap-3">
+  <PageHeader
+    eyebrow={`Dataset · ${ds.dataset_type}`}
+    title={ds.name}
+    subtitle={ds.description ?? null}
+  >
+    {#snippet meta()}
+      <div class="flex items-center gap-3">
         <CopyableId id={ds.id} label="dataset id" />
         {#if ds.manifest_hash}
           <span class="font-mono text-xs text-text-3">manifest {ds.manifest_hash.slice(0, 12)}</span
           >
         {/if}
       </div>
-    </div>
-    <div class="shrink-0">
+    {/snippet}
+    {#snippet actions()}
       {#if isFrozen}
         <Badge tone="brand" icon={Lock}>frozen</Badge>
       {:else}
         <Button variant="secondary" on:click={() => (showFreeze = true)}>Freeze</Button>
       {/if}
-    </div>
-  </header>
+    {/snippet}
+  </PageHeader>
 
   <!-- Counts + split allocation as a single proportional bar. -->
   <section class="split-section">

@@ -20,12 +20,6 @@
 </svelte:head>
 
 <div class="page">
-  <nav class="crumb" aria-label="Breadcrumb">
-    <a href={`/${workspaceId}`}>workspace</a>
-    <span aria-hidden="true">/</span>
-    <span class="crumb-here">thread</span>
-  </nav>
-
   <header class="head">
     <div class="head-icon"><Icon icon={MessagesSquare} size={18} /></div>
     <div>
@@ -57,20 +51,6 @@
     padding: 2.5rem 3rem;
     max-width: 52rem;
     margin: 0 auto;
-  }
-  .crumb {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: var(--text-xs);
-    color: var(--color-text-3);
-    margin-bottom: 1.5rem;
-  }
-  .crumb a:hover {
-    color: var(--color-text-1);
-  }
-  .crumb-here {
-    color: var(--color-text-2);
   }
   .head {
     display: flex;

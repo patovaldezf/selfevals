@@ -6,7 +6,7 @@
    *  actions go in `footer`. */
   import { createEventDispatcher, tick } from 'svelte';
   import { fade, fly } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { overlayScrim, drawerPanel } from '$lib/motion';
 
   export let open = false;
   export let title: string | null = null;
@@ -60,7 +60,7 @@
 <svelte:window on:keydown={open ? onKeydown : undefined} />
 
 {#if open}
-  <div class="scrim" transition:fade={{ duration: 150 }} on:click={close} aria-hidden="true"></div>
+  <div class="scrim" transition:fade={overlayScrim()} on:click={close} aria-hidden="true"></div>
   <div
     bind:this={panelEl}
     class="drawer"
@@ -68,7 +68,7 @@
     aria-modal="true"
     aria-label={title ?? 'Detail'}
     style="width: {widths[size]};"
-    transition:fly={{ x: 24, duration: 280, easing: cubicOut, opacity: 0 }}
+    transition:fly={drawerPanel()}
   >
     {#if title}
       <header class="flex items-center justify-between border-b border-border px-5 py-3.5">

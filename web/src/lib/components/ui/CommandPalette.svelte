@@ -6,6 +6,7 @@
    *  fade + scale from the top, interruptible and reduced-motion aware. */
   import { tick } from 'svelte';
   import { fade, fly } from 'svelte/transition';
+  import { overlayScrim, popoverPanel } from '$lib/motion';
   import { commandList, paletteOpen, type Command } from '$lib/stores/commands';
   import Icon from './Icon.svelte';
   import Kbd from './Kbd.svelte';
@@ -102,14 +103,14 @@
 </script>
 
 {#if $paletteOpen}
-  <div class="scrim" transition:fade={{ duration: 120 }} on:click={close} aria-hidden="true"></div>
+  <div class="scrim" transition:fade={overlayScrim()} on:click={close} aria-hidden="true"></div>
   <div class="positioner">
     <div
       class="palette"
       role="dialog"
       aria-modal="true"
       aria-label="Command palette"
-      transition:fly={{ y: -8, duration: 160, opacity: 0 }}
+      transition:fly={popoverPanel()}
     >
       <div class="search">
         <Icon icon={Search} size={16} class="search-icon" />

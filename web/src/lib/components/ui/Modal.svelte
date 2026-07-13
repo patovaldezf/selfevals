@@ -5,6 +5,7 @@
    *  Header via `title`; body is the default slot; actions via the `footer` slot. */
   import { createEventDispatcher, tick } from 'svelte';
   import { fade, scale } from 'svelte/transition';
+  import { overlayScrim, modalPanel } from '$lib/motion';
 
   export let open = false;
   export let title: string | null = null;
@@ -59,13 +60,13 @@
 <svelte:window on:keydown={open ? onKeydown : undefined} />
 
 {#if open}
-  <div class="scrim" transition:fade={{ duration: 120 }} on:click={close} aria-hidden="true"></div>
+  <div class="scrim" transition:fade={overlayScrim()} on:click={close} aria-hidden="true"></div>
   <div class="modal-positioner" role="dialog" aria-modal="true" aria-label={title ?? 'Dialog'}>
     <div
       bind:this={dialogEl}
       class="modal"
       style="max-width: {maxW[size]};"
-      transition:scale={{ start: 0.96, opacity: 0, duration: 160 }}
+      transition:scale={modalPanel()}
     >
       {#if title}
         <header class="flex items-center justify-between border-b border-border px-5 py-3.5">

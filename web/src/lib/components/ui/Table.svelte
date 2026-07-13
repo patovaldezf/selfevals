@@ -147,7 +147,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    padding: 0.5rem 0.7rem;
+    padding: 0.4rem 0.7rem;
     border-bottom: 1px solid var(--color-border);
     white-space: nowrap;
   }
@@ -159,7 +159,7 @@
     align-items: center;
     gap: 0.25rem;
     width: 100%;
-    padding: 0.5rem 0.7rem;
+    padding: 0.4rem 0.7rem;
     font: inherit;
     color: inherit;
     text-transform: inherit;
@@ -183,10 +183,18 @@
     opacity: 0.5;
   }
   tbody td {
-    padding: 0.55rem 0.7rem;
+    padding: 0.4rem 0.7rem;
     border-bottom: 1px solid var(--color-border);
     color: var(--color-text-1);
     vertical-align: middle;
+    line-height: var(--leading-snug);
+  }
+  /* Numeric columns read as a column of figures: mono + tabular so digits align
+     across rows regardless of value. Header stays in the sans label voice. */
+  tbody td.numeric {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: -0.005em;
   }
   .numeric {
     font-variant-numeric: tabular-nums;

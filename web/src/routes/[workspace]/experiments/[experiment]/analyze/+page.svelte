@@ -113,14 +113,6 @@
 </svelte:head>
 
 <div class="px-12 py-10 max-w-5xl mx-auto">
-  <nav class="text-xs text-text-3 mb-6 flex items-center gap-1.5" aria-label="Breadcrumb">
-    <a class="hover:text-text-1" href={`/${wsId}/experiments`}>experiments</a>
-    <span aria-hidden="true">/</span>
-    <a class="hover:text-text-1" href={`/${wsId}/experiments/${data.experimentId}`}>experiment</a>
-    <span aria-hidden="true">/</span>
-    <span class="text-text-2">analyze</span>
-  </nav>
-
   <header class="mb-7 flex items-end justify-between gap-4">
     <div>
       <h1 class="text-2xl font-semibold tracking-tight">Error analysis</h1>

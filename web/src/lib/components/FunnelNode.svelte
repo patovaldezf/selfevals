@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { FunnelNode } from '$lib/api/client';
+  import Pill from './ui/Pill.svelte';
 
   export let node: FunnelNode;
   // Nesting depth, used only for left indentation. The backend already
@@ -36,22 +37,10 @@
 
     <div class="flex flex-wrap items-center gap-1.5 min-w-0">
       {#each labels as [label, count]}
-        <span
-          class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
-          style:color={isPass(label) ? 'var(--color-success)' : 'var(--color-text-2)'}
-          style:background={isPass(label) ? '#E8F5EE' : 'var(--color-surface-2)'}
-        >
-          {label} · {count}
-        </span>
+        <Pill tone={isPass(label) ? 'positive' : 'neutral'}>{label} · {count}</Pill>
       {/each}
       {#each failureModes as [mode, count]}
-        <span
-          class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
-          style="color: var(--color-danger); background: #FBE9E9;"
-          title="failure mode"
-        >
-          {mode} · {count}
-        </span>
+        <Pill tone="negative" title="failure mode">{mode} · {count}</Pill>
       {/each}
     </div>
 

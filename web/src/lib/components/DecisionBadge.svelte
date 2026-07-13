@@ -1,26 +1,31 @@
-<script lang="ts">
-  export let outcome: string | null;
+<!--
+  DecisionBadge — maps an experiment DECISION outcome
+  (keep_candidate/reject/revert/...) to a short label + semantic tone. Tone
+  comes from viz/tones.ts (token-backed, dark-mode-safe); the shape is Pill.
 
-  const palette: Record<string, { fg: string; bg: string; label: string }> = {
-    keep_candidate: { fg: '#0F7B3E', bg: '#E8F5EE', label: 'keep' },
-    reject: { fg: '#525252', bg: '#F0F0EE', label: 'reject' },
-    revert: { fg: '#B91C1C', bg: '#FBE9E9', label: 'revert' },
-    feature_flag: { fg: '#1F1F1F', bg: '#EFEFED', label: 'flag' },
-    investigate: { fg: '#B45309', bg: '#FBEFD9', label: 'investigate' },
-    require_tradeoff_review: { fg: '#B45309', bg: '#FBEFD9', label: 'tradeoff' },
-    spawn_subexperiment: { fg: '#1F1F1F', bg: '#EFEFED', label: 'subexp' }
+  NOT to be confused with GradeChip, which colours a grader's per-turn verdict.
+-->
+<script lang="ts">
+  import Pill from './ui/Pill.svelte';
+  import type { Tone } from '$lib/viz/tones';
+
+  let { outcome }: { outcome: string | null } = $props();
+
+  const meta: Record<string, { tone: Tone; label: string }> = {
+    keep_candidate: { tone: 'positive', label: 'keep' },
+    reject: { tone: 'neutral', label: 'reject' },
+    revert: { tone: 'negative', label: 'revert' },
+    feature_flag: { tone: 'info', label: 'flag' },
+    investigate: { tone: 'caution', label: 'investigate' },
+    require_tradeoff_review: { tone: 'caution', label: 'tradeoff' },
+    spawn_subexperiment: { tone: 'info', label: 'subexp' }
   };
 
-  $: meta = outcome ? palette[outcome] : null;
+  const entry = $derived(outcome ? meta[outcome] : null);
 </script>
 
-{#if meta}
-  <span
-    class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
-    style="color: {meta.fg}; background: {meta.bg};"
-  >
-    {meta.label}
-  </span>
+{#if entry}
+  <Pill tone={entry.tone}>{entry.label}</Pill>
 {:else}
   <span class="text-text-3 text-xs">—</span>
 {/if}
