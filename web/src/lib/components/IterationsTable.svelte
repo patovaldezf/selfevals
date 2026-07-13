@@ -17,6 +17,15 @@
   export let targetDirection: ThresholdDirection;
 
   const dispatch = createEventDispatcher<{ select: IterationSummary }>();
+
+  // Compact wall-clock: sub-minute in seconds, else m:ss — the ledger reads as
+  // a column of durations, not a mix of units.
+  function fmtDuration(seconds: number): string {
+    if (seconds < 60) return `${seconds.toFixed(1)}s`;
+    const m = Math.floor(seconds / 60);
+    const s = Math.round(seconds % 60);
+    return `${m}m ${s.toString().padStart(2, '0')}s`;
+  }
 </script>
 
 <div class="border border-border rounded-lg overflow-hidden bg-surface">
@@ -27,6 +36,8 @@
         <th class="text-left px-4 py-2.5 font-medium">Parameters</th>
         <th class="text-right px-4 py-2.5 font-medium">Primary</th>
         <th class="text-right px-4 py-2.5 font-medium">Δ best</th>
+        <th class="text-right px-4 py-2.5 font-medium">Cost</th>
+        <th class="text-right px-4 py-2.5 font-medium">Time</th>
         <th class="text-left px-4 py-2.5 font-medium">Decision</th>
         <th class="text-left px-4 py-2.5 font-medium">Rationale</th>
       </tr>
@@ -69,6 +80,9 @@
                 {/each}
               </div>
             {/if}
+            {#if it.hypothesis}
+              <p class="iter-hyp" title={it.hypothesis}>{it.hypothesis}</p>
+            {/if}
           </td>
           <td
             class="px-4 py-3 text-right font-mono"
@@ -88,6 +102,12 @@
             data-numeric
           >
             {fmtDelta(it.delta_vs_best)}
+          </td>
+          <td class="px-4 py-3 text-right font-mono text-xs text-text-2" data-numeric>
+            {it.cost_usd != null ? `$${it.cost_usd.toFixed(4)}` : '—'}
+          </td>
+          <td class="px-4 py-3 text-right font-mono text-xs text-text-2" data-numeric>
+            {it.duration_seconds != null ? fmtDuration(it.duration_seconds) : '—'}
           </td>
           <td class="px-4 py-3"><DecisionBadge outcome={it.decision_outcome} /></td>
           <td class="px-4 py-3 text-text-2 text-xs truncate max-w-md">
@@ -120,5 +140,16 @@
     border-radius: 50%;
     background: var(--color-ok);
     flex-shrink: 0;
+  }
+  /* The hypothesis is the iteration's story ("try level=1 to clear the gate").
+     One line, truncated, full text on hover — narrative without stealing width. */
+  .iter-hyp {
+    margin-top: 0.35rem;
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
+    max-width: 22rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

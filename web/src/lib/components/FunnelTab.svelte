@@ -7,11 +7,21 @@
 -->
 <script lang="ts">
   import FunnelNode from '$lib/components/FunnelNode.svelte';
-  import { api, ApiError, type FunnelDetail, type IterationSummary } from '$lib/api/client';
+  import FunnelNodeDrawer from '$lib/components/FunnelNodeDrawer.svelte';
+  import {
+    api,
+    ApiError,
+    type FunnelDetail,
+    type FunnelNode as FunnelNodeType,
+    type IterationSummary
+  } from '$lib/api/client';
 
   export let workspaceId: string;
   export let iterations: IterationSummary[];
   export let best: IterationSummary | null;
+
+  // Clicking a funnel node drills into its label + failure-mode breakdown.
+  let selectedNode: FunnelNodeType | null = null;
 
   let funnelIterationId: string | null = null;
   let funnelDetail: FunnelDetail | null = null;
@@ -93,14 +103,24 @@
       <div
         class="mb-2 flex items-baseline justify-between text-[11px] uppercase tracking-wide text-text-3"
       >
-        <span>Node</span>
+        <span>Node · click to drill in</span>
         <span>Mean score</span>
       </div>
       <div class="divide-y divide-border/60">
         {#each funnelKeys as key (key)}
-          <FunnelNode node={funnelDetail.nodes[key]} />
+          <FunnelNode
+            node={funnelDetail.nodes[key]}
+            onSelect={(n) => (selectedNode = n)}
+            selectedKey={selectedNode?.key ?? null}
+          />
         {/each}
       </div>
     {/if}
   </div>
 </div>
+
+<FunnelNodeDrawer
+  open={selectedNode !== null}
+  node={selectedNode}
+  onClose={() => (selectedNode = null)}
+/>
