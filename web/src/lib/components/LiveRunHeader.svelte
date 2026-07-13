@@ -24,6 +24,8 @@
   import { invalidateAll } from '$app/navigation';
   import { api } from '$lib/api/client';
   import { openTraceStream, type StreamHandle } from '$lib/api/sse';
+  import { createPoller, type Poller } from '$lib/api/live';
+  import { toast } from '$lib/stores/toasts';
   import { CountUp } from '$lib/components/charts';
   import { levelColor, type ThresholdLevel } from '$lib/viz/thresholds';
 
@@ -36,17 +38,16 @@
   export let bestLevel: ThresholdLevel;
 
   // --- Poll so iterations/state climb without a manual refresh -----------
-  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  // Shared poller: pauses on a hidden tab, catches up on refocus.
+  let poll: Poller | null = null;
 
   function startPoll() {
-    if (pollTimer || typeof window === 'undefined') return;
-    pollTimer = setInterval(() => void invalidateAll(), 2500);
+    if (poll) return;
+    poll = createPoller(() => void invalidateAll(), 2500);
   }
   function stopPoll() {
-    if (pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-    }
+    poll?.stop();
+    poll = null;
   }
   $: if (isActive) startPoll();
   else stopPoll();
@@ -57,7 +58,7 @@
   let liveSpanCount = 0;
   let liveLastSpan: string | null = null;
   let liveStream: StreamHandle | null = null;
-  let liveLookupTimer: ReturnType<typeof setInterval> | null = null;
+  let liveLookup: Poller | null = null;
 
   async function findLiveRun(): Promise<void> {
     try {
@@ -83,7 +84,13 @@
         liveSpanCount += 1;
         liveLastSpan = span.name ?? span.kind ?? 'span';
       },
-      onComplete: () => detachLive()
+      onComplete: () => {
+        detachLive();
+        // The run just finished. Pull the final state in and tell the user,
+        // so a completed run doesn't sit looking active until a manual refresh.
+        void invalidateAll();
+        toast.success('Run complete', 'Results and iterations are up to date.');
+      }
     });
   }
 
@@ -98,15 +105,12 @@
   else stopLiveLookup();
 
   function startLiveLookup(): void {
-    if (liveLookupTimer || typeof window === 'undefined') return;
-    void findLiveRun();
-    liveLookupTimer = setInterval(() => void findLiveRun(), 3000);
+    if (liveLookup) return;
+    liveLookup = createPoller(() => void findLiveRun(), 3000);
   }
   function stopLiveLookup(): void {
-    if (liveLookupTimer) {
-      clearInterval(liveLookupTimer);
-      liveLookupTimer = null;
-    }
+    liveLookup?.stop();
+    liveLookup = null;
     detachLive();
   }
   onDestroy(stopLiveLookup);
