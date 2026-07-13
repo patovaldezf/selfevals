@@ -257,3 +257,11 @@ class SpanReplayResponse(BaseModel):
     duration_ms: int
     original_provider: str
     original_model: str
+
+
+class IngestTraceResponse(BaseModel):
+    """Result of ingesting an externally-built Trace (e.g. a voice call)."""
+
+    trace_id: str
+    run_id: str
+    span_count: int

@@ -23,6 +23,7 @@ from selfevals.api.schemas import (
     AnnotationListResponse,
     AnnotationView,
     CreateAnnotationRequest,
+    IngestTraceResponse,
     PromoteCaseDraftRequest,
     PromoteCaseDraftResponse,
     SpanReplayRequest,
@@ -32,6 +33,7 @@ from selfevals.api.schemas import (
 )
 from selfevals.api.span_replay import SpanReplayError, replay_span
 from selfevals.api.sse import stream_trace
+from selfevals.api.trace_ingest import TraceIngestError, ingest_trace
 from selfevals.storage.errors import (
     EntityNotFoundError,
     ObjectNotFoundError,
@@ -263,6 +265,40 @@ def _register_streaming_and_payloads(app: FastAPI, deps: AppDeps) -> None:
         from selfevals.api.span_replay import available_providers
 
         return {"providers": available_providers()}
+
+    @app.post(
+        "/api/workspaces/{workspace_id}/traces/ingest",
+        response_model=IngestTraceResponse,
+        tags=["traces"],
+        summary="Ingest a Trace built outside the executor (e.g. a voice call)",
+        description=(
+            "Persist a complete `Trace` produced by a standalone process — the "
+            "Retell voice server reconstructs each call as a voice_turn → stt → "
+            "llm_call → tts trace and POSTs it here. When a viewer is watching the "
+            "run, the spans also fan out live. Audio referenced by `audio_pointer` "
+            "must already be in the object store."
+        ),
+    )
+    def traces_ingest(
+        workspace_id: str,
+        payload: dict[str, object],
+        storage: StorageInterface = Depends(deps.storage),
+        _user: UserHeader = None,
+    ) -> IngestTraceResponse:
+        try:
+            trace = ingest_trace(
+                storage,
+                workspace_id=workspace_id,
+                payload=payload,
+                broker=get_broker(),
+            )
+            return IngestTraceResponse(
+                trace_id=trace.id, run_id=trace.run.run_id, span_count=len(trace.spans)
+            )
+        except TraceIngestError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            storage.close()
 
     @app.get("/api/runs/active", response_model=ActiveRunsResponse, tags=["traces"])
     def runs_active(
