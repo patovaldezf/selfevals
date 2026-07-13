@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -202,3 +202,58 @@ class PromoteCaseDraftResponse(BaseModel):
     source_run_id: str
     source_case_id: str
     warnings: list[str] = Field(default_factory=list)
+
+
+class CreateAnnotationRequest(BaseModel):
+    """A human verdict + notes on one trace (LangSmith-style feedback)."""
+
+    verdict: Literal["good", "bad"]
+    notes: str | None = None
+    annotator_id: str | None = None
+    """Who annotated. Defaults to the authenticated user (or "human" when
+    unauthenticated) when omitted."""
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    flagged_for_adjudication: bool = False
+
+
+class AnnotationView(BaseModel):
+    """One persisted annotation, as returned by the list/create endpoints."""
+
+    id: str
+    trace_id: str | None
+    case_id: str
+    annotator_id: str
+    verdict: str | None
+    """Convenience projection of `labels.data["verdict"]` ("good"/"bad"), None
+    when the annotation used a different label schema."""
+    notes: str | None
+    confidence: float
+    flagged_for_adjudication: bool
+    created_at: str
+
+
+class AnnotationListResponse(BaseModel):
+    annotations: list[AnnotationView] = Field(default_factory=list)
+
+
+class SpanReplayRequest(BaseModel):
+    """Re-issue one llm_call span's prompt against a different provider/model."""
+
+    provider: str
+    model: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    """Optional overrides passed to the provider call (temperature, max_tokens…)."""
+
+
+class SpanReplayResponse(BaseModel):
+    """The alternate model's output for the same prompt, for side-by-side diff."""
+
+    provider: str
+    model: str
+    content: str
+    tokens_input: int
+    tokens_output: int
+    cost_usd: float | None
+    duration_ms: int
+    original_provider: str
+    original_model: str

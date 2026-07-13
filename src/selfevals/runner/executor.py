@@ -28,6 +28,7 @@ from selfevals.runner.adapters import AdapterError, AdapterRequest
 from selfevals.runner.sandbox import SandboxPolicy
 from selfevals.runner.trace_response_writer import record_adapter_response
 from selfevals.schemas.trace import AgentSnapshotRef, RunInfo, Trace
+from selfevals.trace.context import bind_trace_handle
 from selfevals.trace.recorder import TraceRecorder
 from selfevals.trace.span_sink import NO_OP_SINK
 
@@ -225,7 +226,16 @@ class Executor:
 
         error: str | None = None
         response: AdapterResponse | None = None
-        with otlp_ctx, recorder, recorder.agent_turn(f"case:{case.name}"):
+        # Bind the recorder as the ambient trace handle so an in-process
+        # (embedded) agent can emit its own real spans (LLM calls, tool calls,
+        # reasoning) instead of the reconstructed synthetic one. The handle
+        # opens inside the case turn so its spans nest under it.
+        with (
+            otlp_ctx,
+            recorder,
+            recorder.agent_turn(f"case:{case.name}"),
+            bind_trace_handle(recorder) as trace_handle,
+        ):
             try:
                 response = await self._adapter.invoke(adapter_request)
             except AdapterError as exc:
@@ -237,12 +247,17 @@ class Executor:
                 )
                 recorder.fail(str(exc))
             else:
+                # If the agent emitted its own spans, skip the synthetic
+                # `adapter_response` span — it would double-count tokens/cost
+                # the real spans already recorded. Structured output is still
+                # captured either way.
                 record_adapter_response(
                     recorder,
                     response,
                     adapter_request,
                     adapter=self._adapter,
                     sandbox=self._sandbox,
+                    agent_emitted_spans=trace_handle.used,
                 )
         # Recorder __exit__ marks state based on exception flow; if we
         # already called `recorder.fail()` above, that wins.

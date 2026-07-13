@@ -128,6 +128,48 @@ async def test_executor_records_tool_calls_with_use_id_linkage() -> None:
     assert tool_spans[0].sandboxed is True  # mock mode → always sandboxed
 
 
+def _tool_user_with_result(req: AdapterRequest) -> AdapterResponse:
+    return AdapterResponse(
+        content="ok",
+        stop_reason="tool_use",
+        tool_uses=[
+            AdapterToolUse(
+                tool="search",
+                tool_use_id="toolu_01",
+                args={"query": "guardian angel"},
+                result={"hits": 3},
+            ),
+            AdapterToolUse(
+                tool="fetch",
+                tool_use_id="toolu_02",
+                args={"url": "x"},
+                error="404 not found",
+            ),
+        ],
+    )
+
+
+@pytest.mark.asyncio
+async def test_executor_records_tool_args_result_and_error() -> None:
+    """A tool_use that reports args/result/error lands on the span as inline
+    payloads plus a real status — not a silent green with no output."""
+    executor = Executor(
+        adapter=EmbeddedAdapter(_tool_user_with_result, agent=_agent()),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    run = await executor.run_case(_case())
+    rep = run.repetitions[0]
+    by_id = {s.tool_use_id: s for s in rep.trace.spans if isinstance(s, ToolCallSpan)}
+    ok = by_id["toolu_01"]
+    assert ok.args_inline is not None and "guardian angel" in ok.args_inline
+    assert ok.result_inline is not None and "hits" in ok.result_inline
+    assert ok.status == ToolCallStatus.OK
+    failed = by_id["toolu_02"]
+    assert failed.status == ToolCallStatus.ERROR
+    assert failed.error == "404 not found"
+
+
 @pytest.mark.asyncio
 async def test_executor_records_stop_reason() -> None:
     executor = Executor(
@@ -571,3 +613,72 @@ async def test_executor_without_receiver_omits_otlp_endpoint() -> None:
     rep = (await executor.run_case(_case())).repetitions[0]
     assert seen["url"] is None
     assert {s.name for s in rep.trace.spans if isinstance(s, LLMCallSpan)} == {"adapter_response"}
+
+
+def _agent_emitting_real_spans(req: AdapterRequest) -> AdapterResponse:
+    """An embedded agent that records its own real LLM + tool spans via the
+    ambient handle — the F1/F2 path. Returns tokens on the *real* span, not on
+    the AdapterResponse, so a double-counted synthetic span would show up as
+    doubled metrics."""
+    from selfevals.schemas.trace import ToolUseRequest
+    from selfevals.trace.context import get_current_trace_handle
+
+    handle = get_current_trace_handle()
+    assert handle is not None, "executor must bind a trace handle around invoke()"
+    with handle.agent_turn("turn:0"):
+        with handle.llm_call("chat", provider="anthropic", model="claude-sonnet-4-6") as llm:
+            llm.add_tokens(input=10, output=5)
+            llm.set_reasoning(thinking_tokens=3, signature="sig")
+            llm.set_output(
+                tool_use_requested=[ToolUseRequest(tool="search", tool_use_id="toolu_9")]
+            )
+        with handle.tool_call("search", tool_name="search", tool_use_id="toolu_9") as tool:
+            tool.result_inline = '{"ok": true}'
+    return AdapterResponse(
+        content="done",
+        structured_output={"answer": 42},
+        stop_reason="end_turn",
+        # NOTE: no tokens here — the real llm span already recorded them.
+    )
+
+
+@pytest.mark.asyncio
+async def test_executor_suppresses_synthetic_span_when_agent_emits() -> None:
+    executor = Executor(
+        adapter=EmbeddedAdapter(_agent_emitting_real_spans, agent=_agent()),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    rep = (await executor.run_case(_case())).repetitions[0]
+    trace = rep.trace
+    llm_names = {s.name for s in trace.spans if isinstance(s, LLMCallSpan)}
+    # The real span is present; the synthetic "adapter_response" is NOT.
+    assert "chat" in llm_names
+    assert "adapter_response" not in llm_names
+    # Exactly one LLM span → no double count.
+    assert trace.metrics.llm_call_count == 1
+    assert trace.metrics.total_tokens_in == 10
+    assert trace.metrics.total_tokens_out == 5
+    # Reasoning captured on the real span.
+    real = next(s for s in trace.spans if isinstance(s, LLMCallSpan))
+    assert real.reasoning.available is True
+    # Tool result inlined on the real tool span.
+    tool = next(s for s in trace.spans if isinstance(s, ToolCallSpan))
+    assert tool.result_inline == '{"ok": true}'
+    # Structured output still surfaced despite suppression.
+    assert trace.outputs.structured_output == {"answer": 42}
+
+
+@pytest.mark.asyncio
+async def test_executor_keeps_synthetic_span_when_agent_silent() -> None:
+    """An embedded agent that does NOT touch the handle still gets the synthetic
+    reconstruction — the fallback contract for cli/http and legacy embedded."""
+    executor = Executor(
+        adapter=EmbeddedAdapter(_ping, agent=_agent()),
+        sandbox=SandboxPolicy(SandboxMode.MOCK),
+        workspace_id=WS,
+    )
+    rep = (await executor.run_case(_case())).repetitions[0]
+    llm_names = {s.name for s in rep.trace.spans if isinstance(s, LLMCallSpan)}
+    assert llm_names == {"adapter_response"}
+    assert rep.trace.metrics.total_tokens_in == 4  # from _ping

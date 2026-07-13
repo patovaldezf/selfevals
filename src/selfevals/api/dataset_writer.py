@@ -32,7 +32,6 @@ from selfevals.schemas._base import EntityRef
 from selfevals.schemas.dataset import Dataset, SplitAllocation
 from selfevals.schemas.enums import DatasetSource, DatasetStatus, DatasetType
 from selfevals.schemas.eval_case import EvalCase, SourceInfo
-from selfevals.schemas.trace import Trace
 from selfevals.storage.errors import EntityNotFoundError
 from selfevals.storage.factory import open_storage
 from selfevals.storage.interface import ListFilter, StorageInterface, WorkspaceScope
@@ -203,22 +202,6 @@ def freeze_dataset(
     return detail
 
 
-def _load_trace(scope: WorkspaceScope, trace_id: str) -> Trace:
-    try:
-        trace = scope.get_entity(Trace, trace_id)
-        assert isinstance(trace, Trace)
-        return trace
-    except EntityNotFoundError:
-        matches = scope.list_entities(
-            Trace, ListFilter(where={"run.run_id": trace_id}, limit=1)
-        )
-        if not matches:
-            raise
-        trace = matches[0]
-        assert isinstance(trace, Trace)
-        return trace
-
-
 def _cases_for_dataset(scope: WorkspaceScope, dataset: Dataset) -> list[EvalCase]:
     cases: list[EvalCase] = []
     for ref in dataset.cases:
@@ -236,10 +219,12 @@ def draft_regression_case_from_trace(
     body: PromoteCaseDraftRequest | None = None,
 ) -> PromoteCaseDraftResponse:
     """Build an editable regression EvalCase draft from a persisted trace."""
+    from selfevals.api.queries._shared import resolve_trace
+
     body = body or PromoteCaseDraftRequest()
     with storage.open(workspace_id) as scope:
         try:
-            trace = _load_trace(scope, trace_id)
+            trace = resolve_trace(scope, trace_id)
         except EntityNotFoundError as exc:
             raise TracePromotionError(f"trace {trace_id} not found") from exc
         if trace.run.eval_case_id is None:

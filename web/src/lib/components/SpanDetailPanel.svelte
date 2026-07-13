@@ -8,6 +8,7 @@
 <script lang="ts">
   import Icon from '$lib/components/ui/Icon.svelte';
   import PayloadRenderer from '$lib/components/PayloadRenderer.svelte';
+  import SpanReplayPanel from '$lib/components/SpanReplayPanel.svelte';
   import { factsFor } from '$lib/spans/facts';
   import { styleForKind } from '$lib/spans/kindStyle';
   import type { SpanSummary } from '$lib/api/client';
@@ -16,8 +17,17 @@
   export let selected: SpanSummary | null;
   export let traceFailed: boolean;
   export let finalState: string;
+  export let workspaceId: string = '';
+  export let traceId: string = '';
+  export let live: boolean = false;
 
   type LLMOutputLike = { stop_reason?: string };
+
+  /** The span's answer text, for the Playground's original-vs-alternate diff. */
+  function outputContent(s: SpanSummary): string | null {
+    const output = s.detail.output as { content_inline?: string } | undefined;
+    return typeof output?.content_inline === 'string' ? output.content_inline : null;
+  }
 
   function llmFacets(s: SpanSummary) {
     const output = s.detail.output as LLMOutputLike | undefined;
@@ -86,6 +96,15 @@
   {/if}
 
   <PayloadRenderer {selected} />
+
+  {#if selected.kind === 'llm_call' && !live && workspaceId && traceId}
+    <SpanReplayPanel
+      {workspaceId}
+      {traceId}
+      spanId={selected.id}
+      originalContent={outputContent(selected)}
+    />
+  {/if}
 
   <details class="raw">
     <summary>

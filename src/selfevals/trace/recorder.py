@@ -177,6 +177,32 @@ class _LLMSpanBuilder:
         if cost is not None:
             self.cost = cost
 
+    def set_reasoning(
+        self,
+        *,
+        summary_pointer: str | None = None,
+        full_pointer: str | None = None,
+        thinking_tokens: int = 0,
+        signature: str | None = None,
+        redacted: bool = False,
+    ) -> None:
+        """Record the model's extended-thinking block for this call.
+
+        Marks `available=True` so the viewer knows reasoning was captured (vs.
+        the default empty block, which reads as "not captured"). The thinking
+        text itself lives behind `summary_pointer`/`full_pointer` (routed to the
+        object store like any other payload); pass `redacted=True` when the
+        provider returned a redacted block with no readable text.
+        """
+        self.reasoning = ReasoningBlock(
+            available=True,
+            redacted=redacted,
+            summary_pointer=summary_pointer,
+            full_pointer=full_pointer,
+            thinking_tokens=thinking_tokens,
+            signature=signature,
+        )
+
 
 @dataclass
 class _ToolSpanBuilder:
@@ -185,8 +211,10 @@ class _ToolSpanBuilder:
     tool_version: str | None = None
     args_pointer: str | None = None
     args_hash: str | None = None
+    args_inline: str | None = None
     result_pointer: str | None = None
     result_hash: str | None = None
+    result_inline: str | None = None
     status: ToolCallStatus = ToolCallStatus.OK
     error: str | None = None
     retry_chain: list[str] = field(default_factory=list)
@@ -259,8 +287,10 @@ def _build_tool_call_span(
         tool_use_id=builder.tool_use_id,
         args_pointer=builder.args_pointer,
         args_hash=builder.args_hash,
+        args_inline=builder.args_inline,
         result_pointer=builder.result_pointer,
         result_hash=builder.result_hash,
+        result_inline=builder.result_inline,
         status=builder.status,
         error=builder.error,
         retry_chain=builder.retry_chain,

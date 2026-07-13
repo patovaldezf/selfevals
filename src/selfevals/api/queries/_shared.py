@@ -9,7 +9,30 @@ from selfevals.api.schemas import CaseSummary, FeatureRef, IterationSummary, Spa
 from selfevals.schemas.eval_case import EvalCase
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.iteration import DecisionRecord, IterationRecord
+from selfevals.schemas.trace import Trace
+from selfevals.storage.errors import EntityNotFoundError
+from selfevals.storage.interface import ListFilter, WorkspaceScope
 from selfevals.trace.span_view import span_view
+
+
+def resolve_trace(scope: WorkspaceScope, trace_id: str) -> Trace:
+    """Resolve a Trace by entity id (`tr_…`) or run id (`run_…`).
+
+    The canonical id contract: callers may hold either form. Raises
+    `EntityNotFoundError` when neither resolves (mapped to 404 upstream). Shared
+    by every trace-scoped writer so the lookup lives in one place.
+    """
+    try:
+        trace = scope.get_entity(Trace, trace_id)
+        assert isinstance(trace, Trace)
+        return trace
+    except EntityNotFoundError:
+        matches = scope.list_entities(Trace, ListFilter(where={"run.run_id": trace_id}, limit=1))
+        if not matches:
+            raise
+        found = matches[0]
+        assert isinstance(found, Trace)
+        return found
 
 
 def experiment_summary_dict(exp: Experiment, *, iteration_count: int) -> dict[str, Any]:

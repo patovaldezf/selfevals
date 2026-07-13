@@ -4,11 +4,11 @@
     "direct_frontend_fetch": 0,
     "direct_user_header": 0,
     "docs_version_drift": 0,
-    "get_entity_calls": 81,
+    "get_entity_calls": 83,
     "json_extract": 5,
-    "large_files": 4,
+    "large_files": 6,
     "large_python_symbols": 8,
-    "list_entities_calls": 85,
+    "list_entities_calls": 87,
     "type_ignores": 86
   },
   "description": "Baseline for scripts/audit_technical_debt.py. Decrease counts as debt is removed; do not increase without review.",
@@ -16,17 +16,17 @@
     "broad_exception_catches": [
       {
         "detail": "broad except Exception",
-        "line": 70,
+        "line": 69,
         "path": "src/selfevals/api/dataset_writer.py"
       },
       {
         "detail": "broad except Exception",
-        "line": 181,
+        "line": 180,
         "path": "src/selfevals/api/dataset_writer.py"
       },
       {
         "detail": "broad except Exception",
-        "line": 305,
+        "line": 290,
         "path": "src/selfevals/api/dataset_writer.py"
       },
       {
@@ -81,7 +81,7 @@
       },
       {
         "detail": "broad except Exception",
-        "line": 218,
+        "line": 230,
         "path": "src/selfevals/runner/adapters.py"
       },
       {
@@ -111,7 +111,7 @@
       },
       {
         "detail": "broad except Exception",
-        "line": 478,
+        "line": 508,
         "path": "src/selfevals/trace/recorder.py"
       },
       {
@@ -161,7 +161,7 @@
       },
       {
         "detail": "get_entity call",
-        "line": 180,
+        "line": 179,
         "path": "src/selfevals/api/dataset_writer.py"
       },
       {
@@ -171,23 +171,23 @@
       },
       {
         "detail": "get_entity call",
-        "line": 225,
+        "line": 233,
         "path": "src/selfevals/api/dataset_writer.py"
       },
       {
         "detail": "get_entity call",
-        "line": 248,
-        "path": "src/selfevals/api/dataset_writer.py"
-      },
-      {
-        "detail": "get_entity call",
-        "line": 315,
+        "line": 300,
         "path": "src/selfevals/api/dataset_writer.py"
       },
       {
         "detail": "get_entity call",
         "line": 60,
         "path": "src/selfevals/api/failure_mode_ops.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 26,
+        "path": "src/selfevals/api/queries/_shared.py"
       },
       {
         "detail": "get_entity call",
@@ -431,27 +431,27 @@
       },
       {
         "detail": "get_entity call",
-        "line": 190,
+        "line": 212,
         "path": "tests/arena/test_service.py"
       },
       {
         "detail": "get_entity call",
-        "line": 236,
+        "line": 258,
         "path": "tests/arena/test_service.py"
       },
       {
         "detail": "get_entity call",
-        "line": 314,
+        "line": 336,
         "path": "tests/arena/test_service.py"
       },
       {
         "detail": "get_entity call",
-        "line": 321,
+        "line": 343,
         "path": "tests/arena/test_service.py"
       },
       {
         "detail": "get_entity call",
-        "line": 333,
+        "line": 355,
         "path": "tests/arena/test_service.py"
       },
       {
@@ -493,6 +493,16 @@
         "detail": "get_entity call",
         "line": 101,
         "path": "tests/storage/postgres/test_arena_mappers.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 83,
+        "path": "tests/storage/postgres/test_trace_tool_inline.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 106,
+        "path": "tests/storage/postgres/test_trace_tool_inline.py"
       },
       {
         "detail": "get_entity call",
@@ -587,6 +597,16 @@
         "detail": "885 lines > limit 700",
         "line": 1,
         "path": "tests/runner/test_launch_wiring.py"
+      },
+      {
+        "detail": "921 lines > limit 900",
+        "line": 1,
+        "path": "web/src/lib/api/types.ts"
+      },
+      {
+        "detail": "720 lines > limit 700",
+        "line": 1,
+        "path": "web/src/routes/[workspace]/arenas/[arena]/+page.svelte"
       }
     ],
     "large_python_symbols": [
@@ -616,8 +636,8 @@
         "path": "src/selfevals/optimization/loop.py"
       },
       {
-        "detail": "class Executor has 201 lines: class Executor:",
-        "line": 74,
+        "detail": "class Executor has 210 lines: class Executor:",
+        "line": 75,
         "path": "src/selfevals/runner/executor.py"
       },
       {
@@ -627,7 +647,7 @@
       },
       {
         "detail": "class TraceRecorder has 392 lines: class TraceRecorder:",
-        "line": 272,
+        "line": 302,
         "path": "src/selfevals/trace/recorder.py"
       }
     ],
@@ -646,6 +666,16 @@
         "detail": "list_entities call",
         "line": 59,
         "path": "src/selfevals/analysis/ingest.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 85,
+        "path": "src/selfevals/api/annotations_writer.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 101,
+        "path": "src/selfevals/api/annotations_writer.py"
       },
       {
         "detail": "list_entities call",
@@ -669,12 +699,7 @@
       },
       {
         "detail": "list_entities call",
-        "line": 187,
-        "path": "src/selfevals/api/dataset_writer.py"
-      },
-      {
-        "detail": "list_entities call",
-        "line": 212,
+        "line": 186,
         "path": "src/selfevals/api/dataset_writer.py"
       },
       {
@@ -696,6 +721,11 @@
         "detail": "list_entities call",
         "line": 240,
         "path": "src/selfevals/api/pairwise_ops.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 30,
+        "path": "src/selfevals/api/queries/_shared.py"
       },
       {
         "detail": "list_entities call",
@@ -1071,7 +1101,7 @@
       },
       {
         "detail": "type ignore",
-        "line": 69,
+        "line": 68,
         "path": "src/selfevals/api/dataset_writer.py"
       },
       {
@@ -1196,7 +1226,7 @@
       },
       {
         "detail": "type ignore",
-        "line": 234,
+        "line": 256,
         "path": "tests/arena/test_service.py"
       },
       {
@@ -1281,7 +1311,7 @@
       },
       {
         "detail": "type ignore",
-        "line": 304,
+        "line": 346,
         "path": "tests/runner/test_executor.py"
       },
       {

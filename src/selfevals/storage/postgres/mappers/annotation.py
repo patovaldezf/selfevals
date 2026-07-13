@@ -38,7 +38,7 @@ _ALL_COLUMNS: tuple[str, ...] = (*SHARED_COLUMNS, *_EXTRA_COLUMNS)
 class AnnotationMapper(EntityMapper[Annotation]):
     entity_cls = Annotation
     table = "annotations"
-    queryable_columns = frozenset({*SHARED_COLUMNS, "case_id", "annotator_id"})
+    queryable_columns = frozenset({*SHARED_COLUMNS, "case_id", "trace_id", "annotator_id"})
 
     def upsert(self, cur: Any, entity: Annotation) -> None:
         e = entity

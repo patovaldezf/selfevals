@@ -218,7 +218,8 @@ def _build_tool_span(cur: Any, trace_id: str, span_id: str, base: dict[str, Any]
     cur.execute(
         """
         SELECT tool_name, tool_version, tool_use_id, args_pointer, args_hash,
-               result_pointer, result_hash, status, error, retry_chain, sandboxed, side_effects
+               args_inline, result_pointer, result_hash, result_inline, status,
+               error, retry_chain, sandboxed, side_effects
         FROM trace_tool_calls WHERE trace_id = %s AND span_id = %s
         """,
         (trace_id, span_id),
@@ -231,13 +232,15 @@ def _build_tool_span(cur: Any, trace_id: str, span_id: str, base: dict[str, Any]
         tool_use_id=r[2],
         args_pointer=r[3],
         args_hash=r[4],
-        result_pointer=r[5],
-        result_hash=r[6],
-        status=r[7],
-        error=r[8],
-        retry_chain=r[9],
-        sandboxed=r[10],
-        side_effects=r[11],
+        args_inline=r[5],
+        result_pointer=r[6],
+        result_hash=r[7],
+        result_inline=r[8],
+        status=r[9],
+        error=r[10],
+        retry_chain=r[11],
+        sandboxed=r[12],
+        side_effects=r[13],
     )
 
 

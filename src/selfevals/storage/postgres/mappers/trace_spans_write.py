@@ -144,9 +144,9 @@ def _insert_tool_span(cur: Any, trace_id: str, workspace_id: str, span: ToolCall
         """
         INSERT INTO trace_tool_calls
           (span_id, trace_id, workspace_id, tool_name, tool_version, tool_use_id,
-           args_pointer, args_hash, result_pointer, result_hash, status, error,
-           retry_chain, sandboxed, side_effects)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+           args_pointer, args_hash, args_inline, result_pointer, result_hash,
+           result_inline, status, error, retry_chain, sandboxed, side_effects)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             span.id,
@@ -157,8 +157,10 @@ def _insert_tool_span(cur: Any, trace_id: str, workspace_id: str, span: ToolCall
             span.tool_use_id,
             span.args_pointer,
             span.args_hash,
+            span.args_inline,
             span.result_pointer,
             span.result_hash,
+            span.result_inline,
             span.status.value,
             span.error,
             list(span.retry_chain),

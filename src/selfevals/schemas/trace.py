@@ -46,7 +46,11 @@ from selfevals.schemas.enums import (
 #        `LLMOutput.content_inline` — small payloads inlined on the span so the
 #        trace viewer shows the prompt/response without resolving a pointer.
 #        Large payloads still go to the object store via the matching `*_pointer`.
-TRACE_SCHEMA_VERSION = "1.3.0"
+# 1.4.0: `ToolCallSpan.{args_inline,result_inline}` — tool args/results inlined
+#        when small (same pointer/hash/inline trio as LLMCallSpan), so the viewer
+#        shows tool inputs *and* outputs without a fetch. Adapters can now report
+#        tool results (`AdapterToolUse.result`) which land in `result_*`.
+TRACE_SCHEMA_VERSION = "1.4.0"
 
 # Inlined trace payloads are capped so a chatty run can't bloat the Trace row.
 # Anything larger is offloaded to the object store and referenced by pointer.
@@ -238,8 +242,14 @@ class ToolCallSpan(_SpanBase):
 
     args_pointer: str | None = None
     args_hash: str | None = None
+    args_inline: str | None = None
+    """Tool call arguments inlined when small (<= INLINE_PAYLOAD_MAX_CHARS);
+    otherwise behind `args_pointer`. JSON-encoded string of the args payload."""
     result_pointer: str | None = None
     result_hash: str | None = None
+    result_inline: str | None = None
+    """Tool result inlined when small; otherwise behind `result_pointer`. Lets
+    the viewer show the tool's output, not just its inputs."""
     status: ToolCallStatus = ToolCallStatus.OK
     error: str | None = None
     retry_chain: list[str] = Field(default_factory=list)
