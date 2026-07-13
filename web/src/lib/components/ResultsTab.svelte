@@ -8,10 +8,15 @@
 -->
 <script lang="ts">
   import CaseResultRow from '$lib/components/CaseResultRow.svelte';
-  import { api, ApiError, type ExperimentResults } from '$lib/api/client';
+  import CaseDetailDrawer from '$lib/components/CaseDetailDrawer.svelte';
+  import { api, ApiError, type ExperimentResults, type ScenarioResult } from '$lib/api/client';
 
   export let workspaceId: string;
   export let experimentId: string;
+
+  // Clicking a case row opens it in focus. The row stays the compact summary;
+  // the drawer carries the full anatomy (diff + raw graders + trace jump).
+  let openCase: ScenarioResult | null = null;
 
   let resultsData: ExperimentResults | null = null;
   let resultsError: string | null = null;
@@ -90,8 +95,52 @@
   {:else if resultsData}
     <div class="space-y-3" class:opacity-60={resultsLoading}>
       {#each resultsData.cases as c (c.case_id)}
-        <CaseResultRow result={c} {workspaceId} />
+        <div
+          class="row-btn"
+          role="button"
+          tabindex="0"
+          on:click={() => (openCase = c)}
+          on:keydown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              openCase = c;
+            }
+          }}
+        >
+          <CaseResultRow result={c} {workspaceId} />
+        </div>
       {/each}
     </div>
   {/if}
 </section>
+
+<CaseDetailDrawer
+  open={openCase !== null}
+  result={openCase}
+  {workspaceId}
+  onClose={() => (openCase = null)}
+/>
+
+<style>
+  /* The whole card is the click target for the drawer, but it must not look
+     like a button — reset the native chrome and let CaseResultRow's own border
+     read through. Links inside (trace →) still work; they navigate on their own. */
+  .row-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 0;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: transform var(--dur-fast) var(--ease-out);
+  }
+  .row-btn:hover {
+    transform: translateY(-1px);
+  }
+  .row-btn:focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+</style>

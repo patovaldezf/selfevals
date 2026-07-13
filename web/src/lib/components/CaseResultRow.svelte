@@ -17,6 +17,9 @@
   export let workspaceId: string;
   /** Turn rows render denser and without the case-identity header. */
   export let asTurn = false;
+  /** Suppress the nested turns toggle — the caller (CaseDetailDrawer) renders
+   *  the conversation itself, so the embedded diff shouldn't repeat it. */
+  export let showTurns = true;
 
   let turnsOpen = false;
 
@@ -91,7 +94,8 @@
     {#if hasTrace && traceRef}
       <a
         class="shrink-0 text-xs text-text-2 underline-offset-2 hover:text-text-1 hover:underline"
-        href={`/${workspaceId}/traces/${traceRef}`}>trace →</a
+        href={`/${workspaceId}/traces/${traceRef}`}
+        on:click|stopPropagation>trace →</a
       >
     {/if}
   </div>
@@ -141,8 +145,8 @@
     </div>
   {/if}
 
-  {#if result.turns.length}
-    <button class="turns-toggle" on:click={() => (turnsOpen = !turnsOpen)}>
+  {#if showTurns && result.turns.length}
+    <button class="turns-toggle" on:click|stopPropagation={() => (turnsOpen = !turnsOpen)}>
       {turnsOpen ? '▾' : '▸'}
       {result.turns.length} turn{result.turns.length === 1 ? '' : 's'}
     </button>

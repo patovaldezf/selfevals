@@ -10,14 +10,16 @@
 
   export let open = false;
   export let title: string | null = null;
-  export let size: 'sm' | 'md' | 'lg' = 'md';
+  export let size: 'sm' | 'md' | 'lg' | 'xl' = 'md';
   export let dismissible = true;
 
   const dispatch = createEventDispatcher<{ close: void }>();
   let panelEl: HTMLDivElement | null = null;
   let lastFocused: HTMLElement | null = null;
 
-  const widths = { sm: '22rem', md: '32rem', lg: '44rem' };
+  // `xl` is for execution views (a case's full trace: waterfall + span detail
+  // side by side) that need two columns of room.
+  const widths = { sm: '22rem', md: '32rem', lg: '44rem', xl: 'min(72rem, 94vw)' };
 
   function close() {
     if (dismissible) dispatch('close');
