@@ -87,6 +87,37 @@
   let launchingRound = false;
   $: readyVariants = variants.filter((v: ArenaVariant) => v.state === 'ready');
 
+  // Cost preview before firing a round — so "Launch (3 ready)" isn't a blind
+  // spend. Re-estimates when the ready set changes; a black-box agent yields a
+  // null estimate, which we render as "not priced" rather than $0.
+  let costEstimate: { estimated_usd: number | null; basis: string } | null = null;
+  let estimatingCost = false;
+  let lastEstimatedKey = '';
+
+  $: void maybeEstimate(readyVariants.map((v) => v.id).join(','));
+
+  async function maybeEstimate(key: string) {
+    if (key === lastEstimatedKey) return;
+    lastEstimatedKey = key;
+    if (!key) {
+      costEstimate = null;
+      return;
+    }
+    estimatingCost = true;
+    try {
+      costEstimate = await api.estimateRoundCost(workspaceId, arenaId, {});
+    } catch {
+      costEstimate = null; // estimate is a nicety; never block the launch on it
+    } finally {
+      estimatingCost = false;
+    }
+  }
+
+  function fmtEstimate(usd: number | null): string {
+    if (usd === null) return 'not priced';
+    return usd < 0.01 ? `~$${usd.toFixed(4)}` : `~$${usd.toFixed(2)}`;
+  }
+
   async function launchRound() {
     launchingRound = true;
     try {
@@ -163,12 +194,19 @@
         >
       {/if}
       <Button variant="ghost" on:click={() => (showAddVariant = true)}>Add variant</Button>
-      <Button
-        variant="brand"
-        loading={launchingRound}
-        disabled={readyVariants.length === 0}
-        on:click={launchRound}>Launch round ({readyVariants.length} ready)</Button
-      >
+      <div class="launch-group">
+        {#if readyVariants.length > 0}
+          <span class="cost-preview font-mono" data-numeric title={costEstimate?.basis ?? ''}>
+            {estimatingCost ? 'estimating…' : fmtEstimate(costEstimate?.estimated_usd ?? null)}
+          </span>
+        {/if}
+        <Button
+          variant="brand"
+          loading={launchingRound}
+          disabled={readyVariants.length === 0}
+          on:click={launchRound}>Launch round ({readyVariants.length} ready)</Button
+        >
+      </div>
     </div>
   </header>
 
@@ -504,6 +542,18 @@
     max-width: 28rem;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .launch-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  /* Cost preview reads quiet next to the launch button — a spend heads-up, not
+     an alarm. Its title carries the estimate basis on hover. */
+  .cost-preview {
+    font-size: var(--text-xs);
+    color: var(--color-text-3);
     white-space: nowrap;
   }
   .tab-body {

@@ -8,7 +8,8 @@ import type {
   GitRefsResponse,
   LaunchRoundRequest,
   PromoteVariantResponse,
-  RegisterVariantRequest
+  RegisterVariantRequest,
+  RoundCostEstimate
 } from '$lib/api/types';
 
 export const arenaApi = {
@@ -86,6 +87,22 @@ export const arenaApi = {
   ) =>
     request<ArenaBundle>(
       `/api/workspaces/${workspaceId}/arenas/${arenaId}/bundle${qs({ round })}`,
+      { fetch }
+    ),
+
+  /** Cost preview for the next round before launching it. Defaults to all ready
+   *  variants; pass a subset + reps to match the launch you're about to fire. */
+  estimateRoundCost: (
+    workspaceId: string,
+    arenaId: string,
+    opts: { variantIds?: string[]; reps?: number } = {},
+    fetch?: typeof globalThis.fetch
+  ) =>
+    request<RoundCostEstimate>(
+      `/api/workspaces/${workspaceId}/arenas/${arenaId}/estimate-cost${qs({
+        variant_ids: opts.variantIds?.length ? opts.variantIds.join(',') : undefined,
+        reps: opts.reps
+      })}`,
       { fetch }
     ),
 

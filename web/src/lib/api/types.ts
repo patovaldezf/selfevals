@@ -772,6 +772,14 @@ export type LaunchRoundRequest = {
   reps?: number;
 };
 
+/** Cost preview for a round before launching it. `estimated_usd` is null when
+ *  the agents are black-box (no declared per-token price); `basis` explains
+ *  where the number came from. Mirror of `RoundCostEstimateResponse`. */
+export type RoundCostEstimate = {
+  estimated_usd: number | null;
+  basis: string;
+};
+
 export type PromoteVariantResponse = {
   winner_variant_id: string;
   git_ref: string;
