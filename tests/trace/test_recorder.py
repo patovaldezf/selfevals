@@ -208,3 +208,33 @@ def test_cost_defaults_to_zero_when_unset(tmp_path: Path) -> None:
     trace = rec.build()
     assert _only_llm_span(trace).cost_usd.total == pytest.approx(0.0)
     assert trace.metrics.total_cost_usd == pytest.approx(0.0)
+
+
+def test_stt_tts_spans_nest_under_voice_turn(tmp_path: Path) -> None:
+    """A voice turn records stt → tts legs, each parented to the turn, with
+    provider/transcript/audio pointer captured."""
+    from selfevals.schemas.trace import SttSpan, TtsSpan
+
+    rec = _recorder(tmp_path)
+    with rec, rec.agent_turn("voice_turn:0"):
+        with rec.stt("stt", provider="assemblyai") as stt:
+            stt.transcript_inline = "hola"
+            stt.audio_pointer = "oss://ws/sha256:aaa"
+            stt.audio_duration_ms = 1500
+            stt.language = "es"
+            stt.streaming = True
+        with rec.tts("tts", provider="elevenlabs") as tts:
+            tts.text_inline = "hola de vuelta"
+            tts.audio_pointer = "oss://ws/sha256:bbb"
+            tts.voice_id = "rachel"
+    trace = rec.build()
+    stt_span = next(s for s in trace.spans if isinstance(s, SttSpan))
+    tts_span = next(s for s in trace.spans if isinstance(s, TtsSpan))
+    turn = next(s for s in trace.spans if s.name == "voice_turn:0")
+    assert stt_span.parent_id == turn.id
+    assert tts_span.parent_id == turn.id
+    assert stt_span.provider == "assemblyai"
+    assert stt_span.transcript_inline == "hola"
+    assert stt_span.streaming is True
+    assert tts_span.voice_id == "rachel"
+    assert tts_span.audio_pointer == "oss://ws/sha256:bbb"

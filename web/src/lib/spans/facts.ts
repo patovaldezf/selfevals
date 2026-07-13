@@ -126,6 +126,24 @@ export function factsFor(span: SpanSummary): SpanFact[] {
       }
       break;
     }
+    case 'stt': {
+      const provider = asString(d.provider);
+      if (provider) facts.push({ key: 'provider', value: provider });
+      const dur = asNumber(d.audio_duration_ms);
+      if (dur !== null) facts.push({ key: 'audio', value: fmtMs(dur), title: 'audio duration' });
+      const lang = asString(d.language);
+      if (lang) facts.push({ key: 'lang', value: lang });
+      break;
+    }
+    case 'tts': {
+      const provider = asString(d.provider);
+      if (provider) facts.push({ key: 'provider', value: provider });
+      const voice = asString(d.voice_id);
+      if (voice) facts.push({ key: 'voice', value: voice });
+      const dur = asNumber(d.audio_duration_ms);
+      if (dur !== null) facts.push({ key: 'audio', value: fmtMs(dur), title: 'audio duration' });
+      break;
+    }
     case 'error': {
       const errorType = asString(d.error_type);
       if (errorType) facts.push({ key: 'type', value: errorType, title: 'error type' });

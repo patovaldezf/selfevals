@@ -21,6 +21,8 @@ import {
   Hand,
   ShieldCheck,
   AlertCircle,
+  Mic,
+  Volume2,
   Circle,
   Dot
 } from 'lucide-svelte';
@@ -90,6 +92,16 @@ const KIND_STYLES: Record<string, SpanKindStyle> = {
     icon: ShieldCheck,
     color: 'var(--color-ok)',
     label: 'guard'
+  },
+  stt: {
+    icon: Mic,
+    color: 'var(--color-chart-3)',
+    label: 'stt'
+  },
+  tts: {
+    icon: Volume2,
+    color: 'var(--color-chart-3)',
+    label: 'tts'
   },
   error: {
     icon: AlertCircle,

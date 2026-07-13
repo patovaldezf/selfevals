@@ -50,7 +50,12 @@ from selfevals.schemas.enums import (
 #        when small (same pointer/hash/inline trio as LLMCallSpan), so the viewer
 #        shows tool inputs *and* outputs without a fetch. Adapters can now report
 #        tool results (`AdapterToolUse.result`) which land in `result_*`.
-TRACE_SCHEMA_VERSION = "1.4.0"
+# 1.5.0: `SttSpan`/`TtsSpan` (SpanKind.STT/TTS) — first-class, provider-agnostic
+#        speech-to-text / text-to-speech legs of a voice turn. Audio bytes live in
+#        the object store (`audio_pointer` + `audio_mime_type`); transcript/text
+#        inline when small. Same span for Retell (reconstructed from events) and
+#        an instrumented STT→loop→TTS pipeline (AssemblyAI/ElevenLabs).
+TRACE_SCHEMA_VERSION = "1.5.0"
 
 # Inlined trace payloads are capped so a chatty run can't bloat the Trace row.
 # Anything larger is offloaded to the object store and referenced by pointer.
@@ -315,6 +320,55 @@ class GuardrailCheckSpan(_SpanBase):
     detail_pointer: str | None = None
 
 
+class SttSpan(_SpanBase):
+    """Speech-to-text: one audio clip → transcript. Provider-agnostic.
+
+    `provider`/`model` name whoever did the transcription (retell, assemblyai,
+    elevenlabs, whisper…). The audio bytes live in the object store behind
+    `audio_pointer`; the transcript is inlined when small, else behind
+    `transcript_pointer`. Timings are the standard `duration_ms` (wall clock of
+    the stage) plus `time_to_first_transcript_ms` for streaming STT."""
+
+    kind: Literal[SpanKind.STT] = SpanKind.STT
+    provider: NonEmptyStr
+    model: str | None = None
+    audio_pointer: str | None = None
+    audio_hash: str | None = None
+    audio_duration_ms: int | None = Field(default=None, ge=0)
+    audio_mime_type: str | None = None
+    transcript_pointer: str | None = None
+    transcript_hash: str | None = None
+    transcript_inline: str | None = None
+    language: str | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    streaming: bool = False
+    time_to_first_transcript_ms: int | None = Field(default=None, ge=0)
+    provider_metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class TtsSpan(_SpanBase):
+    """Text-to-speech: text → one audio clip. The mirror of `SttSpan`.
+
+    `voice_id` names the synthesized voice when the provider exposes one. The
+    input text is inlined when small (else `text_pointer`); the output audio is
+    always a pointer (`audio_pointer`). `time_to_first_byte_ms` captures
+    streaming-synthesis latency."""
+
+    kind: Literal[SpanKind.TTS] = SpanKind.TTS
+    provider: NonEmptyStr
+    model: str | None = None
+    voice_id: str | None = None
+    text_pointer: str | None = None
+    text_hash: str | None = None
+    text_inline: str | None = None
+    audio_pointer: str | None = None
+    audio_hash: str | None = None
+    audio_duration_ms: int | None = Field(default=None, ge=0)
+    audio_mime_type: str | None = None
+    time_to_first_byte_ms: int | None = Field(default=None, ge=0)
+    provider_metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class ErrorSpan(_SpanBase):
     kind: Literal[SpanKind.ERROR] = SpanKind.ERROR
     error_type: NonEmptyStr
@@ -338,6 +392,8 @@ Span = Annotated[
     | HandoffSpan
     | HumanInterventionSpan
     | GuardrailCheckSpan
+    | SttSpan
+    | TtsSpan
     | ErrorSpan
     | CustomSpan,
     Discriminator("kind"),

@@ -79,3 +79,13 @@ def test_workspace_id_required(tmp_path: Path) -> None:
 def test_negative_threshold_rejected(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         PayloadRouter(FilesystemObjectStore(tmp_path), workspace_id=WS, inline_threshold_bytes=-1)
+
+
+def test_put_bytes_always_offloads_even_when_small(tmp_path: Path) -> None:
+    """Audio clips must always be a pointer (never inlined) regardless of size —
+    binary has no meaningful inline form."""
+    store = FilesystemObjectStore(tmp_path)
+    router = PayloadRouter(store, workspace_id=WS)
+    pointer = router.put_bytes("tts_audio", b"\x00\x01tiny")
+    assert pointer is not None
+    assert store.get(pointer) == b"\x00\x01tiny"

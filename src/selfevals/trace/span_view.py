@@ -72,6 +72,23 @@ _DETAIL_KEYS: frozenset[str] = frozenset(
         "query_hash",
         "values_pointer",
         "values_hash",
+        # stt/tts (voice turn legs)
+        "audio_pointer",
+        "audio_hash",
+        "audio_duration_ms",
+        "audio_mime_type",
+        "transcript_pointer",
+        "transcript_hash",
+        "transcript_inline",
+        "language",
+        "confidence",
+        "streaming",
+        "time_to_first_transcript_ms",
+        "voice_id",
+        "text_pointer",
+        "text_hash",
+        "text_inline",
+        "time_to_first_byte_ms",
     }
 )
 

@@ -21,9 +21,11 @@ from selfevals.schemas.trace import (
     RetrievalSpan,
     RetrievedDoc,
     Span,
+    SttSpan,
     TokenBreakdown,
     ToolCallSpan,
     ToolUseRequest,
+    TtsSpan,
 )
 
 
@@ -120,6 +122,10 @@ def build_span(cur: Any, trace_id: str, kind: str, span_id: str, base: dict[str,
         )
         guardrail, passed, dp = cur.fetchone()
         return GuardrailCheckSpan(**base, guardrail=guardrail, passed=passed, detail_pointer=dp)
+    if kind == "stt":
+        return _build_stt_span(cur, trace_id, span_id, base)
+    if kind == "tts":
+        return _build_tts_span(cur, trace_id, span_id, base)
     if kind == "error":
         cur.execute(
             "SELECT error_type, message, recoverable FROM trace_error_spans "
@@ -282,4 +288,62 @@ def _build_retrieval_span(
         reranker=r[6],
         retrieved=retrieved,
         grounding_used=r[7],
+    )
+
+
+def _build_stt_span(cur: Any, trace_id: str, span_id: str, base: dict[str, Any]) -> SttSpan:
+    cur.execute(
+        """
+        SELECT provider, model, audio_pointer, audio_hash, audio_duration_ms,
+               audio_mime_type, transcript_pointer, transcript_hash, transcript_inline,
+               language, confidence, streaming, time_to_first_transcript_ms, provider_metadata
+        FROM trace_stt_spans WHERE trace_id = %s AND span_id = %s
+        """,
+        (trace_id, span_id),
+    )
+    r = cur.fetchone()
+    return SttSpan(
+        **base,
+        provider=r[0],
+        model=r[1],
+        audio_pointer=r[2],
+        audio_hash=r[3],
+        audio_duration_ms=r[4],
+        audio_mime_type=r[5],
+        transcript_pointer=r[6],
+        transcript_hash=r[7],
+        transcript_inline=r[8],
+        language=r[9],
+        confidence=r[10],
+        streaming=r[11],
+        time_to_first_transcript_ms=r[12],
+        provider_metadata=r[13],
+    )
+
+
+def _build_tts_span(cur: Any, trace_id: str, span_id: str, base: dict[str, Any]) -> TtsSpan:
+    cur.execute(
+        """
+        SELECT provider, model, voice_id, text_pointer, text_hash, text_inline,
+               audio_pointer, audio_hash, audio_duration_ms, audio_mime_type,
+               time_to_first_byte_ms, provider_metadata
+        FROM trace_tts_spans WHERE trace_id = %s AND span_id = %s
+        """,
+        (trace_id, span_id),
+    )
+    r = cur.fetchone()
+    return TtsSpan(
+        **base,
+        provider=r[0],
+        model=r[1],
+        voice_id=r[2],
+        text_pointer=r[3],
+        text_hash=r[4],
+        text_inline=r[5],
+        audio_pointer=r[6],
+        audio_hash=r[7],
+        audio_duration_ms=r[8],
+        audio_mime_type=r[9],
+        time_to_first_byte_ms=r[10],
+        provider_metadata=r[11],
     )

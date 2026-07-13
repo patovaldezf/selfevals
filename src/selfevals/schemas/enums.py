@@ -173,6 +173,10 @@ class SpanKind(StrEnum):
     HANDOFF = "handoff"
     HUMAN_INTERVENTION = "human_intervention"
     GUARDRAIL_CHECK = "guardrail_check"
+    STT = "stt"
+    """Speech-to-text: an audio clip transcribed to text (one leg of a voice turn)."""
+    TTS = "tts"
+    """Text-to-speech: text synthesized to an audio clip (the other leg)."""
     ERROR = "error"
     CUSTOM = "custom"
 

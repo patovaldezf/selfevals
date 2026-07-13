@@ -56,6 +56,7 @@ from selfevals.schemas.trace import (
     RetrievedDoc,
     RunInfo,
     Span,
+    SttSpan,
     TokenBreakdown,
     ToolCallSpan,
     ToolUseRequest,
@@ -63,6 +64,7 @@ from selfevals.schemas.trace import (
     TraceLink,
     TraceMetrics,
     TraceOutputs,
+    TtsSpan,
 )
 from selfevals.trace.recorder_spans import (
     build_decision_span,
@@ -220,6 +222,73 @@ class _ToolSpanBuilder:
     retry_chain: list[str] = field(default_factory=list)
     sandboxed: bool = False
     side_effects: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class _SttSpanBuilder:
+    provider: str
+    model: str | None = None
+    audio_pointer: str | None = None
+    audio_hash: str | None = None
+    audio_duration_ms: int | None = None
+    audio_mime_type: str | None = None
+    transcript_pointer: str | None = None
+    transcript_hash: str | None = None
+    transcript_inline: str | None = None
+    language: str | None = None
+    confidence: float | None = None
+    streaming: bool = False
+    time_to_first_transcript_ms: int | None = None
+    provider_metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class _TtsSpanBuilder:
+    provider: str
+    model: str | None = None
+    voice_id: str | None = None
+    text_pointer: str | None = None
+    text_hash: str | None = None
+    text_inline: str | None = None
+    audio_pointer: str | None = None
+    audio_hash: str | None = None
+    audio_duration_ms: int | None = None
+    audio_mime_type: str | None = None
+    time_to_first_byte_ms: int | None = None
+    provider_metadata: dict[str, Any] = field(default_factory=dict)
+
+
+def _build_stt_span(
+    *, span_id: str, parent_id: str | None, name: str, started_at: datetime,
+    duration_ms: int, builder: _SttSpanBuilder,
+) -> SttSpan:
+    return SttSpan(
+        id=span_id, parent_id=parent_id, name=name, started_at=started_at,
+        duration_ms=duration_ms, provider=builder.provider, model=builder.model,
+        audio_pointer=builder.audio_pointer, audio_hash=builder.audio_hash,
+        audio_duration_ms=builder.audio_duration_ms, audio_mime_type=builder.audio_mime_type,
+        transcript_pointer=builder.transcript_pointer, transcript_hash=builder.transcript_hash,
+        transcript_inline=builder.transcript_inline, language=builder.language,
+        confidence=builder.confidence, streaming=builder.streaming,
+        time_to_first_transcript_ms=builder.time_to_first_transcript_ms,
+        provider_metadata=builder.provider_metadata,
+    )
+
+
+def _build_tts_span(
+    *, span_id: str, parent_id: str | None, name: str, started_at: datetime,
+    duration_ms: int, builder: _TtsSpanBuilder,
+) -> TtsSpan:
+    return TtsSpan(
+        id=span_id, parent_id=parent_id, name=name, started_at=started_at,
+        duration_ms=duration_ms, provider=builder.provider, model=builder.model,
+        voice_id=builder.voice_id, text_pointer=builder.text_pointer,
+        text_hash=builder.text_hash, text_inline=builder.text_inline,
+        audio_pointer=builder.audio_pointer, audio_hash=builder.audio_hash,
+        audio_duration_ms=builder.audio_duration_ms, audio_mime_type=builder.audio_mime_type,
+        time_to_first_byte_ms=builder.time_to_first_byte_ms,
+        provider_metadata=builder.provider_metadata,
+    )
 
 
 def _build_llm_call_span(
@@ -523,6 +592,50 @@ class TraceRecorder:
                 )
             )
             self._tool_call_count += 1
+
+    @contextmanager
+    def stt(self, name: str, *, provider: str) -> Iterator[_SttSpanBuilder]:
+        """Record a speech-to-text leg. The builder is filled after transcription
+        (audio pointer, transcript, latency) and baked into an `SttSpan` on exit."""
+        span_id = _new_span_id()
+        started_at = utc_now()
+        t0 = time.perf_counter()
+        parent = self._current_parent()
+        builder = _SttSpanBuilder(provider=provider)
+        self._open_parents.append(span_id)
+        try:
+            yield builder
+        finally:
+            self._open_parents.pop()
+            duration_ms = int((time.perf_counter() - t0) * 1000)
+            self._record(
+                _build_stt_span(
+                    span_id=span_id, parent_id=parent, name=name,
+                    started_at=started_at, duration_ms=duration_ms, builder=builder,
+                )
+            )
+
+    @contextmanager
+    def tts(self, name: str, *, provider: str) -> Iterator[_TtsSpanBuilder]:
+        """Record a text-to-speech leg. The builder is filled after synthesis
+        (text, audio pointer, latency) and baked into a `TtsSpan` on exit."""
+        span_id = _new_span_id()
+        started_at = utc_now()
+        t0 = time.perf_counter()
+        parent = self._current_parent()
+        builder = _TtsSpanBuilder(provider=provider)
+        self._open_parents.append(span_id)
+        try:
+            yield builder
+        finally:
+            self._open_parents.pop()
+            duration_ms = int((time.perf_counter() - t0) * 1000)
+            self._record(
+                _build_tts_span(
+                    span_id=span_id, parent_id=parent, name=name,
+                    started_at=started_at, duration_ms=duration_ms, builder=builder,
+                )
+            )
 
     def add_retrieval(
         self,
