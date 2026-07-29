@@ -101,11 +101,31 @@ class EditableContract(SelfEvalsModel):
 
 
 class SearchSpace(SelfEvalsModel):
-    """Parameter spaces the proposer is allowed to sample from."""
+    """Parameter spaces the proposer is allowed to sample from.
+
+    `model_params`, `prompt_variables`, and `tool_params` are *payload* axes:
+    the sampled values ride inside each request to one fixed agent, which
+    interprets them however it likes.
+
+    `agents` is the *binding* axis and behaves differently. Each entry is a whole
+    agent declaration (the same shape as the spec's `agent:` block), so a
+    proposal can swap the provider, the framework, the working directory, or the
+    transport itself — the things that are decided when the adapter is built
+    rather than when a request is sent. Without it, "compare Twilio vs Retell" or
+    "workflow vs agent" is inexpressible: those differ *before* the first
+    request, so no amount of per-request parameters can reach them.
+
+    Entries are raw mappings (an `agent:` block as written in YAML) because the
+    typed `AgentSpec` union lives in `repo.loader`, which imports schemas — the
+    dependency only runs one way. `runner.launch` parses each entry with the
+    same `build_agent_spec` the top-level block uses, so an invalid entry fails
+    with the identical error.
+    """
 
     model_params: dict[str, Any] = Field(default_factory=dict)
     prompt_variables: dict[str, Any] = Field(default_factory=dict)
     tool_params: dict[str, Any] = Field(default_factory=dict)
+    agents: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class FrozenSnapshot(SelfEvalsModel):

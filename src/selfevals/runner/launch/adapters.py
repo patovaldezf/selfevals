@@ -7,6 +7,8 @@ the fleet-shared rate-limit key derivation.
 from __future__ import annotations
 
 import inspect
+from collections.abc import Callable, Mapping
+from pathlib import Path
 
 from selfevals._errors import SelfEvalsUserError
 from selfevals.repo.loader import (
@@ -94,7 +96,53 @@ def _rate_limit_key(spec: ExperimentSpec) -> str:
     Falls back to the experiment id when the agent declares no provider
     (embedded agents), so such runs still get a per-experiment global cap rather
     than colliding on a shared 'unknown' key."""
-    provider = _provider_of(spec.agent)
+    return _rate_limit_key_for_agent(spec, spec.agent)
+
+
+def agent_block_adapter_factory(
+    spec: ExperimentSpec, *, redis_url: str | None
+) -> Callable[[Mapping[str, object]], AgentAdapter]:
+    """Factory that turns a `search_space.agents` entry into a live adapter.
+
+    Installed on the `Executor` by `build_loop`, which calls it the first time a
+    proposal binds an agent (results are cached per block).
+
+    Two properties this preserves, both easy to lose:
+
+    * The entry is parsed by the same `build_agent_spec` as the top-level
+      `agent:` block, so a malformed variant fails with the identical message
+      instead of a novel one.
+    * The resilience wrapper is applied with a bucket key derived from *this*
+      agent's provider. A sweep across two providers must draw from two quotas —
+      reusing the declared agent's key would throttle one provider against the
+      other's budget.
+    """
+    from selfevals.repo.loader.agent import build_agent_spec
+
+    def _factory(block: Mapping[str, object]) -> AgentAdapter:
+        # `build_agent_spec` reads the `agent:` key and uses the path only to
+        # label errors; a pseudo-path points the message at the right YAML block.
+        variant_spec = build_agent_spec(
+            Path(f"{spec.experiment.id}:search_space.agents"), {"agent": dict(block)}
+        )
+        return _wrap_resilience(
+            build_adapter(variant_spec),
+            spec.experiment.run,
+            redis_url=redis_url,
+            bucket_key=_rate_limit_key_for_agent(spec, variant_spec) if redis_url else None,
+        )
+
+    return _factory
+
+
+def _rate_limit_key_for_agent(spec: ExperimentSpec, agent: AgentSpec) -> str:
+    """`_rate_limit_key` for an arbitrary agent declaration.
+
+    `search_space.agents` can bind a different provider per iteration, and each
+    provider bills its own quota — so the bucket key must follow the agent that
+    actually runs, not the one declared at the top of the spec.
+    """
+    provider = _provider_of(agent)
     if provider is None:
         return f"selfevals:ratelimit:{spec.workspace_id}:exp:{spec.experiment.id}"
     return f"selfevals:ratelimit:{spec.workspace_id}:provider:{provider}"

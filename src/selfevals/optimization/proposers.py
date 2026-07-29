@@ -142,12 +142,49 @@ def _grid_combinations(search_space: dict[str, Any]) -> list[dict[str, Any]]:
     return combos
 
 
+def describe_agent(agent: dict[str, Any]) -> str:
+    """Short human label for an agent block, for hypotheses and reports.
+
+    A raw agent mapping is unreadable in a one-line hypothesis, so name it by
+    the field that actually distinguishes variants of each transport: the URL
+    for http, the command for cli, the entrypoint for embedded. An explicit
+    `name:` key always wins so a spec author can label variants themselves.
+    """
+    if not isinstance(agent, dict):
+        return str(agent)
+    label = agent.get("name")
+    if label:
+        return str(label)
+    kind = str(agent.get("type", "agent"))
+    for key in ("url", "entrypoint", "command"):
+        value = agent.get(key)
+        if value:
+            if isinstance(value, list):
+                value = " ".join(str(v) for v in value)
+            return f"{kind}:{value}"
+    return kind
+
+
+def _describe_combo(params: dict[str, Any]) -> str:
+    parts: list[str] = []
+    if "agent" in params:
+        parts.append(describe_agent(params["agent"]))
+    if params.get("model_params"):
+        parts.append(str(params["model_params"]))
+    return " + ".join(parts) or str(params)
+
+
 class GridProposer(Proposer):
-    """Cartesian product over `experiment.search_space.model_params`.
+    """Cartesian product over `search_space.model_params` x `search_space.agents`.
 
     A list value enumerates choices; a scalar value is held constant.
     Each combination becomes one Proposal. Raises
     `SearchSpaceExhaustedError` once all combinations are emitted.
+
+    `agents` participates as one more axis, so declaring 3 agents and 2
+    temperatures yields 6 iterations — "which provider, at which temperature"
+    answered in a single sweep. Declaring only `agents` (no `model_params`)
+    is a pure bake-off: one iteration per agent.
     """
 
     name = "grid"
@@ -156,13 +193,25 @@ class GridProposer(Proposer):
         self._combos: list[dict[str, Any]] | None = None
 
     def _ensure_combos(self, experiment: Experiment) -> list[dict[str, Any]]:
-        if self._combos is None:
-            self._combos = _grid_combinations(experiment.search_space.model_params)
-            if not self._combos:
-                raise ValueError(
-                    "grid proposer requires at least one combination in "
-                    "experiment.search_space.model_params"
-                )
+        if self._combos is not None:
+            return self._combos
+        param_combos = _grid_combinations(experiment.search_space.model_params)
+        agents = experiment.search_space.agents
+        if not param_combos and not agents:
+            raise ValueError(
+                "grid proposer requires at least one combination in "
+                "experiment.search_space.model_params or search_space.agents"
+            )
+        if not agents:
+            self._combos = [{"model_params": p} for p in param_combos]
+        elif not param_combos:
+            self._combos = [{"agent": a} for a in agents]
+        else:
+            # Agent varies slowest: all params for agent A, then for agent B.
+            # Keeps consecutive iterations comparable on the expensive axis.
+            self._combos = [
+                {"agent": a, "model_params": p} for a in agents for p in param_combos
+            ]
         return self._combos
 
     def grid_size(self, experiment: Experiment) -> int:
@@ -175,10 +224,10 @@ class GridProposer(Proposer):
         combos = self._ensure_combos(experiment)
         if context.iteration_index >= len(combos):
             raise SearchSpaceExhaustedError(f"grid exhausted after {len(combos)} combinations")
-        params = combos[context.iteration_index]
+        params = dict(combos[context.iteration_index])
         proposal = Proposal(
-            parameters={"model_params": params},
-            hypothesis=f"grid[{context.iteration_index}]: {params}",
+            parameters=params,
+            hypothesis=f"grid[{context.iteration_index}]: {_describe_combo(params)}",
         )
         _validate_or_raise(proposal, experiment)
         return proposal
@@ -222,12 +271,19 @@ class RandomProposer(Proposer):
     def propose(self, experiment: Experiment, context: ProposerContext) -> Proposal:
         if context.iteration_index >= self._max:
             raise SearchSpaceExhaustedError(f"random proposer exhausted after {self._max} samples")
-        params = {
+        model_params = {
             k: _sample_value(self._rng, v) for k, v in experiment.search_space.model_params.items()
         }
+        params: dict[str, Any] = {}
+        if experiment.search_space.agents:
+            params["agent"] = self._rng.choice(experiment.search_space.agents)
+        if model_params or not params:
+            # Keep model_params even when empty if it's the only axis, so a
+            # spec with neither axis still yields a well-formed (no-op) proposal.
+            params["model_params"] = model_params
         proposal = Proposal(
-            parameters={"model_params": params},
-            hypothesis=f"random[{context.iteration_index}]: {params}",
+            parameters=params,
+            hypothesis=f"random[{context.iteration_index}]: {_describe_combo(params)}",
         )
         _validate_or_raise(proposal, experiment)
         return proposal

@@ -1,6 +1,6 @@
 ---
 name: arena-iterate
-description: Drive a selfevals Arena — a bake-off between N git-branch code variants of one agent (different prompts, different providers like AssemblyAI vs ElevenLabs, workflow vs tool-calling agent, different tool sets) run in parallel on the same dataset. Use when a human wants to compare code variants empirically ("try both approaches and tell me which wins", "set up an arena for X vs Y"), or when an Arena already exists and needs its next round. selfevals owns orchestration (worktrees, parallel runs, scoring); you own the code changes and the judgment about what variant to try next.
+description: Drive a selfevals Arena — a bake-off between N git-branch code variants of one agent (a rewritten tool, a different agent loop, an edited in-repo prompt) run in parallel on the same dataset via isolated worktrees. Use when a human wants to compare code changes empirically ("try both approaches and tell me which wins", "set up an arena for X vs Y"), or when an Arena already exists and needs its next round. When the variants differ only in which provider, endpoint, entrypoint, or transport the agent is reached through — AssemblyAI vs ElevenLabs, Twilio vs Retell, LangChain vs Mastra — no Arena is needed: declare them in one experiment via `search_space.agents` (see docs/eval_config.md). selfevals owns orchestration (worktrees, parallel runs, scoring); you own the code changes and the judgment about what variant to try next.
 ---
 
 # Arena Iterate (code-variant bake-off)
@@ -58,6 +58,28 @@ Returns `{"id": "arn_...", "state": "draft", ...}` — this is your `ARENA_ID`
 for every step below.
 
 ## 2. Register variants
+
+> **First check whether you need an Arena at all.** Arena's unit of comparison
+> is a *git ref* — use it when the variants differ in **code you had to write**
+> (a rewritten tool, a different agent loop, an edited prompt in the repo).
+>
+> If the variants differ only in **how the agent is reached** — which provider,
+> which framework endpoint, which entrypoint, which transport — declare them in
+> a plain experiment instead, with no branches and no worktrees:
+>
+> ```yaml
+> editable: { model_choice: true }
+> proposer: { strategy: grid }
+> search_space:
+>   agents:
+>     - { type: http, url: "https://assembly.internal/run",   name: assemblyai }
+>     - { type: http, url: "https://elevenlabs.internal/run", name: elevenlabs }
+> ```
+>
+> That is one experiment, two iterations, directly comparable — and it avoids
+> creating branches whose only content is a swapped constant. See
+> `docs/eval_config.md` → "search_space.agents". Reach for Arena when the
+> variants genuinely are different code.
 
 Each variant is an existing git ref (branch, tag, or commit) in `repo_path` —
 **you create the branch first**, outside selfevals, then hand selfevals the

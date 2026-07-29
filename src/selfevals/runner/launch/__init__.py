@@ -32,6 +32,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Literal
 
 from selfevals.graders.registry import unregister_grader
@@ -43,8 +44,10 @@ from selfevals.runner.launch.adapters import (
     _model_ref,
     _provider_of,
     _rate_limit_key,
+    _rate_limit_key_for_agent,
     _wrap_resilience,
     _wrap_user_callable,
+    agent_block_adapter_factory,
     build_adapter,
 )
 from selfevals.runner.launch.datasets import (
@@ -95,6 +98,7 @@ __all__ = [
     "_persist_cases",
     "_provider_of",
     "_rate_limit_key",
+    "_rate_limit_key_for_agent",
     "_resolve_dataset_source",
     "_resolve_ref_dataset",
     "_set_match_factory",
@@ -216,6 +220,7 @@ def build_loop(
         redis_url=redis_url,
         bucket_key=_rate_limit_key(spec) if redis_url else None,
     )
+
     proposer = build_proposer(spec.experiment)
 
     # Resolve a `ref:` dataset before anything reads `spec.cases` (graders,
@@ -251,11 +256,16 @@ def build_loop(
     # exporter at a STABLE endpoint it configures once. A fixed port assumes runs
     # don't overlap (the bind would clash, and a shared receiver has one recorder
     # slot); use the default dynamic port if you run experiments concurrently.
-    otlp_handle = (
-        start_receiver(port=_otlp_receiver_port())
-        if isinstance(adapter, (HttpEndpointAdapter, CliCommandAdapter))
-        else None
+    # `search_space.agents` can introduce out-of-process variants even when the
+    # declared agent is embedded, so the decision has to consider both: without
+    # this, a sweep that swaps an embedded default for an http variant would
+    # silently lose that variant's spans.
+    needs_receiver = isinstance(adapter, (HttpEndpointAdapter, CliCommandAdapter)) or any(
+        str(block.get("type", "")).lower() in {"http", "cli"}
+        for block in spec.experiment.search_space.agents
+        if isinstance(block, Mapping)
     )
+    otlp_handle = start_receiver(port=_otlp_receiver_port()) if needs_receiver else None
 
     # run.parallelism (schema default 8, ge=1 le=64) is the per-run concurrency
     # knob. It caps three independent fan-outs, all sized off the same value:
@@ -276,6 +286,9 @@ def build_loop(
         otlp_handle=otlp_handle,
         concurrency=parallelism,
     )
+    # Enables `search_space.agents`: proposals carrying an `agent` block get an
+    # adapter built (and cached) on demand instead of the declared default.
+    executor.set_adapter_factory(agent_block_adapter_factory(spec, redis_url=redis_url))
     return OptimizationLoop(
         experiment=spec.experiment,
         executor=executor,
