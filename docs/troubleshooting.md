@@ -12,7 +12,7 @@ went wrong — file a bug.
 **Symptom**
 
 ```text
-$ selfevals run evals/experiments/foo.yaml --no-persist
+$ selfevals run evals/experiments/foo.yaml
 error: could not parse YAML /path/to/foo.yaml: while parsing a flow node
   expected the node content, but found ']'
   in "<unicode string>", line 1, column 18
@@ -151,7 +151,8 @@ password authentication failed for user "selfevals"
 **Cause**
 
 - *No storage configured*: neither `SELFEVALS_STORAGE_URL` nor `--db` is set.
-  (For a quick run that needs no DB, use `--no-persist`.)
+  Postgres is required — there is no DB-less run mode. `docker compose up -d`
+  starts the local one from `.env.example`.
 - *Connection refused*: Postgres isn't running, or the URL points at the wrong
   host/port. The local default in `.env.example` is port `5433`.
 - *Auth failed*: wrong user/password/database in the URL.

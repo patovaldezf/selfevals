@@ -169,7 +169,7 @@ class RefDatasetSource:
     No cases are declared in the spec; `runner.launch` resolves the referenced
     `Dataset` from storage, hydrates its cases, and adopts its split allocation.
     This is how one standalone dataset is reused across many experiments. A ref
-    cannot be resolved without persistence, so an ephemeral run (`--no-persist`)
+    cannot be resolved without persistence, so an ephemeral run (no scope)
     over a ref is a user error, raised at launch.
     """
 

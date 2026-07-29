@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from selfevals._errors import SelfEvalsUserError
 from selfevals.storage.factory import (
     object_store_base_for_storage_url,
     open_storage,
@@ -22,8 +23,14 @@ def test_resolve_storage_url_falls_back_to_env(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_resolve_storage_url_unset_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unset storage is a *user* error, so the CLI prints one line and exits 2.
+
+    Raising a bare RuntimeError here would escape the CLI's
+    `except SelfEvalsUserError` handler and surface as a stack trace — which
+    `docs/troubleshooting.md` defines as a bug.
+    """
     monkeypatch.delenv("SELFEVALS_STORAGE_URL", raising=False)
-    with pytest.raises((RuntimeError, ValueError), match="SELFEVALS_STORAGE_URL"):
+    with pytest.raises(SelfEvalsUserError, match="SELFEVALS_STORAGE_URL"):
         resolve_storage_url()
 
 

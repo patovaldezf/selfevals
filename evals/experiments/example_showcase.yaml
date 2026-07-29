@@ -7,7 +7,7 @@
 # it fully reproducible in CI.
 #
 # Run it with:
-#   selfevals run evals/experiments/example_showcase.yaml --no-persist
+#   selfevals run evals/experiments/example_showcase.yaml
 #
 # Copy a standalone, runnable tree (yaml + jsonl) with:
 #   selfevals examples copy showcase --to ./my-evals

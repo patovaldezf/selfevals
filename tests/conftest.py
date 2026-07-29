@@ -117,16 +117,34 @@ def _close_event_loop(request: pytest.FixtureRequest) -> Iterator[None]:
     gc.collect()
 
 
+@pytest.fixture(autouse=True)
+def _no_ambient_redis(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hide the developer's `SELFEVALS_REDIS_URL` from every test.
+
+    `run_launcher` picks its dispatch from the environment: with the variable
+    set it enqueues to Redis (`redis-worker`), otherwise it runs the job on an
+    in-process thread. Tests that drive a run to completion — Arena rounds, most
+    of the API surface — rely on the in-process path. So whether they pass used
+    to depend on whether the developer had sourced `.env` in that shell: green
+    on a clean shell, hung-then-failed after `set -a && source .env`, with only
+    a "no worker is consuming" warning to explain it.
+
+    Tests that genuinely exercise the Redis path set the variable themselves.
+    """
+    monkeypatch.delenv("SELFEVALS_REDIS_URL", raising=False)
+
+
 @pytest.fixture
 def synchronous_run_queue(monkeypatch: pytest.MonkeyPatch, db_url: str) -> None:
     """Make `selfevals run` (and the API launch) execute the run synchronously.
 
     Production shards: `run` enqueues a coordinator run-job and a worker drains
-    it. A test has no Redis/worker, so this fixture swaps the queue for one whose
-    `enqueue` runs the job inline through the real `execute_run_job` — the same
-    sharded coordinator + self-drain path, just synchronous and in-process. So a
-    CLI/API test exercises the genuine sharded pipeline end to end and returns a
-    finished run, without standing up infrastructure.
+    it. Tests have no worker (`_no_ambient_redis` also guarantees no ambient
+    Redis), so this fixture swaps the queue for one whose `enqueue` runs the job
+    inline through the real `execute_run_job` — the same sharded coordinator +
+    self-drain path, just synchronous and in-process. So a CLI/API test
+    exercises the genuine sharded pipeline end to end and returns a finished
+    run, without standing up infrastructure.
     """
     from selfevals.api import run_launcher
     from selfevals.schemas.job import RunJob

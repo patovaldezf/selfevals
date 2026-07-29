@@ -94,7 +94,7 @@ decision_evaluator=DecisionMatrixEvaluator())` → `loop.run()`.
      `experiment_id` (y `run`/job id) inmediatamente. El FE hace polling de
      `GET .../experiments/{exp}` o se suscribe al SSE `/runs/active` + `.../traces/{run}/stream`.
      El estado del experiment (`draft → queued → running → completed/failed`) refleja el avance.
-   - **Persistencia ON** (no `--no-persist`): se escribe `Experiment` + iterations + traces al
+   - **Persistencia** (siempre activa): se escribe `Experiment` + iterations + traces al
      storage, igual que la CLI. Asegura `_ensure_workspace`.
    - **Errores:** 422 si el spec no valida / 0 casos; 409 si ya hay una corrida activa para ese
      experiment (opcional); 500 con detalle si el loop revienta (refleja `state=failed`).

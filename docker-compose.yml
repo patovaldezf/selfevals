@@ -41,7 +41,10 @@ services:
     environment:
       # Talk to the sibling containers (in-network ports, not the host mappings).
       SELFEVALS_STORAGE_URL: postgresql://selfevals:selfevals@postgres:5432/selfevals
-      SELFEVALS_REDIS_URL: redis://redis:6379/0
+      # DB number MUST match .env.example's SELFEVALS_REDIS_URL (/15). The CLI
+      # enqueues where .env points; this worker consumes here. A mismatch means
+      # the job is queued, nobody consumes it, and `run` hangs until timeout.
+      SELFEVALS_REDIS_URL: redis://redis:6379/15
     depends_on:
       postgres:
         condition: service_healthy

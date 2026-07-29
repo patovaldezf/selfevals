@@ -316,7 +316,7 @@ def _next_steps_lines(result: OptimizationResult) -> list[str]:
     exp_id = exp.id
 
     out: list[str] = []
-    out.append("Inspect this experiment (requires the run to be persisted to SQLite):")
+    out.append("Inspect this experiment:")
     out.append("")
     out.append("```bash")
     out.append(f"selfevals iteration list {ws_id} {exp_id}")

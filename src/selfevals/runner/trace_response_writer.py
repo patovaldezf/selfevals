@@ -94,7 +94,7 @@ def route_payload(
     Returns `(pointer, hash, inline)`. Small payloads are inlined on the span
     (so the viewer needs no extra fetch); large ones are offloaded to the
     object store via the recorder's `PayloadRouter` and referenced by
-    pointer. Without a router (e.g. `--no-persist`) we only inline, truncated
+    pointer. Without a router (an ephemeral run) we only inline, truncated
     to `INLINE_PAYLOAD_MAX_CHARS` so a chatty run can't bloat the trace. A
     None/empty value routes to all-None (honest: nothing to show)."""
     if value is None:

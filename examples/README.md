@@ -19,7 +19,7 @@ Ships inside the package, so it's the one you can copy after `pip install`:
 
 ```bash
 selfevals examples copy pingpong
-selfevals run evals/experiments/example_pingpong.yaml --no-persist
+selfevals run evals/experiments/example_pingpong.yaml
 ```
 
 It uses the `EmbeddedAdapter` against a trivial echo agent. No network, no
@@ -32,7 +32,7 @@ Also ships inside the package, copy-and-run like pingpong:
 
 ```bash
 selfevals examples copy showcase
-selfevals run evals/experiments/example_showcase.yaml --no-persist
+selfevals run evals/experiments/example_showcase.yaml
 ```
 
 Where pingpong is the minimal loop, `showcase` is the **catalog**: a single
@@ -53,7 +53,7 @@ Also ships inside the package:
 
 ```bash
 selfevals examples copy route_ops_copilot
-selfevals run evals/experiments/example_route_ops_copilot.yaml --no-persist
+selfevals run evals/experiments/example_route_ops_copilot.yaml
 ```
 
 This is the practical example for integrating selfevals with a real agentic
@@ -114,12 +114,12 @@ Run them:
 # Anthropic
 pip install 'selfevals[anthropic]'
 export ANTHROPIC_API_KEY=sk-ant-...        # optional
-uv run selfevals run examples/hello_llm/experiment.yaml --no-persist
+uv run selfevals run examples/hello_llm/experiment.yaml
 
 # OpenAI
 pip install 'selfevals[openai]'
 export OPENAI_API_KEY=sk-...               # optional
-uv run selfevals run examples/hello_openai/experiment.yaml --no-persist
+uv run selfevals run examples/hello_openai/experiment.yaml
 ```
 
 If the key is unset (or the SDK isn't installed), the agent prints a hint

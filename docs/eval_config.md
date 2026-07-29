@@ -11,7 +11,7 @@ there is no separate YAML-only DSL.
 Run a spec with:
 
 ```bash
-selfevals run evals/experiments/example_pingpong.yaml --no-persist
+selfevals run evals/experiments/example_pingpong.yaml
 # or persist to Postgres (note: --db is a GLOBAL flag, before the subcommand;
 # it takes a Postgres URL, and defaults to $SELFEVALS_STORAGE_URL):
 selfevals --db postgresql://localhost:5433/selfevals run evals/experiments/example_pingpong.yaml

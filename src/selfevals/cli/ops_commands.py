@@ -73,10 +73,8 @@ def cmd_examples_copy(args: argparse.Namespace) -> int:
     for path in copied:
         print(f"  {path}")
     print("")
-    print("Run:")
-    print(
-        f"  selfevals run {target_root / 'evals' / 'experiments' / f'example_{name}.yaml'} --no-persist"
-    )
+    print("Run (needs Postgres + Redis + a worker — `docker compose up -d`):")
+    print(f"  selfevals run {target_root / 'evals' / 'experiments' / f'example_{name}.yaml'}")
     return 0
 
 

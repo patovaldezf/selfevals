@@ -19,7 +19,7 @@ measurement layer around it.
 - Serves a FastAPI bridge and optional Svelte dashboard for live runs, cases, traces, and results.
 - Exports failed traces for external error analysis, then ingests taxonomy updates back into the workspace.
 
-Current version: `0.14.0`.
+Current version: `0.16.0`.
 
 ## Why This Exists
 
@@ -48,7 +48,8 @@ selfevals --version
 python -c "import selfevals; print(selfevals.__version__)"
 ```
 
-Core install stays small: `pydantic`, `pyyaml`, and `httpx`.
+Core install stays small: `pydantic`, `pyyaml`, `httpx`, and `psycopg` (storage
+is Postgres-only, so the driver is not optional).
 
 Provider extras install both the provider SDK and the OpenInference tracing
 adapter:
@@ -103,13 +104,30 @@ SQLite database? Use `selfevals migrate-sqlite ./old.sqlite --to "$SELFEVALS_STO
 
 ## Quickstart
 
-No API key. No model call. Runs the bundled pingpong eval.
+Runs the bundled pingpong eval — **no API key, no model call**. It does need
+Postgres + Redis + a worker, and those ship as a `docker-compose.yml` in the
+repo, so start by cloning:
 
 ```bash
-pip install selfevals
-selfevals examples copy pingpong
-selfevals run evals/experiments/example_pingpong.yaml --max-iterations 2
+git clone https://github.com/patovaldezf/selfevals && cd selfevals
+docker compose up -d                       # Postgres :5433, Redis :6380, worker
+cp .env.example .env && set -a && source .env && set +a
+uv sync --extra redis                      # or: pip install -e '.[redis]'
+uv run selfevals run evals/experiments/example_pingpong.yaml --max-iterations 2
 ```
+
+> **Installing with `pip install selfevals` alone is not enough to run.** The
+> package ships the CLI and the examples, but not `docker-compose.yml` or
+> `.env.example` — and `run` needs Postgres, Redis, and a worker. Either clone
+> the repo (above) or point the CLI at infrastructure you already operate:
+> ```bash
+> pip install 'selfevals[redis]'
+> export SELFEVALS_STORAGE_URL=postgresql://…   # your Postgres
+> export SELFEVALS_REDIS_URL=redis://…/15       # your Redis
+> selfevals worker runs &                       # a worker on the SAME Redis DB
+> selfevals examples copy pingpong
+> selfevals run evals/experiments/example_pingpong.yaml --max-iterations 2
+> ```
 
 Expected shape:
 

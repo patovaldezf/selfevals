@@ -164,7 +164,7 @@ class AgentTraceHandle:
         Returns `(pointer, hash)`. Unlike `route_payload`, audio is NEVER inlined
         — the inline fields are text, and binary audio always belongs behind a
         pointer regardless of size (a clip is opaque, not a preview). Returns
-        `(None, None)` when there's no object store (e.g. `--no-persist`)."""
+        `(None, None)` when there's no object store (an ephemeral run)."""
         router = self._recorder.payload_router
         if router is None:
             return None, None

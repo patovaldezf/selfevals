@@ -17,7 +17,7 @@ Contract — the recorder runs on a background worker thread (the F1 run
 thread), so a sink implementation MUST be non-blocking and thread-safe.
 `BrokerSpanSink` satisfies this by hopping onto the FastAPI event loop via
 `call_soon_threadsafe` and returning immediately. The recorder swallows
-sink exceptions: a broken live stream must never fail a run (SQLite is the
+sink exceptions: a broken live stream must never fail a run (storage is the
 source of truth; the stream is best-effort).
 """
 

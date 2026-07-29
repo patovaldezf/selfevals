@@ -31,8 +31,10 @@ def test_examples_copy_showcase_writes_runnable_files(
     assert "copied example 'showcase'" in stdout
     assert (tmp_path / "evals" / "experiments" / "example_showcase.yaml").is_file()
     assert (tmp_path / "evals" / "datasets" / "showcase.jsonl").is_file()
-    # The "Run:" hint names the copied spec, not a hard-coded one.
-    assert "example_showcase.yaml --no-persist" in stdout
+    # The "Run:" hint names the copied spec, not a hard-coded one — and must be
+    # a command the CLI actually accepts (it used to print a removed flag).
+    assert "example_showcase.yaml" in stdout
+    assert "--no-persist" not in stdout
 
 
 def test_examples_copy_route_ops_copilot_writes_runnable_files(
@@ -43,7 +45,8 @@ def test_examples_copy_route_ops_copilot_writes_runnable_files(
     assert "copied example 'route_ops_copilot'" in stdout
     assert (tmp_path / "evals" / "experiments" / "example_route_ops_copilot.yaml").is_file()
     assert (tmp_path / "evals" / "datasets" / "route_ops_copilot.jsonl").is_file()
-    assert "example_route_ops_copilot.yaml --no-persist" in stdout
+    assert "example_route_ops_copilot.yaml" in stdout
+    assert "--no-persist" not in stdout
 
 
 def test_examples_copy_sentiment_live_writes_runnable_files(
@@ -54,7 +57,8 @@ def test_examples_copy_sentiment_live_writes_runnable_files(
     assert "copied example 'sentiment_live'" in stdout
     assert (tmp_path / "evals" / "experiments" / "example_sentiment_live.yaml").is_file()
     assert (tmp_path / "evals" / "datasets" / "sentiment_live.jsonl").is_file()
-    assert "example_sentiment_live.yaml --no-persist" in stdout
+    assert "example_sentiment_live.yaml" in stdout
+    assert "--no-persist" not in stdout
 
 
 def test_examples_copy_refuses_to_overwrite(

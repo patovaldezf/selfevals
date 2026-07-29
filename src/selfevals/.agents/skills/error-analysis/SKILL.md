@@ -30,7 +30,7 @@ reading and judgement.
 - Storage is **Postgres**. The commands below read/write the persisted run, so
   point at it the way the project already does — usually `SELFEVALS_STORAGE_URL`
   in the env, or the global `--db <postgres-url>` flag *before* the subcommand.
-  Reuse whatever the human/other commands already use. (SQLite is legacy — only
+  Reuse whatever the human/other commands already use. (SQLite is gone — only
   `selfevals migrate-sqlite`, never a live backend.)
 
 ## 1. Pull the bundle

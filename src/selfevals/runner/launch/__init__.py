@@ -171,7 +171,7 @@ def payload_router_for_db(db_path: str, workspace_id: str) -> PayloadRouter:
     ``SELFEVALS_OBJECTS_DIR`` override or ``./objects`` until S3 lands. Callers
     that persist (`selfevals run`, the HTTP run launcher) pass the result into
     `build_loop` so the executor offloads large trace payloads; ephemeral
-    `--no-persist` runs skip it and the executor inlines instead."""
+    Ephemeral runs skip it and the executor inlines instead."""
     from selfevals.storage.filesystem import FilesystemObjectStore
     from selfevals.trace.payload_router import PayloadRouter
 
@@ -195,7 +195,7 @@ def build_loop(
 
     `scope` is the persistence target. Pass it (already opened on
     `spec.workspace_id`) to persist the experiment, iterations, and traces;
-    pass None for an ephemeral, in-memory run (the CLI's `--no-persist`).
+    pass None for an ephemeral, in-memory run (library callers only).
 
     `span_sink` taps every span the run produces for live streaming (SSE).
     Omit it (the CLI path) and the executor uses a no-op sink — zero overhead.

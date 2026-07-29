@@ -22,7 +22,7 @@ from selfevals.runner.executor import CaseRun, RepetitionResult
 from selfevals.schemas.experiment import Experiment
 from selfevals.schemas.iteration import DecisionRecord, IterationRecord
 from selfevals.schemas.trace import Trace
-from selfevals.storage.factory import open_storage, resolve_storage_url
+from selfevals.storage.factory import open_storage, resolve_storage_url, storage_url_label
 from selfevals.storage.interface import ListFilter, StorageInterface
 
 if TYPE_CHECKING:
@@ -41,11 +41,27 @@ class CommandError(SelfEvalsUserError):
 def _storage(args: argparse.Namespace) -> StorageInterface:
     """Open the configured Postgres storage.
 
-    A connection error surfaces as the underlying psycopg exception; we
-    don't translate it here (there's no single-file corruption/lock case to
-    rewrite the way the old SQLite path did).
+    "Postgres isn't running" is the single most common first-run failure, so
+    the psycopg connection error is translated into a one-line
+    `SelfEvalsUserError` with a hint. Without this the user's first contact
+    with the tool is a ~15-line stack trace of IPv4/IPv6 connection attempts —
+    which `docs/troubleshooting.md` explicitly calls a bug.
     """
-    return open_storage(resolve_storage_url(args.db))
+    import psycopg
+
+    url = resolve_storage_url(args.db)
+    try:
+        # PostgresStorage connects in its constructor, so a dead/unreachable
+        # server raises right here.
+        return open_storage(url)
+    except psycopg.OperationalError as exc:
+        raise CommandError(
+            f"cannot connect to Postgres at {storage_url_label(url)}: {exc}",
+            hint=(
+                "is it running? `docker compose up -d postgres` starts the "
+                "local one from .env.example."
+            ),
+        ) from exc
 
 
 def _ensure_cwd_on_path() -> None:

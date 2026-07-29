@@ -174,6 +174,20 @@ def cmd_run(args: argparse.Namespace) -> int:
                 "Set SELFEVALS_REDIS_URL and start one with `selfevals worker runs` "
                 "(locally: `docker compose up -d` brings up Postgres, Redis, and a worker)."
             )
+        # Preflight: fail in milliseconds instead of hanging until --timeout.
+        # `active_consumers()` returns None when Redis can't be probed (don't
+        # block the launch over an observability check) and 0 when the group
+        # exists with no live worker — the exact "queued, nobody consuming"
+        # state that otherwise surfaces as N seconds of silence.
+        if queue.active_consumers() == 0:
+            raise CommandError(
+                "no worker is consuming the run queue, so this run would hang.",
+                hint=(
+                    "start one with `selfevals worker runs` (or `docker compose up -d worker`) "
+                    "and make sure its SELFEVALS_REDIS_URL matches yours — including the "
+                    "database number after the port."
+                ),
+            )
         job = create_run_job(storage, spec=spec, reps=args.reps)
         queue.enqueue(job)
 

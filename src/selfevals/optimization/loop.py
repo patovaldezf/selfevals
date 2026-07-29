@@ -387,7 +387,8 @@ class OptimizationLoop:
     def _persist_experiment(self) -> None:
         """Flush the experiment row to storage if a scope is attached.
 
-        No-op for ephemeral runs (`scope is None`, e.g. CLI `--no-persist`).
+        No-op for ephemeral runs (`scope is None`; library callers only —
+        the CLI always persists).
         Idempotent w.r.t. the rest of the loop's writes — it touches only the
         experiment entity, whose version bumps on each put.
         """
@@ -476,7 +477,7 @@ class OptimizationLoop:
         `_run_iteration`), so `analyze pull` can classify it without re-running
         the agent. `none` skips entirely; `failed` keeps only errored /
         failing-graded traces; `all` keeps them all. No-op without a scope
-        (e.g. `--no-persist` runs).
+        (ephemeral runs with no scope).
 
         Returns the persisted trace's `run_id` when it actually wrote one,
         else None. The caller records only the persisted ids on the iteration's

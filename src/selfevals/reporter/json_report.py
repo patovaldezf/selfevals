@@ -108,7 +108,7 @@ def _failure_reasons(it: IterationOutcome) -> list[dict[str, Any]]:
     results, so emitting every reason would bloat the report. Instead we keep
     the altitude low: walk every persisted trace, collect grader results whose
     label is not a pass, and deduplicate on (grader, label, reason). The result
-    lets a consumer (e.g. brain_os) see WHY a grader failed without raw SQLite
+    lets a consumer (e.g. brain_os) see WHY a grader failed without raw database
     spelunking, while staying compact — one entry per distinct failure.
     """
     seen: set[tuple[str, str, str]] = set()

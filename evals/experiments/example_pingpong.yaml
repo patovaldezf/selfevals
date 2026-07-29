@@ -2,7 +2,7 @@
 #
 # Run it with:
 #   selfevals run evals/experiments/example_pingpong.yaml \
-#       --workspace ws_01HZZZZZZZZZZZZZZZZZZZZZZZ --no-persist
+#       --workspace ws_01HZZZZZZZZZZZZZZZZZZZZZZZ
 #
 # The agent entrypoint below ships in this repo for the test suite; in
 # your project, it would point at your actual agent function.

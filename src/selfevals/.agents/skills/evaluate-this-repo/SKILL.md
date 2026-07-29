@@ -20,12 +20,13 @@ sibling skill for the deep mechanics; read that sibling when you reach its phase
 - Confirm the CLI: `selfevals --help`. If the project uses `uv`, prefix every
   command with `uv run` (e.g. `uv run selfevals --help`). Match what the repo
   already uses.
-- Storage is **Postgres** (the framework is Postgres-only). For a first offline
-  smoke run you do **not** need it — use `--no-persist`. Only when you want to
-  keep results do you set `SELFEVALS_STORAGE_URL` (or pass `--db
-  postgresql://…` as a global flag before the subcommand). SQLite is legacy:
-  it exists *only* as a one-shot import path (`selfevals migrate-sqlite`), never
-  as a live backend.
+- **Infra first: `run` needs Postgres + Redis + a live worker.** There is no
+  ephemeral mode — `run` shards execution onto a queue, and without a worker
+  draining it the command fails fast saying so. `docker compose up -d` starts
+  all three; set `SELFEVALS_STORAGE_URL` (or pass `--db postgresql://…` as a
+  global flag before the subcommand). The worker's `SELFEVALS_REDIS_URL` must
+  match yours exactly, database number included. SQLite is legacy: only the
+  one-shot `selfevals migrate-sqlite` import, never a live backend.
 - Want a runnable skeleton to anchor on? `selfevals examples copy pingpong`
   (trivial echo loop, no key) or `selfevals examples copy showcase` (every
   grader type + funnel match kind, offline). Read the copied YAML — it is the
@@ -123,10 +124,10 @@ target, then:
 # First, estimate the cost before spending tokens:
 selfevals estimate --cases <N> --space-size <S> --reps <R> --cost-per-call <USD>
 
-# Smoke run, no persistence:
-selfevals run evals/experiments/<name>.yaml --no-persist
+# Smoke run (needs docker compose up -d first):
+selfevals run evals/experiments/<name>.yaml
 
-# Real run (persisted), keep failed traces for analysis:
+# Real run, keep failed traces for analysis:
 selfevals run evals/experiments/<name>.yaml --persist-traces failed --format json
 ```
 
@@ -167,5 +168,5 @@ offline smoke so they have *something* running in minutes, and grow from there.
   is worth more than a perfect spec that never runs.
 - **Hand off, don't duplicate.** The mechanics live in the sibling skills; this
   skill is the conductor. When you reach a phase, read its sibling.
-- **Postgres, not SQLite.** Persisted runs use Postgres / `SELFEVALS_STORAGE_URL`;
-  `--no-persist` needs no DB. SQLite is only `migrate-sqlite`.
+- **Postgres, not SQLite.** Runs use Postgres / `SELFEVALS_STORAGE_URL` and a
+  live worker; there is no DB-less mode. SQLite is only `migrate-sqlite`.
