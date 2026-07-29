@@ -33,6 +33,16 @@ export type RequestInitX = Omit<RequestInit, 'body'> & {
   form?: FormData;
 };
 
+/**
+ * Identity headers for an API call.
+ *
+ * The session cookie is the real credential: it is `HttpOnly`, so this code
+ * cannot read it, and the browser attaches it automatically once `credentials`
+ * is set on the request (below). The `X-SelfEvals-User` header remains for
+ * `SELFEVALS_AUTH_MODE=local`, where there is no login and the API expects a
+ * caller string — the server ignores it whenever a valid session exists, so
+ * sending both is safe and keeps local development working with no setup.
+ */
 export function authHeaders(extra?: HeadersInit): Record<string, string> {
   return {
     'X-SelfEvals-User': 'local',
@@ -55,6 +65,11 @@ export async function request<T>(path: string, init?: RequestInitX): Promise<T> 
 
   const res = await f(DEFAULT_BASE + path, {
     ...rest,
+    // Send the HttpOnly session cookie. `fetch` omits credentials by default,
+    // so without this every request would arrive unauthenticated once login is
+    // enabled — and the failure is silent, because the request still succeeds
+    // in `local` mode where nothing is enforced.
+    credentials: 'same-origin',
     headers: mergedHeaders,
     body: form ?? (json !== undefined ? JSON.stringify(json) : undefined)
   });
