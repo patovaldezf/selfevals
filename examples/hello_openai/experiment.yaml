@@ -3,7 +3,7 @@
 # Run from the repo root:
 #
 #   export OPENAI_API_KEY=...         # optional; falls back to a fake otherwise
-#   uv run selfevals run examples/hello_openai/experiment.yaml --no-persist
+#   uv run selfevals run examples/hello_openai/experiment.yaml
 #
 # The agent (examples/hello_openai/agent.py) calls OpenAI's Chat
 # Completions API with the temperature value the GridProposer hands in.

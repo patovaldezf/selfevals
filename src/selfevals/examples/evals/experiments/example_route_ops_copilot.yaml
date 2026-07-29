@@ -3,8 +3,11 @@
 # Copy it with:
 #   selfevals examples copy route_ops_copilot
 # Then run:
-#   selfevals run evals/experiments/example_route_ops_copilot.yaml --no-persist
+#   selfevals run evals/experiments/example_route_ops_copilot.yaml
 
+# The workspace id below is a fixed placeholder so this example runs with no
+# setup — `run` auto-creates it. To use your own: `selfevals init <slug>` prints
+# an id; pass it with `--workspace <id>` or edit the key below.
 workspace: ws_01HZZZZZZZZZZZZZZZZZZZZZZZ
 
 experiment:

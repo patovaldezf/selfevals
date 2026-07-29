@@ -27,8 +27,9 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Example:\n"
+            "  docker compose up -d          # Postgres + Redis + a worker\n"
             "  selfevals init my-team\n"
-            "  selfevals run evals/experiments/example_pingpong.yaml --no-persist"
+            "  selfevals run evals/experiments/example_pingpong.yaml"
         ),
     )
     parser.add_argument("--version", action="version", version=f"selfevals {__version__}")

@@ -44,6 +44,12 @@ _PROPOSAL_KEY_TO_EDITABLE: dict[str, str] = {
     "prompt": "prompt",
     "system_prompt": "prompt",
     "model": "model_choice",
+    # A whole agent declaration (`search_space.agents`): swapping the provider,
+    # framework, cwd, or transport. Gated by model_choice — it is the strongest
+    # form of "choose a different model/provider", so an experiment that forbids
+    # picking a model must not get one through the back door. This is also what
+    # finally makes model_choice *do* something: before, it could only reject.
+    "agent": "model_choice",
     "model_params": "model_params",
     "tool_descriptions": "tool_descriptions",
     "tool_code": "tool_code",

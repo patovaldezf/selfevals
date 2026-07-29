@@ -1,0 +1,78 @@
+# Provider bake-off: compare two whole agents on the same dataset.
+#
+# Copy it with:
+#   selfevals examples copy bakeoff
+# Then run:
+#   selfevals run evals/experiments/example_bakeoff.yaml
+#
+# This is the `search_space.agents` axis. `model_params` varies what rides
+# *inside* a request to one fixed agent; `agents` varies *which agent runs* —
+# the provider, framework, entrypoint, or transport. Those are bound when the
+# adapter is built, before the first request, so no per-request parameter can
+# reach them.
+#
+# Swap the two entrypoints below for real integrations (AssemblyAI vs
+# ElevenLabs, Twilio vs Retell, LangChain vs Mastra, or `type: http` endpoints)
+# and the spec keeps this exact shape.
+#
+# Runs offline, no API key. One iteration per agent; the report shows which one
+# won and what each cost.
+
+# The workspace id below is a fixed placeholder so this example runs with no
+# setup — `run` auto-creates it. To use your own: `selfevals init <slug>` prints
+# an id; pass it with `--workspace <id>` or edit the key below.
+workspace: ws_01HZZZZZZZZZZZZZZZZZZZZZZZ
+
+experiment:
+  name: provider bake-off
+  goal: pick between a premium and a budget provider on quality vs cost
+  mode: handoff
+  taxonomy:
+    target_features:
+      - commerce.product_resolution
+    dataset_types:
+      - capability
+  datasets:
+    optimization: { id: ds_pingpong, version: 1 }
+  target:
+    primary: { name: pass@1, operator: ">=", value: 0.99 }
+  editable:
+    # Required for the agents axis: swapping the agent is the strongest form of
+    # choosing a model, so it is gated behind model_choice.
+    model_choice: true
+  frozen:
+    fleet: { id: flt_demo }
+    agents:
+      - { id: ag_demo }
+    datasets:
+      - { id: ds_pingpong }
+  proposer:
+    strategy: grid
+  search_space:
+    agents:
+      - name: premium
+        type: embedded
+        entrypoint: selfevals.examples.bakeoff:accurate
+      - name: budget
+        type: embedded
+        entrypoint: selfevals.examples.bakeoff:cheap
+  run:
+    sandbox: mock
+    # One iteration per agent. The grid raises SearchSpaceExhaustedError once
+    # every variant has run, so a larger cap is harmless.
+    max_iterations: 2
+    persist_traces: all
+  reliability:
+    metrics:
+      - pass@1
+
+dataset:
+  # Two cases: one with an obvious cue (both providers get it) and one that
+  # needs actual comprehension (only the premium one does). That gap is what
+  # makes the quality/cost trade-off visible instead of a tie.
+  cases_path: ../datasets/bakeoff.jsonl
+
+# The default agent: used by any iteration whose proposal does not bind one.
+# Still required — the agents axis overrides it, it does not replace it.
+agent:
+  entrypoint: selfevals.examples.bakeoff:accurate

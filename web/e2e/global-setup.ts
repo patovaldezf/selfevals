@@ -27,7 +27,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 async function globalSetup(_config: FullConfig) {
   const dbUrl =
     process.env.E2E_DB_URL ?? 'postgresql://selfevals:selfevals@localhost:5433/selfevals';
-  const redisUrl = process.env.SELFEVALS_REDIS_URL ?? 'redis://localhost:6380/0';
+  // DB 15 matches .env.example. The worker must consume from the same database
+  // the API enqueues to — a mismatch leaves jobs unclaimed and the suite hangs
+  // until timeout with nothing explaining why.
+  const redisUrl = process.env.SELFEVALS_REDIS_URL ?? 'redis://localhost:6380/15';
+
+  // Auth mode is explicit, never inherited. The suite historically ran under
+  // whatever the developer's shell happened to export: green on a clean shell,
+  // 401 everywhere after `source .env` with SELFEVALS_AUTH_MODE set. Pinning it
+  // here means the suite tests one known configuration, and switching to
+  // `token` to exercise the authenticated path is a deliberate opt-in.
+  process.env.SELFEVALS_AUTH_MODE = process.env.E2E_AUTH_MODE ?? 'local';
 
   const python = process.env.SELFEVALS_PYTHON ?? resolve(__dirname, '../../.venv/bin/python');
   const workerLog = process.env.CI ? 'inherit' : 'ignore';

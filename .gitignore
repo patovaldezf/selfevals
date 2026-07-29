@@ -61,3 +61,11 @@ data/
 .gstack/
 .selfevals-1000x/
 /objects/
+
+# Local artifacts post-migración Postgres (no deben viajar en el repo)
+selfevals.sqlite
+selfevals.sqlite-shm
+selfevals.sqlite-wal
+
+# Workspace de planeación personal (specs se promueven a docs/ cuando maduran)
+.selfevals-1000x/

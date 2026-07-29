@@ -465,7 +465,7 @@ class TraceRecorder:
     def _sink_call(self, fn: Any, *args: Any) -> None:
         """Invoke a sink callback, swallowing any error.
 
-        The live stream is best-effort (SQLite is the source of truth); a
+        The live stream is best-effort (storage is the source of truth); a
         broken or slow subscriber must never fail or stall a run.
         """
         with suppress(Exception):

@@ -65,7 +65,7 @@ def _resolve_dataset_source(
       block. Returns it so the loop's sampler honors it.
     * Ref: load the persisted `Dataset`, hydrate `spec.cases` in place from its
       case refs, and return its split. A ref needs storage — resolving one
-      without a `scope` (an ephemeral `--no-persist` run) is a user error.
+      without a `scope` (an ephemeral run) is a user error.
 
     Mutates `spec.cases` in place (it's a list on a frozen dataclass) so every
     downstream reader — graders, persistence, the loop — sees the resolved set.
@@ -76,9 +76,9 @@ def _resolve_dataset_source(
     if isinstance(source, RefDatasetSource):
         if scope is None:
             raise SelfEvalsUserError(
-                f"experiment references dataset {source.ref.id!r} but the run is not "
-                "persisting — a dataset reference needs storage to resolve. Drop "
-                "--no-persist, or declare cases inline."
+                f"experiment references dataset {source.ref.id!r} but the run has no "
+                "storage — a dataset reference needs storage to resolve. Declare the "
+                "cases inline in the spec instead."
             )
         return _resolve_ref_dataset(scope, spec, source.ref)
     return None  # defensive: unknown source variant

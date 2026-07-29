@@ -24,9 +24,11 @@ skill below. When the user just says "set up evals for my project," use
 - **Authoring is YAML.** There is no `config/` — `evals/experiments/*.yaml`
   hydrates to a typed spec. The runnable references are `pingpong` (smallest) and
   `showcase` (every grader/match kind), via `selfevals examples copy <name>`.
-- **Storage is Postgres.** `SELFEVALS_STORAGE_URL` / the global `--db
-  <postgres-url>`. `--no-persist` needs no DB. SQLite is legacy — only
-  `selfevals migrate-sqlite`, never a live backend.
+- **Storage is Postgres, and it is required.** `SELFEVALS_STORAGE_URL` / the
+  global `--db <postgres-url>`. `run` also shards execution, so it needs Redis
+  **and a live worker** — `docker compose up -d` brings up all three. There is
+  no ephemeral/in-memory mode. SQLite is gone: `selfevals migrate-sqlite` only
+  imports a legacy file.
 - **Humans own the ship gates.** `failuremode promote` and `baseline set` are
   deliberate human actions; agents recommend, humans dispose.
 
@@ -73,10 +75,11 @@ CLI). See `docs/api_reference.md`.
 ## Starting from zero, manually
 
 ```bash
-selfevals examples copy pingpong                                  # smallest offline loop
-selfevals run evals/experiments/example_pingpong.yaml --no-persist
-selfevals examples copy showcase                                 # every grader + match kind
-selfevals demo --fresh                                           # seeded end-to-end (real LLM)
+docker compose up -d                                # Postgres + Redis + worker
+selfevals examples copy pingpong                    # smallest loop (no API key needed)
+selfevals run evals/experiments/example_pingpong.yaml
+selfevals examples copy showcase                    # every grader + match kind
+selfevals demo --fresh                              # seeded end-to-end (real LLM)
 ```
 
 ## What you must / must not do

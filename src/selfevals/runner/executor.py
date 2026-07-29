@@ -18,6 +18,8 @@ routing, cost resolution, tool spans) is split into `trace_response_writer.py`
 from __future__ import annotations
 
 import asyncio
+import json
+from collections.abc import Callable, Mapping
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -91,6 +93,13 @@ class Executor:
         if concurrency < 1:
             raise ValueError("concurrency must be >= 1")
         self._adapter = adapter
+        # Adapters built on demand for `search_space.agents` proposals, keyed by
+        # the agent block. Building one is cheap for http/embedded but not free
+        # (a CLI adapter validates its cwd, an HTTP one opens a client), and a
+        # run re-uses the same handful of agents across every case x rep, so a
+        # cache turns O(cases x reps) construction into O(distinct agents).
+        self._adapter_cache: dict[str, AgentAdapter] = {}
+        self._adapter_factory: Callable[[Mapping[str, object]], AgentAdapter] | None = None
         self._sandbox = sandbox
         self._workspace_id = workspace_id
         self._framework_version = framework_version
@@ -106,6 +115,49 @@ class Executor:
         # `adapter_response` span is recorded (legacy behaviour).
         self._otlp_handle = otlp_handle
         sandbox.ensure_runnable()
+
+    def set_adapter_factory(
+        self, factory: Callable[[Mapping[str, object]], AgentAdapter] | None
+    ) -> None:
+        """Enable `search_space.agents` by teaching the executor to build adapters.
+
+        `launch.build_loop` injects a factory that parses an agent block and
+        wraps the result in the same retry/throttle layers the default adapter
+        gets, so a swapped-in agent is not quietly less resilient than the one
+        declared at the top level. Without a factory (library callers that
+        construct an `Executor` directly), an `agent` override raises rather
+        than silently running the wrong agent.
+        """
+        self._adapter_factory = factory
+        self._adapter_cache.clear()
+
+    def _adapter_for(self, parameter_overrides: Mapping[str, object]) -> AgentAdapter:
+        """Pick the adapter for one invocation.
+
+        Returns the experiment's declared adapter unless the proposal carries an
+        `agent` block, in which case the binding axis is in play and we resolve
+        (and cache) an adapter for that declaration.
+        """
+        agent_block = parameter_overrides.get("agent")
+        if agent_block is None:
+            return self._adapter
+        if not isinstance(agent_block, Mapping):
+            raise ValueError(
+                f"proposal 'agent' must be a mapping (an agent: block), got "
+                f"{type(agent_block).__name__}"
+            )
+        if self._adapter_factory is None:
+            raise ValueError(
+                "proposal carries an 'agent' override but this executor has no "
+                "adapter factory; build the loop through selfevals.runner.launch "
+                "(or call set_adapter_factory) to use search_space.agents"
+            )
+        key = json.dumps(agent_block, sort_keys=True, default=str)
+        cached = self._adapter_cache.get(key)
+        if cached is None:
+            cached = self._adapter_factory(agent_block)
+            self._adapter_cache[key] = cached
+        return cached
 
     @property
     def sandbox(self) -> SandboxPolicy:
@@ -130,9 +182,14 @@ class Executor:
         `filterwarnings=error` trips on a leaked connection. The in-process
         adapter has no `aclose`, so this is a no-op there. Idempotent."""
         self.close()
-        adapter_close = getattr(self._adapter, "aclose", None)
-        if callable(adapter_close):
-            await adapter_close()
+        # Every adapter this run built, not just the declared one: a
+        # `search_space.agents` sweep leaves one cached adapter per variant, each
+        # potentially holding an HTTP client or a Redis-backed limiter.
+        for candidate in (self._adapter, *self._adapter_cache.values()):
+            adapter_close = getattr(candidate, "aclose", None)
+            if callable(adapter_close):
+                await adapter_close()
+        self._adapter_cache.clear()
 
     async def run_case(
         self,
@@ -146,8 +203,10 @@ class Executor:
     ) -> CaseRun:
         if repetitions < 1:
             raise ValueError("repetitions must be >= 1")
-        agent_ref = self.agent_ref()
         overrides = parameter_overrides or {}
+        # Resolve against the *effective* adapter: with an `agent` override the
+        # trace must name the agent that actually ran, not the declared default.
+        agent_ref = self.agent_ref(overrides)
         sem = asyncio.Semaphore(self._concurrency)
 
         async def _bounded(rep: int) -> RepetitionResult:
@@ -192,6 +251,10 @@ class Executor:
         case input is used verbatim (the single-shot path).
         """
         started_at = utc_now()
+        # The proposal may bind a different agent for this iteration
+        # (`search_space.agents`); everything below — invoke, cost attribution,
+        # the recorded agent — must use that one, not the declared default.
+        adapter = self._adapter_for(parameter_overrides)
         recorder = TraceRecorder(
             workspace_id=self._workspace_id,
             run=run_info,
@@ -237,7 +300,7 @@ class Executor:
             bind_trace_handle(recorder) as trace_handle,
         ):
             try:
-                response = await self._adapter.invoke(adapter_request)
+                response = await adapter.invoke(adapter_request)
             except AdapterError as exc:
                 error = str(exc)
                 recorder.add_error(
@@ -255,7 +318,7 @@ class Executor:
                     recorder,
                     response,
                     adapter_request,
-                    adapter=self._adapter,
+                    adapter=adapter,
                     sandbox=self._sandbox,
                     agent_emitted_spans=trace_handle.used,
                 )
@@ -269,8 +332,13 @@ class Executor:
             error=error,
         )
 
-    def agent_ref(self) -> AgentSnapshotRef:
-        ag = self._adapter.agent
+    def agent_ref(self, parameter_overrides: Mapping[str, object] | None = None) -> AgentSnapshotRef:
+        """Snapshot ref for the agent that will run.
+
+        Takes the proposal so an `agent` override is reflected in the trace;
+        called with no arguments it describes the declared default.
+        """
+        ag = self._adapter_for(parameter_overrides or {}).agent
         if ag is None:
             return AgentSnapshotRef(agent_id="unknown", agent_version=1)
         return AgentSnapshotRef(

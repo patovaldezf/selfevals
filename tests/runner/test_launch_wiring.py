@@ -108,7 +108,7 @@ def test_build_loop_persists_cases_stamped_with_experiment_id(db_url: str) -> No
 
 
 def test_build_loop_without_scope_does_not_persist_cases(tmp_path: object) -> None:
-    """An ephemeral run (`--no-persist`, scope=None) writes nothing — the cases
+    """An ephemeral run (scope=None) writes nothing — the cases
     stay authoring-only and no storage is touched."""
     import json as _json
     from pathlib import Path
@@ -347,7 +347,7 @@ def test_ref_dataset_without_scope_is_user_error() -> None:
     )
     raw["dataset"] = {"ref": "ds_01HZZZZZZZZZZZZZZZZZZZZZZZ"}
     spec = build_spec_from_mapping(raw, workspace_id="ws_01HZZZZZZZZZZZZZZZZZZZZZZZ")
-    with pytest.raises(SelfEvalsUserError, match="not persisting"):
+    with pytest.raises(SelfEvalsUserError, match="needs storage to resolve"):
         build_loop(spec, scope=None, repetitions_per_case=1)
 
 

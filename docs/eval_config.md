@@ -11,7 +11,7 @@ there is no separate YAML-only DSL.
 Run a spec with:
 
 ```bash
-selfevals run evals/experiments/example_pingpong.yaml --no-persist
+selfevals run evals/experiments/example_pingpong.yaml
 # or persist to Postgres (note: --db is a GLOBAL flag, before the subcommand;
 # it takes a Postgres URL, and defaults to $SELFEVALS_STORAGE_URL):
 selfevals --db postgresql://localhost:5433/selfevals run evals/experiments/example_pingpong.yaml
@@ -49,7 +49,7 @@ The loader auto-fills `id` and `workspace_id` when absent.
 | `editable`       | mapping | Bool flags for what the proposer may change: `prompt`, `model_params` (default true), `model_choice`, `tool_code`, `workflow_graph`, `skills`.                  |
 | `frozen`         | mapping | Pinned `fleet`, `agents`, `datasets`.                                                                                                                           |
 | `proposer`       | mapping | `strategy` (`manual` \| `grid` \| `random`), `allow_search_space_expansion` (default false).                                                                    |
-| `search_space`   | mapping | Parameter spaces the proposer samples, e.g. `model_params: { level: [0.0, 1.0] }`.                                                                              |
+| `search_space`   | mapping | What the proposer may vary: `model_params` / `prompt_variables` / `tool_params` (payload axes) and `agents` (a list of whole `agent:` blocks — the binding axis, for provider/framework/transport bake-offs). |
 | `run`            | mapping | `sandbox` (`mock` \| `dry_run` \| `live_sandboxed` \| `live_canary`), `max_iterations` (1–10000, default 20), `convergence: { min_delta, patience }`, sampling. |
 | `reliability`    | mapping | `metrics: [...]` — each must match `pass@N`, `pass^N`, or a known reliability metric name.                                                                      |
 | `error_analysis` | mapping | Opt-in continuous error-analysis loop: `enabled`, `taxonomy: workspace`, `trigger: { when, threshold }`, `scope`.                                               |
@@ -450,6 +450,55 @@ is chosen. MVP implements:
 | `random` | Random samples from `search_space`.                                               |
 
 `allow_search_space_expansion` defaults to `false`.
+
+### `search_space.agents` — comparing whole agents
+
+`model_params`, `prompt_variables`, and `tool_params` are *payload* axes: the
+sampled values ride inside each request to one fixed agent.
+
+`agents` is the *binding* axis. Each entry is a whole `agent:` block, so a sweep
+can change the provider, the framework, the working directory, or the transport
+— the things decided when the adapter is built rather than when a request is
+sent. Without it, "Twilio vs Retell" or "workflow vs tool-calling agent" is
+inexpressible: those differ *before* the first request.
+
+```yaml
+editable:
+  model_choice: true          # required — see below
+proposer:
+  strategy: grid
+search_space:
+  agents:
+    - { type: http, url: "https://provider-a.internal/run", name: provider-a }
+    - { type: http, url: "https://provider-b.internal/run", name: provider-b }
+```
+
+That is a two-iteration bake-off, one per agent. Combined with `model_params`
+it multiplies — 2 agents x 2 temperatures = 4 iterations, with the agent varying
+slowest so consecutive iterations stay comparable on the expensive axis:
+
+```yaml
+search_space:
+  agents:
+    - { type: embedded, entrypoint: "agents.workflow:run", name: workflow }
+    - { type: embedded, entrypoint: "agents.react:run",    name: react }
+  model_params:
+    temperature: [0.0, 1.0]
+```
+
+Notes:
+
+- **Requires `editable.model_choice: true`.** Swapping the agent is the
+  strongest form of choosing a model, so an experiment that forbids model choice
+  cannot get a different provider through the search space.
+- **`name:` is optional but recommended** — it labels the variant in hypotheses
+  and reports. Without it, variants are labeled by url / entrypoint / command.
+- Each entry is validated by the same parser as the top-level `agent:` block, so
+  a typo fails the same way.
+- Each variant gets its own rate-limit bucket keyed by *its* provider: a sweep
+  across two providers draws from two quotas, not one.
+- The top-level `agent:` block is still required — it is the default used by any
+  iteration whose proposal does not bind an agent.
 
 ---
 

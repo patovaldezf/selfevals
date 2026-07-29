@@ -19,7 +19,7 @@ measurement layer around it.
 - Serves a FastAPI bridge and optional Svelte dashboard for live runs, cases, traces, and results.
 - Exports failed traces for external error analysis, then ingests taxonomy updates back into the workspace.
 
-Current version: `0.14.0`.
+Current version: `0.16.0`.
 
 ## Why This Exists
 
@@ -48,7 +48,8 @@ selfevals --version
 python -c "import selfevals; print(selfevals.__version__)"
 ```
 
-Core install stays small: `pydantic`, `pyyaml`, and `httpx`.
+Core install stays small: `pydantic`, `pyyaml`, `httpx`, and `psycopg` (storage
+is Postgres-only, so the driver is not optional).
 
 Provider extras install both the provider SDK and the OpenInference tracing
 adapter:
@@ -103,13 +104,30 @@ SQLite database? Use `selfevals migrate-sqlite ./old.sqlite --to "$SELFEVALS_STO
 
 ## Quickstart
 
-No API key. No model call. Runs the bundled pingpong eval.
+Runs the bundled pingpong eval — **no API key, no model call**. It does need
+Postgres + Redis + a worker, and those ship as a `docker-compose.yml` in the
+repo, so start by cloning:
 
 ```bash
-pip install selfevals
-selfevals examples copy pingpong
-selfevals run evals/experiments/example_pingpong.yaml --max-iterations 2
+git clone https://github.com/patovaldezf/selfevals && cd selfevals
+docker compose up -d                       # Postgres :5433, Redis :6380, worker
+cp .env.example .env && set -a && source .env && set +a
+uv sync --extra redis                      # or: pip install -e '.[redis]'
+uv run selfevals run evals/experiments/example_pingpong.yaml --max-iterations 2
 ```
+
+> **Installing with `pip install selfevals` alone is not enough to run.** The
+> package ships the CLI and the examples, but not `docker-compose.yml` or
+> `.env.example` — and `run` needs Postgres, Redis, and a worker. Either clone
+> the repo (above) or point the CLI at infrastructure you already operate:
+> ```bash
+> pip install 'selfevals[redis]'
+> export SELFEVALS_STORAGE_URL=postgresql://…   # your Postgres
+> export SELFEVALS_REDIS_URL=redis://…/15       # your Redis
+> selfevals worker runs &                       # a worker on the SAME Redis DB
+> selfevals examples copy pingpong
+> selfevals run evals/experiments/example_pingpong.yaml --max-iterations 2
+> ```
 
 Expected shape:
 
@@ -337,6 +355,42 @@ The API returns `202` and runs the optimization loop in the background. Poll the
 experiment endpoint or stream spans from the dashboard.
 
 Full API reference: [docs/api_reference.md](docs/api_reference.md).
+
+### Authentication
+
+`SELFEVALS_AUTH_MODE` selects one of three modes. It defaults to `local`, which
+means **the API is unauthenticated unless you say otherwise** — fine on your own
+machine, unsafe on any address someone else can reach.
+
+| Mode | Behavior | Use it for |
+| --- | --- | --- |
+| `local` (default) | No identity enforced; every request is the `local` user and all authorization is skipped. | A single operator on `127.0.0.1`. |
+| `header` | Trusts `X-SelfEvals-User` verbatim and enforces workspace membership + roles. | Behind a trusted proxy that authenticates upstream and sets that header. Never expose it directly. |
+| `token` | Requires a signed, unexpired token in `X-SelfEvals-User`; identity comes from the verified payload. | Anything shared or reachable off-host. |
+
+An unrecognized value is a startup error, not a fallback — a typo used to
+silently degrade to "trust the header".
+
+In `token` mode, mint a session with the operator secret:
+
+```bash
+export SELFEVALS_AUTH_MODE=token
+export SELFEVALS_AUTH_SECRET=$(openssl rand -hex 32)
+
+curl -s -X POST http://localhost:8000/api/auth/session \
+  -H "X-SelfEvals-Operator-Secret: $SELFEVALS_AUTH_SECRET" \
+  -H 'content-type: application/json' \
+  -d '{"user_id":"you@example.com","ttl_seconds":86400}'
+# → {"token":"v2....","user_id":"you@example.com","expires_at":...}
+
+curl -s http://localhost:8000/api/workspaces -H "X-SelfEvals-User: v2...."
+```
+
+Current limits, so they don't surprise you: tokens carry no workspace scope
+(permissions are resolved per request against membership), there is no
+revocation short of rotating `SELFEVALS_AUTH_SECRET`, and there is no
+self-service login — `/api/auth/session` is an operator-only impersonation
+endpoint, so the secret must never reach a browser.
 
 ## Error Analysis Loop
 

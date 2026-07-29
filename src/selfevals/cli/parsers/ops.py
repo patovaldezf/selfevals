@@ -76,7 +76,7 @@ def add_examples(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
         help_text="Copy runnable example specs into the current project.",
         examples=[
             "selfevals examples copy pingpong",
-            "selfevals run evals/experiments/example_pingpong.yaml --no-persist",
+            "selfevals run evals/experiments/example_pingpong.yaml",
         ],
     )
     examples_sub = p_examples.add_subparsers(dest="examples_command", required=True)
@@ -105,7 +105,7 @@ def add_serve(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
             "web is served from `npm run dev` separately."
         ),
         examples=[
-            "selfevals --db ./selfevals.sqlite serve",
+            "selfevals --db postgresql://localhost:5433/selfevals serve",
             "selfevals serve --web-dist web/build --port 8080",
             "selfevals serve --no-web",
         ],
@@ -140,7 +140,8 @@ def add_worker(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
         "worker",
         help_text="Run durable background workers.",
         examples=[
-            "SELFEVALS_REDIS_URL=redis://localhost:6379/0 selfevals worker runs",
+            # Must be the SAME Redis DB the CLI/API enqueue to (see .env.example).
+            "SELFEVALS_REDIS_URL=redis://localhost:6380/15 selfevals worker runs",
             "selfevals worker runs --once",
         ],
     )

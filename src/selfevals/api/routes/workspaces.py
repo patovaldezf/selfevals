@@ -70,6 +70,12 @@ def register(app: FastAPI, deps: AppDeps) -> None:
                 name=body.name or body.slug,
                 user_id=resolve_user_id(user),
                 description=body.description,
+                # Admin only — not every role. Admin already grants full
+                # read+write, so the extra rows bought nothing while handing the
+                # creator `auditor` too, collapsing the separation of duties that
+                # role exists to provide. The CLI's `init` keeps the all-roles
+                # default: that's a single-operator bootstrap, not a shared API.
+                assign_all_roles=False,
             )
             ws = seeded.workspace
             return WorkspaceResponse(

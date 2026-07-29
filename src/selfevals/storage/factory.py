@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 from urllib.parse import urlparse
 
+from selfevals._errors import SelfEvalsUserError
 from selfevals.storage.interface import StorageInterface
 from selfevals.storage.postgres import PostgresStorage
 
@@ -27,7 +28,7 @@ def resolve_storage_url(value: str | None = None) -> str:
     env_url = os.environ.get(STORAGE_URL_ENV)
     if env_url:
         return env_url
-    raise RuntimeError(
+    raise SelfEvalsUserError(
         "no storage configured: set SELFEVALS_STORAGE_URL to a Postgres URL "
         "(e.g. postgresql://user:pass@host:5432/selfevals) or pass --db. "
         "See .env.example for the expected format."

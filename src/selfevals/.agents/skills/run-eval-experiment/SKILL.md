@@ -18,17 +18,20 @@ YAML key), `docs/json_report_schema.md` (every report key),
 
 - Confirm the CLI: `selfevals --help`. If the project uses `uv`, prefix every
   command with `uv run`. Match what the project already uses.
-- **Storage is Postgres** (the framework is Postgres-only). For a first smoke run
-  you don't need it — use `--no-persist`. To persist, set
-  `SELFEVALS_STORAGE_URL` (e.g. `postgresql://localhost:5433/selfevals`), or pass
-  the **global** `--db <postgres-url>` flag *before* the subcommand:
-  `selfevals --db postgresql://… run …`. SQLite is **legacy** — only the one-shot
-  `selfevals migrate-sqlite ./old.sqlite --to "$SELFEVALS_STORAGE_URL"` import,
-  never a live backend. `docker compose up -d postgres redis` brings up local
-  Postgres + Redis (see `.env.example`).
+- **`run` needs Postgres + Redis + a live worker.** There is no ephemeral mode:
+  `run` shards execution onto a queue, so without a worker draining it the
+  command fails fast telling you so. `docker compose up -d` brings up all three
+  (see `.env.example`). Set `SELFEVALS_STORAGE_URL` (e.g.
+  `postgresql://localhost:5433/selfevals`), or pass the **global** `--db
+  <postgres-url>` flag *before* the subcommand: `selfevals --db postgresql://… run …`.
+  SQLite is gone — `selfevals migrate-sqlite ./old.sqlite --to "$SELFEVALS_STORAGE_URL"`
+  only imports a legacy file, it is never a live backend.
+- **The worker's `SELFEVALS_REDIS_URL` must match yours exactly**, database
+  number included (`…/15` ≠ `…/0`). A mismatch means the job is queued and
+  nobody consumes it.
 - Need a workspace? `selfevals init <slug>` creates (or re-opens) one and prints
-  its id. The example spec carries a `workspace:` key, so for a first smoke run
-  you can skip this and use `--no-persist`.
+  its id. The example specs carry a `workspace:` key, so a first smoke run works
+  without it.
 - Want a runnable starting point? `selfevals examples copy pingpong` writes an
   `evals/` tree. For a spec wiring up **every** grader type and funnel match kind
   (offline), copy `showcase` instead: `selfevals examples copy showcase`.
@@ -125,17 +128,18 @@ budget before launching a live one.
 ## 3. Run
 
 ```bash
-# Smoke run, no persistence, markdown report:
-selfevals run evals/experiments/example_pingpong.yaml --no-persist
+# Smoke run, markdown report (needs docker compose up -d first):
+selfevals run evals/experiments/example_pingpong.yaml
 
-# Persisted run (Postgres), capped iterations, JSON report, keep failed traces:
+# Capped iterations, JSON report, keep failed traces:
 selfevals --db "$SELFEVALS_STORAGE_URL" run evals/experiments/example_pingpong.yaml \
     --max-iterations 4 --reps 3 --format json --persist-traces failed
 ```
 
-`run` flags (verified via `--help`): `spec` (positional), `--workspace`,
-`--max-iterations`, `--reps`, `--format {markdown,json}`, `--no-persist`,
-`--persist-traces {none,all,failed}`. Persisted failed traces are what
+`run` flags: `spec` (positional), `--workspace`, `--dataset`,
+`--max-iterations`, `--reps`, `--format {markdown,json}`, `--timeout`,
+`--persist-traces {none,all,failed}`. Re-check with `selfevals run --help`
+rather than trusting this list — flags change. Persisted failed traces are what
 `analyze pull` later feeds to error analysis, so set `--persist-traces failed`
 (or `run.persist_traces: failed` in the spec) when you plan to analyze.
 
@@ -203,8 +207,8 @@ an honest holdout caveat (`unavailable` when no split was recorded).
 
 ## What you must / must not do
 
-- **Storage is Postgres.** Persisted runs use `SELFEVALS_STORAGE_URL` / the
-  global `--db <postgres-url>`; `--no-persist` needs no DB. SQLite is only
+- **Storage is Postgres and it is not optional.** Runs use
+  `SELFEVALS_STORAGE_URL` / the global `--db <postgres-url>`. SQLite is only
   `migrate-sqlite`. Don't hand-edit the DB — all reads/writes flow through the
   CLI and `/api`.
 - **`cache`, `funnel`, `failure_reasons` are diagnostics** — never decision gates.

@@ -29,6 +29,8 @@ dependencies = [
 # Web API surface (`python -m selfevals.api`). Optional — the core loop
 # never imports these; api/* defers the FastAPI import to call time.
 web = [
+    "argon2-cffi>=23,<26",
+    "email-validator>=2,<3",
     "fastapi>=0.110,<1",
     "python-multipart>=0.0.9,<1",
     "uvicorn>=0.29,<1",

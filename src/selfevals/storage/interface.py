@@ -84,6 +84,17 @@ class StorageInterface(ABC):
         """Roles for ``user_id`` in a workspace, or None when the workspace is missing."""
 
     @abstractmethod
+    def identity_connection(self) -> Any:
+        """The raw connection, for the identity tables.
+
+        Users, sessions, and API keys are the one part of the schema that is not
+        workspace-scoped — a person exists across tenants — so they cannot be
+        reached through `WorkspaceScope` without inventing a fake workspace for
+        them. `storage.postgres.identity` holds those queries and takes this
+        connection. Authorization is unaffected: `members` still decides access.
+        """
+
+    @abstractmethod
     def list_experiments_page(
         self,
         *,
