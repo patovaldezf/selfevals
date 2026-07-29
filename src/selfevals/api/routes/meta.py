@@ -9,7 +9,7 @@ from fastapi import FastAPI, Header
 from selfevals.api.auth import OPERATOR_SECRET_HEADER, authorize_operator
 from selfevals.api.deps import AppDeps
 from selfevals.api.schemas import HealthResponse, SessionRequest, SessionResponse
-from selfevals.api.tokens import issue_token
+from selfevals.api.tokens import issue_token_with_expiry
 from selfevals.storage.factory import storage_url_label
 
 
@@ -29,6 +29,7 @@ def register(app: FastAPI, deps: AppDeps) -> None:
         operator_secret: Annotated[str | None, Header(alias=OPERATOR_SECRET_HEADER)] = None,
     ) -> SessionResponse:
         authorize_operator(operator_secret)
-        token = issue_token(payload.user_id, ttl_seconds=payload.ttl_seconds)
-        expires_at = int(token.rsplit(".", 2)[1])
+        token, expires_at = issue_token_with_expiry(
+            payload.user_id, ttl_seconds=payload.ttl_seconds
+        )
         return SessionResponse(token=token, user_id=payload.user_id, expires_at=expires_at)

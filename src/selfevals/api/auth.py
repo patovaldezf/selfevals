@@ -55,8 +55,28 @@ class Principal:
     auth_mode: str
 
 
+AUTH_MODES: frozenset[str] = frozenset({"local", "header", "token"})
+
+
 def auth_mode() -> str:
-    return os.environ.get("SELFEVALS_AUTH_MODE", "local").strip().lower() or "local"
+    """The configured auth mode, or raise if it isn't one we know.
+
+    Validating here is a security control, not tidiness. Every unrecognized
+    value used to fall through to the `header` branch — i.e. "trust whatever the
+    caller says they are". So `SELFEVALS_AUTH_MODE=tokne` silently disabled
+    authentication on a deployment that believed it had enabled it. A typo must
+    fail loudly instead.
+    """
+    mode = os.environ.get("SELFEVALS_AUTH_MODE", "local").strip().lower() or "local"
+    if mode not in AUTH_MODES:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"invalid SELFEVALS_AUTH_MODE {mode!r}; expected one of "
+                f"{sorted(AUTH_MODES)}"
+            ),
+        )
+    return mode
 
 
 def resolve_principal(user: str | None) -> Principal:
@@ -78,6 +98,9 @@ def resolve_principal(user: str | None) -> Principal:
         except TokenError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
         return Principal(user_id=verified.user_id, auth_mode=mode)
+    # `header`: the only remaining mode (auth_mode() rejects anything else).
+    # Explicit rather than a fallthrough, so adding a mode can't silently
+    # inherit "trust the header".
     if user:
         return Principal(user_id=user, auth_mode=mode)
     raise HTTPException(status_code=401, detail="authentication required")

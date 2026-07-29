@@ -19,6 +19,7 @@ every route module.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -27,7 +28,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
-from selfevals.api.auth import USER_HEADER, authorize_workspace
+from selfevals.api.auth import USER_HEADER, auth_mode, authorize_workspace
 from selfevals.api.broker import get_broker
 from selfevals.api.deps import AppDeps
 from selfevals.api.routes import (
@@ -45,6 +46,8 @@ from selfevals.api.routes import (
 )
 from selfevals.storage.factory import object_store_base_for_storage_url, resolve_storage_url
 from selfevals.storage.filesystem import FilesystemObjectStore
+
+logger = logging.getLogger(__name__)
 
 # Dev frontends that may call the API cross-origin. 5173 is the bundled
 # SvelteKit web UI; 3000 is the common Next/Vite default (e.g. the seals
@@ -80,6 +83,16 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
         # Capture the running event loop so the OTLP receiver thread
         # (which runs sync) can schedule span publishes onto it.
         get_broker().bind_loop(asyncio.get_running_loop())
+        # `local` is the default and skips authorization entirely, so the only
+        # thing standing between an exposed port and full access is that nobody
+        # found it. Say so once at startup rather than leaving it to be
+        # discovered by reading auth.py.
+        if auth_mode() == "local":
+            logger.warning(
+                "auth mode is 'local': every request is trusted and workspace "
+                "authorization is skipped. Set SELFEVALS_AUTH_MODE=token before "
+                "binding to a non-loopback address."
+            )
         yield
 
     app = FastAPI(

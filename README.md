@@ -356,6 +356,42 @@ experiment endpoint or stream spans from the dashboard.
 
 Full API reference: [docs/api_reference.md](docs/api_reference.md).
 
+### Authentication
+
+`SELFEVALS_AUTH_MODE` selects one of three modes. It defaults to `local`, which
+means **the API is unauthenticated unless you say otherwise** — fine on your own
+machine, unsafe on any address someone else can reach.
+
+| Mode | Behavior | Use it for |
+| --- | --- | --- |
+| `local` (default) | No identity enforced; every request is the `local` user and all authorization is skipped. | A single operator on `127.0.0.1`. |
+| `header` | Trusts `X-SelfEvals-User` verbatim and enforces workspace membership + roles. | Behind a trusted proxy that authenticates upstream and sets that header. Never expose it directly. |
+| `token` | Requires a signed, unexpired token in `X-SelfEvals-User`; identity comes from the verified payload. | Anything shared or reachable off-host. |
+
+An unrecognized value is a startup error, not a fallback — a typo used to
+silently degrade to "trust the header".
+
+In `token` mode, mint a session with the operator secret:
+
+```bash
+export SELFEVALS_AUTH_MODE=token
+export SELFEVALS_AUTH_SECRET=$(openssl rand -hex 32)
+
+curl -s -X POST http://localhost:8000/api/auth/session \
+  -H "X-SelfEvals-Operator-Secret: $SELFEVALS_AUTH_SECRET" \
+  -H 'content-type: application/json' \
+  -d '{"user_id":"you@example.com","ttl_seconds":86400}'
+# → {"token":"v2....","user_id":"you@example.com","expires_at":...}
+
+curl -s http://localhost:8000/api/workspaces -H "X-SelfEvals-User: v2...."
+```
+
+Current limits, so they don't surprise you: tokens carry no workspace scope
+(permissions are resolved per request against membership), there is no
+revocation short of rotating `SELFEVALS_AUTH_SECRET`, and there is no
+self-service login — `/api/auth/session` is an operator-only impersonation
+endpoint, so the secret must never reach a browser.
+
 ## Error Analysis Loop
 
 `selfevals` can turn failed traces into a working taxonomy.
