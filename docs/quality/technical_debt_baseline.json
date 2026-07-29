@@ -4,11 +4,11 @@
     "direct_frontend_fetch": 0,
     "direct_user_header": 0,
     "docs_version_drift": 0,
-    "get_entity_calls": 84,
+    "get_entity_calls": 86,
     "json_extract": 5,
     "large_files": 7,
     "large_python_symbols": 9,
-    "list_entities_calls": 87,
+    "list_entities_calls": 89,
     "type_ignores": 86
   },
   "description": "Baseline for scripts/audit_technical_debt.py. Decrease counts as debt is removed; do not increase without review.",
@@ -51,7 +51,7 @@
       },
       {
         "detail": "broad except Exception",
-        "line": 68,
+        "line": 84,
         "path": "src/selfevals/cli/_common.py"
       },
       {
@@ -251,6 +251,16 @@
       },
       {
         "detail": "get_entity call",
+        "line": 133,
+        "path": "src/selfevals/api/routes/members.py"
+      },
+      {
+        "detail": "get_entity call",
+        "line": 162,
+        "path": "src/selfevals/api/routes/members.py"
+      },
+      {
+        "detail": "get_entity call",
         "line": 90,
         "path": "src/selfevals/api/run_jobs.py"
       },
@@ -336,7 +346,7 @@
       },
       {
         "detail": "get_entity call",
-        "line": 67,
+        "line": 83,
         "path": "src/selfevals/cli/_common.py"
       },
       {
@@ -366,12 +376,12 @@
       },
       {
         "detail": "get_entity call",
-        "line": 279,
+        "line": 290,
         "path": "src/selfevals/storage/interface.py"
       },
       {
         "detail": "get_entity call",
-        "line": 314,
+        "line": 318,
         "path": "src/selfevals/storage/postgres/storage.py"
       },
       {
@@ -511,7 +521,7 @@
       },
       {
         "detail": "get_entity call",
-        "line": 71,
+        "line": 78,
         "path": "tests/storage/test_factory.py"
       },
       {
@@ -626,8 +636,8 @@
         "path": "src/selfevals/api/routes/arena.py"
       },
       {
-        "detail": "function _register_streaming_and_payloads has 121 lines: def _register_streaming_and_payloads(app: FastAPI, deps: AppDeps) -> None:",
-        "line": 259,
+        "detail": "function _register_streaming_and_payloads has 155 lines: def _register_streaming_and_payloads(app: FastAPI, deps: AppDeps) -> None:",
+        "line": 261,
         "path": "src/selfevals/api/routes/traces.py"
       },
       {
@@ -641,7 +651,7 @@
         "path": "src/selfevals/graders/judge_panel.py"
       },
       {
-        "detail": "class OptimizationLoop has 425 lines: class OptimizationLoop:",
+        "detail": "class OptimizationLoop has 426 lines: class OptimizationLoop:",
         "line": 128,
         "path": "src/selfevals/optimization/loop.py"
       },
@@ -651,12 +661,12 @@
         "path": "src/selfevals/optimization/loop.py"
       },
       {
-        "detail": "class Executor has 215 lines: class Executor:",
-        "line": 75,
+        "detail": "class Executor has 281 lines: class Executor:",
+        "line": 77,
         "path": "src/selfevals/runner/executor.py"
       },
       {
-        "detail": "class PostgresStorage has 217 lines: class PostgresStorage(StorageInterface):",
+        "detail": "class PostgresStorage has 221 lines: class PostgresStorage(StorageInterface):",
         "line": 45,
         "path": "src/selfevals/storage/postgres/storage.py"
       },
@@ -769,6 +779,16 @@
       },
       {
         "detail": "list_entities call",
+        "line": 69,
+        "path": "src/selfevals/api/routes/members.py"
+      },
+      {
+        "detail": "list_entities call",
+        "line": 184,
+        "path": "src/selfevals/api/routes/members.py"
+      },
+      {
+        "detail": "list_entities call",
         "line": 103,
         "path": "src/selfevals/api/run_jobs.py"
       },
@@ -834,17 +854,17 @@
       },
       {
         "detail": "list_entities call",
-        "line": 73,
+        "line": 89,
         "path": "src/selfevals/cli/_common.py"
       },
       {
         "detail": "list_entities call",
-        "line": 82,
+        "line": 98,
         "path": "src/selfevals/cli/_common.py"
       },
       {
         "detail": "list_entities call",
-        "line": 107,
+        "line": 123,
         "path": "src/selfevals/cli/_common.py"
       },
       {
@@ -894,7 +914,7 @@
       },
       {
         "detail": "list_entities call",
-        "line": 538,
+        "line": 539,
         "path": "src/selfevals/optimization/loop.py"
       },
       {
@@ -909,12 +929,12 @@
       },
       {
         "detail": "list_entities call",
-        "line": 283,
+        "line": 294,
         "path": "src/selfevals/storage/interface.py"
       },
       {
         "detail": "list_entities call",
-        "line": 332,
+        "line": 336,
         "path": "src/selfevals/storage/postgres/storage.py"
       },
       {
@@ -1151,22 +1171,22 @@
       },
       {
         "detail": "type ignore",
-        "line": 67,
+        "line": 83,
         "path": "src/selfevals/cli/_common.py"
       },
       {
         "detail": "type ignore",
-        "line": 73,
+        "line": 89,
         "path": "src/selfevals/cli/_common.py"
       },
       {
         "detail": "type ignore",
-        "line": 82,
+        "line": 98,
         "path": "src/selfevals/cli/_common.py"
       },
       {
         "detail": "type ignore",
-        "line": 107,
+        "line": 123,
         "path": "src/selfevals/cli/_common.py"
       },
       {
@@ -1176,17 +1196,17 @@
       },
       {
         "detail": "type ignore",
-        "line": 59,
+        "line": 61,
         "path": "src/selfevals/runner/launch/adapters.py"
       },
       {
         "detail": "type ignore",
-        "line": 67,
+        "line": 69,
         "path": "src/selfevals/runner/launch/adapters.py"
       },
       {
         "detail": "type ignore",
-        "line": 205,
+        "line": 253,
         "path": "src/selfevals/runner/launch/adapters.py"
       },
       {
@@ -1516,7 +1536,7 @@
       },
       {
         "detail": "type ignore",
-        "line": 69,
+        "line": 76,
         "path": "tests/storage/test_factory.py"
       },
       {
