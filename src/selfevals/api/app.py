@@ -44,6 +44,9 @@ from selfevals.api.routes import (
     traces,
     workspaces,
 )
+from selfevals.api.routes import (
+    auth as auth_routes,
+)
 from selfevals.storage.factory import object_store_base_for_storage_url, resolve_storage_url
 from selfevals.storage.filesystem import FilesystemObjectStore
 
@@ -142,6 +145,7 @@ def build_app(*, db_path: str | None = None) -> FastAPI:
 
     for route_module in (
         meta,
+        auth_routes,
         workspaces,
         datasets,
         pairwise,

@@ -99,6 +99,10 @@ class PostgresStorage(StorageInterface):
             self._conn, workspace_id=workspace_id, user_id=user_id
         )
 
+    def identity_connection(self) -> Any:
+        """See :meth:`StorageInterface.identity_connection`."""
+        return self._conn
+
     def list_experiments_page(
         self,
         *,
