@@ -225,6 +225,26 @@ agent:
 Both shapes select `EmbeddedAdapter`; the bare-`entrypoint` form is the
 shorthand.
 
+### Timeouts
+
+By default an embedded callable may run forever — the right default for a pure
+function, the wrong one for a callable driving something that *wedges* instead
+of failing: a browser, a device, a socket. A hung case holds its concurrency
+slot for the rest of the run, and the only backstop is the CLI's global
+`--timeout`, which kills every case at once.
+
+```yaml
+agent:
+  type: embedded
+  entrypoint: myrepo.agents.browser:run
+  timeout_seconds: 120 # optional; omit to wait indefinitely
+```
+
+Timeouts are **retryable**, so a transient hang costs one retry rather than the
+case. The limit is only enforceable for `async def` entrypoints: a sync callable
+runs on a worker thread and Python cannot interrupt one, so there the timeout
+frees the slot and reports the failure while the thread keeps running.
+
 ### Agent code
 
 ```python

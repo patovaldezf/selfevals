@@ -39,9 +39,7 @@ import httpx
 if TYPE_CHECKING:
     from selfevals.schemas.fleet import Agent, ModelRef
 
-EmbeddedCallable = Callable[
-    ["AdapterRequest"], "AdapterResponse | Awaitable[AdapterResponse]"
-]
+EmbeddedCallable = Callable[["AdapterRequest"], "AdapterResponse | Awaitable[AdapterResponse]"]
 """A wrapped agent callable. May be sync (returns an AdapterResponse) or
 async (returns an awaitable of one)."""
 
@@ -211,22 +209,51 @@ class EmbeddedAdapter(AgentAdapter):
     - tests where we want deterministic responses.
     """
 
-    def __init__(self, fn: EmbeddedCallable, *, agent: Agent | None = None) -> None:
+    def __init__(
+        self,
+        fn: EmbeddedCallable,
+        *,
+        agent: Agent | None = None,
+        timeout_seconds: float | None = None,
+    ) -> None:
         if not callable(fn):
             raise TypeError("EmbeddedAdapter requires a callable")
         self._fn = fn
         self.agent = agent
+        self._timeout = timeout_seconds
+        """Wall-clock cap per invocation. `None` (the default) keeps the
+        historical behaviour of waiting forever.
+
+        Worth setting whenever the callable drives something that can *wedge*
+        rather than fail — a browser, a device, a socket. Without it a hung
+        callable holds its concurrency slot for the rest of the run, and the
+        only backstop is the CLI's global `--timeout`, which kills everything.
+
+        Effective only for `async def` callables: a sync callable runs on a
+        worker thread and Python cannot interrupt one. There the timeout frees
+        the slot and reports the failure, but the thread keeps running."""
+
+    async def _bounded(self, awaitable: Any) -> Any:
+        if self._timeout is None:
+            return await awaitable
+        return await asyncio.wait_for(awaitable, timeout=self._timeout)
 
     async def invoke(self, request: AdapterRequest) -> AdapterResponse:
         try:
             if inspect.iscoroutinefunction(self._fn):
-                result = await self._fn(request)
+                result = await self._bounded(self._fn(request))
             else:
-                result = await asyncio.to_thread(self._fn, request)
+                result = await self._bounded(asyncio.to_thread(self._fn, request))
                 if inspect.isawaitable(result):
                     # A sync callable that itself returned a coroutine (e.g. a
                     # lambda wrapping an async fn). Await it off the thread.
-                    result = await result
+                    result = await self._bounded(result)
+        except TimeoutError as exc:
+            # Retryable: a wedged browser or a stalled socket usually clears on
+            # a fresh attempt, and the retry policy already backs off.
+            raise AdapterError(
+                f"embedded callable timed out after {self._timeout}s", retryable=True
+            ) from exc
         except Exception as exc:
             # Embedded agents may call provider SDKs directly; a rate-limit or
             # timeout from inside the callable is transient → retryable. Detected
@@ -320,9 +347,7 @@ class CliCommandAdapter(AgentAdapter):
         except TimeoutError as exc:
             proc.kill()
             await proc.wait()
-            raise AdapterError(
-                f"command timed out after {self._timeout}s", retryable=True
-            ) from exc
+            raise AdapterError(f"command timed out after {self._timeout}s", retryable=True) from exc
         if proc.returncode != 0:
             raise AdapterError(
                 f"command exited with {proc.returncode}: "

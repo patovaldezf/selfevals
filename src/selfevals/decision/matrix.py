@@ -13,6 +13,7 @@ check time to keep the import graph acyclic at runtime.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -23,6 +24,8 @@ from selfevals.schemas.experiment import MetricTarget
 if TYPE_CHECKING:
     from selfevals.optimization.aggregator import IterationAggregate
     from selfevals.schemas.experiment import Experiment
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -71,6 +74,13 @@ def _guardrails_violated(
     fallback) `aggregate.reliability`. A guardrail with no observed
     value is treated as passing — we don't fail-shut on missing data
     in MVP because the runner doesn't synthesize every metric.
+
+    That leniency has a sharp edge: a *typo* is indistinguishable from a
+    legitimately-unsynthesized metric, so a guardrail nobody can compute passes
+    silently, forever. `cost_usd` (the published key is `cost_usd_per_case`) hit
+    exactly this — the spec looked protected and wasn't. We still don't fail
+    shut, but we say so loudly, with the keys this run actually published, so a
+    misspelling surfaces on the first run instead of after an expensive one.
     """
     violations: list[str] = []
     for g in guardrails:
@@ -78,6 +88,13 @@ def _guardrails_violated(
         if value is None:
             value = aggregate.reliability.get(g.name)
         if value is None:
+            known = sorted({*aggregate.guardrails, *aggregate.reliability})
+            logger.warning(
+                "guardrail %r has no observed value and cannot be enforced — "
+                "treating as passing. Metrics this run published: %s",
+                g.name,
+                ", ".join(known) or "(none)",
+            )
             continue
         if not _check_operator(value, g.operator, g.value):
             violations.append(f"{g.name}={value:.6g} fails {g.operator}{g.value:.6g}")

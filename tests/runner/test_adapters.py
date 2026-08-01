@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from collections.abc import Callable
@@ -120,6 +121,58 @@ async def test_embedded_wraps_async_exceptions_as_adapter_error() -> None:
 
     with pytest.raises(AdapterError, match="boom-async"):
         await EmbeddedAdapter(fn).invoke(_req())
+
+
+@pytest.mark.asyncio
+async def test_embedded_times_out_a_hung_callable() -> None:
+    """Without a timeout a wedged callable holds its concurrency slot forever.
+
+    The motivating case is a browser: Playwright hangs rather than raising, so
+    the run has no way to reclaim the slot short of the CLI's global --timeout,
+    which kills every case at once.
+    """
+
+    async def fn(_: AdapterRequest) -> AdapterResponse:
+        await asyncio.sleep(10)
+        return AdapterResponse(content="never")
+
+    with pytest.raises(AdapterError, match=r"timed out after 0\.05s"):
+        await EmbeddedAdapter(fn, timeout_seconds=0.05).invoke(_req())
+
+
+@pytest.mark.asyncio
+async def test_embedded_timeout_is_retryable() -> None:
+    """A wedged browser usually clears on a fresh attempt, so the retry policy
+    should get a chance before the case is written off."""
+
+    async def fn(_: AdapterRequest) -> AdapterResponse:
+        await asyncio.sleep(10)
+        return AdapterResponse(content="never")
+
+    with pytest.raises(AdapterError) as excinfo:
+        await EmbeddedAdapter(fn, timeout_seconds=0.05).invoke(_req())
+    assert excinfo.value.retryable is True
+
+
+@pytest.mark.asyncio
+async def test_embedded_without_timeout_keeps_waiting() -> None:
+    """`None` is the default and must not change existing behaviour."""
+
+    async def fn(_: AdapterRequest) -> AdapterResponse:
+        await asyncio.sleep(0.05)
+        return AdapterResponse(content="slow but fine")
+
+    result = await EmbeddedAdapter(fn).invoke(_req())
+    assert result.content == "slow but fine"
+
+
+@pytest.mark.asyncio
+async def test_embedded_timeout_allows_fast_calls() -> None:
+    async def fn(_: AdapterRequest) -> AdapterResponse:
+        return AdapterResponse(content="quick")
+
+    result = await EmbeddedAdapter(fn, timeout_seconds=5.0).invoke(_req())
+    assert result.content == "quick"
 
 
 @pytest.mark.asyncio

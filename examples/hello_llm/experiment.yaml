@@ -31,7 +31,7 @@ experiment:
   target:
     primary: { name: pass@1, operator: ">=", value: 0.7 }
     guardrails:
-      - { name: cost_usd, operator: "<=", value: 0.05 }
+      - { name: cost_usd_per_case, operator: "<=", value: 0.05 }
   editable:
     prompt: false
     model_params: true

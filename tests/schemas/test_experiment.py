@@ -250,3 +250,44 @@ def test_rate_limit_spec_bounds() -> None:
         RateLimitSpec(requests_per_minute=0)  # ge=1
     with pytest.raises(ValidationError):
         RateLimitSpec(burst=0)  # ge=1
+
+
+def test_pass_hat_k_requires_enough_repetitions() -> None:
+    """`pass^5` with 3 reps scores a silent 0.0 — the aggregator skips cases
+    with too few repetitions but keeps them in the denominator.
+
+    Catching it at load time is the difference between a typo and an expensive
+    run that reports total failure for the wrong reason.
+    """
+    with pytest.raises(ValidationError, match=r"pass\^5 requires run.repetitions_per_case >= 5"):
+        _experiment(
+            target=TargetSpec(primary=MetricTarget(name="pass^5", operator=">=", value=0.8)),
+            run=RunSpec(sandbox=SandboxMode.DRY_RUN, repetitions_per_case=3),
+        )
+
+
+def test_pass_hat_k_accepted_when_reps_suffice() -> None:
+    exp = _experiment(
+        target=TargetSpec(primary=MetricTarget(name="pass^5", operator=">=", value=0.8)),
+        run=RunSpec(sandbox=SandboxMode.DRY_RUN, repetitions_per_case=5),
+    )
+    assert exp.target.primary.name == "pass^5"
+
+
+def test_pass_hat_k_checked_in_reliability_metrics_too() -> None:
+    """The declarative list is just as capable of asking for the impossible."""
+    with pytest.raises(ValidationError, match=r"pass\^10"):
+        _experiment(
+            reliability=ReliabilitySpec(repetitions_per_case=10, metrics=["pass^10"]),
+            run=RunSpec(sandbox=SandboxMode.DRY_RUN, repetitions_per_case=2),
+        )
+
+
+def test_pass_at_k_is_not_restricted() -> None:
+    """pass@k means "at least one of k passed" — it degrades gracefully with
+    fewer reps, so it needs no such guard."""
+    exp = _experiment(
+        target=TargetSpec(primary=MetricTarget(name="pass@5", operator=">=", value=0.8)),
+        run=RunSpec(sandbox=SandboxMode.DRY_RUN, repetitions_per_case=1),
+    )
+    assert exp.target.primary.name == "pass@5"

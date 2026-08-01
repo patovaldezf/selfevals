@@ -105,7 +105,7 @@ Both directories contain the same three files:
   when a key + SDK are present, and fall back to a deterministic fake
   otherwise. Temperature flows from the proposer into the API call.
 - **`experiment.yaml`** — wires the dataset, the agent entrypoint, the two
-  graders, the `pass@1 >= 0.7` target with a `cost_usd <= 0.05` guardrail,
+  graders, the `pass@1 >= 0.7` target with a `cost_usd_per_case <= 0.05` guardrail,
   and a `GridProposer` sweeping `temperature ∈ {0.0, 0.5, 1.0}`.
 
 Run them:

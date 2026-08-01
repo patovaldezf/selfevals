@@ -150,8 +150,10 @@ class PriceTable:
                 self._warned_unknown.add(key)
                 warnings.warn(
                     f"no pricing for {provider}/{model}; reporting $0 cost for this "
-                    f"model. Register it via DEFAULT_PRICE_TABLE.register(...) to "
-                    f"get real costs.",
+                    f"model. Register it via DEFAULT_PRICE_TABLE.register(...), or "
+                    f"have the adapter report `cost_usd` itself. Until then a "
+                    f"cost_usd_per_case guardrail cannot bind for this model, and a "
+                    f"multi-model comparison will read it as free.",
                     stacklevel=2,
                 )
             return None

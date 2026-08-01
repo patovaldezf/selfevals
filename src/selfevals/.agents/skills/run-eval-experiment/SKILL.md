@@ -55,7 +55,7 @@ experiment:
   target:
     primary: { name: pass@1, operator: ">=", value: 0.5 }
     guardrails:                       # optional
-      - { name: cost_usd, operator: "<=", value: 0.05 }
+      - { name: cost_usd_per_case, operator: "<=", value: 0.05 }
   proposer:
     strategy: grid                    # manual | grid | random | llm_proposer
   search_space:
