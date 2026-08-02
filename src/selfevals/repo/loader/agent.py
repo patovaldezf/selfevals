@@ -55,7 +55,10 @@ def build_agent_spec(spec_path: Path, raw: dict[str, Any]) -> AgentSpec:
     type_ = agent_section.get("type")
     if type_ is None:
         # Legacy shape: `agent: {entrypoint: "mod:fn"}` → embedded.
-        return EmbeddedAgentSpec(entrypoint=_parse_entrypoint(spec_path, agent_section))
+        return EmbeddedAgentSpec(
+            entrypoint=_parse_entrypoint(spec_path, agent_section),
+            timeout_seconds=_parse_timeout(spec_path, agent_section.get("timeout_seconds")),
+        )
 
     if not isinstance(type_, str) or type_ not in _SUPPORTED_AGENT_TYPES:
         raise LoaderError(
@@ -64,7 +67,10 @@ def build_agent_spec(spec_path: Path, raw: dict[str, Any]) -> AgentSpec:
         )
 
     if type_ == "embedded":
-        return EmbeddedAgentSpec(entrypoint=_parse_entrypoint(spec_path, agent_section))
+        return EmbeddedAgentSpec(
+            entrypoint=_parse_entrypoint(spec_path, agent_section),
+            timeout_seconds=_parse_timeout(spec_path, agent_section.get("timeout_seconds")),
+        )
     if type_ == "cli":
         return _build_cli_agent_spec(spec_path, agent_section)
     return _build_http_agent_spec(spec_path, agent_section)

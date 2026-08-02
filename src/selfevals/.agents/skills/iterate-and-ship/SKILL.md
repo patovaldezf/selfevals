@@ -46,7 +46,7 @@ Each iteration carries a `DecisionOutcome` (the engine's routing call):
 `keep_candidate`, `reject`, `revert`, `feature_flag`, `investigate`,
 `require_tradeoff_review`, `spawn_subexperiment`. It reflects the target +
 guardrails in the spec. Guardrail FAILs (e.g. a `guardrail` grader, or a target
-`guardrails:` entry like `cost_usd <= 0.05`) are blocking — they can force a
+`guardrails:` entry like `cost_usd_per_case <= 0.05`) are blocking — they can force a
 reject even when the primary metric improved.
 
 ## 4. Baseline + regression gate (lock the gain, gate CI)

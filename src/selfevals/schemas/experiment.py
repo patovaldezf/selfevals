@@ -411,6 +411,39 @@ class Experiment(BaseEntity):
         return self
 
     @model_validator(mode="after")
+    def _pass_hat_k_is_reachable(self) -> Experiment:
+        """`pass^k` needs at least k repetitions, or it always scores 0.0.
+
+        The aggregator skips any case with fewer than k recorded repetitions but
+        keeps it in the denominator, so `pass^5` with `repetitions_per_case: 3`
+        yields a silent, unqualified 0.0 — indistinguishable from an agent that
+        genuinely never succeeds. That is an expensive way to find a typo: the
+        run completes, burns its budget, and reports total failure.
+
+        Checked against `run.repetitions_per_case`, which is what the executor
+        actually uses (`reliability.repetitions_per_case` is declarative).
+        """
+        reps = self.run.repetitions_per_case
+        declared = [
+            self.target.primary.name,
+            *(g.name for g in self.target.guardrails),
+            *self.reliability.metrics,
+        ]
+        for name in declared:
+            if not name.startswith("pass^"):
+                continue
+            try:
+                k = int(name.split("^", 1)[1])
+            except ValueError:  # malformed — the metric regex reports it better
+                continue
+            if k > reps:
+                raise ValueError(
+                    f"{name} requires run.repetitions_per_case >= {k}, got {reps}; "
+                    "as configured this metric would always score 0.0"
+                )
+        return self
+
+    @model_validator(mode="after")
     def _proposer_strategy_is_implemented(self) -> Experiment:
         # Reject strategies we don't yet implement: declaring one would
         # silently no-op. bayesian/bandit/evolutionary remain reserved.

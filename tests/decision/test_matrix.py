@@ -253,3 +253,35 @@ def test_weighted_failure_per_case_guardrail() -> None:
         baseline=_agg(primary=0.9),
     )
     assert ev.outcome == DecisionOutcome.REJECT
+
+
+def test_unknown_guardrail_warns_instead_of_passing_silently(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A guardrail nobody can compute still passes — but it must say so.
+
+    A typo is indistinguishable from a legitimately-unsynthesized metric, so the
+    lenient path is the right one; the danger is doing it in silence. `cost_usd`
+    (the published key is `cost_usd_per_case`) shipped in the examples for
+    months and protected nothing.
+    """
+    experiment = _experiment(
+        guardrails=[MetricTarget(name="cost_usd", operator="<=", value=0.05)]
+    )
+    aggregate = _agg(primary=0.9, guardrails={"cost_usd_per_case": 99.0})
+
+    with caplog.at_level("WARNING"):
+        result = evaluate_iteration(experiment=experiment, aggregate=aggregate, baseline=None)
+
+    assert result.outcome == DecisionOutcome.KEEP_CANDIDATE
+    assert "cost_usd" in caplog.text
+    assert "cost_usd_per_case" in caplog.text, "the warning should name the real keys"
+
+
+def test_known_guardrail_still_binds() -> None:
+    experiment = _experiment(
+        guardrails=[MetricTarget(name="cost_usd_per_case", operator="<=", value=0.05)]
+    )
+    aggregate = _agg(primary=0.9, guardrails={"cost_usd_per_case": 99.0})
+    result = evaluate_iteration(experiment=experiment, aggregate=aggregate, baseline=None)
+    assert result.outcome != DecisionOutcome.KEEP_CANDIDATE

@@ -40,13 +40,19 @@ class AgentEntrypoint:
 
 @dataclass(frozen=True)
 class EmbeddedAgentSpec:
-    """`agent: {type: embedded, entrypoint: "mod:fn"}` (or legacy shape).
+    """`agent: {type: embedded, entrypoint: "mod:fn", timeout_seconds?}`.
 
     Carries the parsed `entrypoint`; the callable is resolved at wiring
     time via `resolve_agent_callable` and wrapped in an `EmbeddedAdapter`.
     """
 
     entrypoint: AgentEntrypoint
+    timeout_seconds: float | None = None
+    """Per-case wall-clock cap, mirroring the cli/http specs. `None` waits
+    forever — right for a pure function, wrong for a callable that drives a
+    browser or a device: those *wedge* instead of failing, and a wedged case
+    holds its concurrency slot for the rest of the run. Timeouts are retryable,
+    so a transient hang costs one retry rather than the case."""
 
 
 @dataclass(frozen=True)

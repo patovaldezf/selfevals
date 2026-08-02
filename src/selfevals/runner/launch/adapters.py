@@ -51,7 +51,9 @@ def build_adapter(agent: AgentSpec) -> AgentAdapter:
             callable_obj = resolve_agent_callable(agent.entrypoint)
         except LoaderError as exc:
             raise SelfEvalsUserError(str(exc)) from exc
-        return _wrap_user_callable(callable_obj, agent.entrypoint)
+        return _wrap_user_callable(
+            callable_obj, agent.entrypoint, timeout_seconds=agent.timeout_seconds
+        )
     if isinstance(agent, CliAgentSpec):
         kwargs: dict[str, object] = {"env": agent.env, "model": _model_ref(agent.model)}
         if agent.timeout_seconds is not None:
@@ -202,7 +204,12 @@ def _wrap_resilience(
     return adapter
 
 
-def _wrap_user_callable(callable_obj: object, entrypoint: AgentEntrypoint) -> AgentAdapter:
+def _wrap_user_callable(
+    callable_obj: object,
+    entrypoint: AgentEntrypoint,
+    *,
+    timeout_seconds: float | None = None,
+) -> AgentAdapter:
     """Adapt the user's function into an AgentAdapter.
 
     Accepted return types from the user's callable:
@@ -243,7 +250,7 @@ def _wrap_user_callable(callable_obj: object, entrypoint: AgentEntrypoint) -> Ag
         async def _adapt_async(req: AdapterRequest) -> AdapterResponse:
             return _coerce(await callable_obj(req))
 
-        return EmbeddedAdapter(_adapt_async)
+        return EmbeddedAdapter(_adapt_async, timeout_seconds=timeout_seconds)
 
     def _adapt(req: AdapterRequest) -> AdapterResponse:
         result = callable_obj(req)
@@ -253,4 +260,4 @@ def _wrap_user_callable(callable_obj: object, entrypoint: AgentEntrypoint) -> Ag
             return result  # type: ignore[return-value]
         return _coerce(result)
 
-    return EmbeddedAdapter(_adapt)
+    return EmbeddedAdapter(_adapt, timeout_seconds=timeout_seconds)
